@@ -304,7 +304,7 @@ html, body {
 #settings {
   position: fixed;
   bottom: 52px;
-  left: 18px;
+  right: 18px;
   width: 270px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -336,7 +336,7 @@ html, body {
 #filters {
   position: fixed;
   bottom: 52px;
-  right: 18px;
+  left: 18px;
   width: 280px;
   background: var(--panel);
   border: 1px solid var(--border);
