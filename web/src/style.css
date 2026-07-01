@@ -90,6 +90,12 @@ html, body {
 .mi-group button:not(.checked) { padding-left: 26px; }
 .mi-group .checked { padding-left: 10px; }
 
+/* collapsible sub-sections inside a dropdown (Theme / Graphics / Display) */
+.submenu-label .caret { color: var(--muted); font-size: 11px; transition: transform 0.15s ease; }
+.submenu-panel { display: none; padding: 2px 0 4px; }
+.submenu.open > .submenu-panel { display: block; }
+.submenu.open > .submenu-label .caret { transform: rotate(180deg); }
+
 /* ---------- modal ---------- */
 #modal-backdrop {
   position: fixed;

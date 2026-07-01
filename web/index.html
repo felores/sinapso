@@ -35,36 +35,43 @@
           <button id="mi-fullscreen">Toggle Fullscreen <span class="mi-hint">F11</span></button>
           <button id="mi-resetcam">Reset Camera</button>
           <hr />
-          <div class="mi-group" id="mi-themes"></div>
-          <hr />
-          <div class="mi-group" id="mi-gfx"></div>
-          <hr />
-          <div class="mi-group" id="mi-controls">
-            <label class="ctl"><input type="checkbox" id="toggle-glow" checked /> glow</label>
-            <label class="ctl"><input type="checkbox" id="toggle-labels" checked /> labels</label>
-            <label class="ctl"><input type="checkbox" id="toggle-phantoms" /> unwritten</label>
-            <label class="ctl"><input type="checkbox" id="toggle-orphans" checked /> orphans</label>
-            <label class="ctl">focus depth
-              <select id="depth">
-                <option value="1">1</option>
-                <option value="2" selected>2</option>
-                <option value="3">3</option>
-              </select>
-            </label>
-            <label class="ctl">group by
-              <select id="group">
-                <option value="folder">folder</option>
-                <option value="tag">tag</option>
-              </select>
-            </label>
-            <label class="ctl">nodes
-              <select id="nodes">
-                <option value="classic">classic</option>
-                <option value="dodecahedron">dodecahedron</option>
-                <option value="starlight">starlight</option>
-                <option value="particles">particles</option>
-              </select>
-            </label>
+          <div class="submenu">
+            <button class="submenu-label">Theme <span class="caret">▾</span></button>
+            <div class="submenu-panel mi-group" id="mi-themes"></div>
+          </div>
+          <div class="submenu">
+            <button class="submenu-label">Graphics <span class="caret">▾</span></button>
+            <div class="submenu-panel mi-group" id="mi-gfx"></div>
+          </div>
+          <div class="submenu">
+            <button class="submenu-label">Display <span class="caret">▾</span></button>
+            <div class="submenu-panel" id="mi-controls">
+              <label class="ctl"><input type="checkbox" id="toggle-glow" checked /> glow</label>
+              <label class="ctl"><input type="checkbox" id="toggle-labels" checked /> labels</label>
+              <label class="ctl"><input type="checkbox" id="toggle-phantoms" /> unwritten</label>
+              <label class="ctl"><input type="checkbox" id="toggle-orphans" checked /> orphans</label>
+              <label class="ctl">focus depth
+                <select id="depth">
+                  <option value="1">1</option>
+                  <option value="2" selected>2</option>
+                  <option value="3">3</option>
+                </select>
+              </label>
+              <label class="ctl">group by
+                <select id="group">
+                  <option value="folder">folder</option>
+                  <option value="tag">tag</option>
+                </select>
+              </label>
+              <label class="ctl">nodes
+                <select id="nodes">
+                  <option value="classic">classic</option>
+                  <option value="dodecahedron">dodecahedron</option>
+                  <option value="starlight">starlight</option>
+                  <option value="particles">particles</option>
+                </select>
+              </label>
+            </div>
           </div>
         </div>
       </div>

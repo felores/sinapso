@@ -2142,6 +2142,13 @@ async function boot() {
     if (!(e.target as HTMLElement).closest(".menu")) closeMenus();
   });
 
+  // collapsible sub-sections (Theme / Graphics / Display) inside the View menu
+  for (const sl of document.querySelectorAll<HTMLElement>(".submenu-label")) {
+    sl.addEventListener("click", () => {
+      sl.parentElement!.classList.toggle("open");
+    });
+  }
+
   // ---- modal ----
   const showModal = (title: string, html: string) => {
     $("#modal-title").textContent = title;
