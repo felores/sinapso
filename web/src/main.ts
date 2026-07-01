@@ -1826,6 +1826,13 @@ async function boot() {
     glowOn = (e.target as HTMLInputElement).checked;
     bloom.enabled = glowOn && QUALITY[quality].bloom;
   });
+  const gfxSel = $("#gfx") as HTMLSelectElement;
+  gfxSel.value = quality;
+  gfxSel.addEventListener("change", () => applyQuality(gfxSel.value as QKey));
+
+  const themeSel = $("#theme") as HTMLSelectElement;
+  themeSel.value = theme;
+  themeSel.addEventListener("change", () => applyTheme(themeSel.value));
   applyTheme(theme); // sync CSS vars + scene for the persisted choice
 
   const nodesSel = $("#nodes") as HTMLSelectElement;
@@ -2142,13 +2149,6 @@ async function boot() {
     if (!(e.target as HTMLElement).closest(".menu")) closeMenus();
   });
 
-  // collapsible sub-sections (Theme / Graphics / Display) inside the View menu
-  for (const sl of document.querySelectorAll<HTMLElement>(".submenu-label")) {
-    sl.addEventListener("click", () => {
-      sl.parentElement!.classList.toggle("open");
-    });
-  }
-
   // ---- modal ----
   const showModal = (title: string, html: string) => {
     $("#modal-title").textContent = title;
@@ -2205,36 +2205,6 @@ async function boot() {
     clearSelection();
     graph.zoomToFit(1000, 60);
   });
-  function syncRadioGroups() {
-    for (const b of $("#mi-themes").children) {
-      b.classList.toggle("checked", (b as HTMLElement).dataset.key === theme);
-    }
-    for (const b of $("#mi-gfx").children) {
-      b.classList.toggle("checked", (b as HTMLElement).dataset.key === quality);
-    }
-  }
-  for (const [k, t] of Object.entries(THEMES)) {
-    const b = document.createElement("button");
-    b.dataset.key = k;
-    b.textContent = `Theme: ${t.label}`;
-    b.addEventListener("click", () => {
-      applyTheme(k);
-      syncRadioGroups();
-    });
-    $("#mi-themes").appendChild(b);
-  }
-  for (const k of Object.keys(QUALITY) as QKey[]) {
-    const b = document.createElement("button");
-    b.dataset.key = k;
-    b.textContent = `Graphics: ${k}`;
-    b.addEventListener("click", () => {
-      applyQuality(k);
-      syncRadioGroups();
-    });
-    $("#mi-gfx").appendChild(b);
-  }
-  syncRadioGroups();
-
   // ---- Tools ----
   $("#mi-settings").addEventListener("click", () => {
     closeMenus();

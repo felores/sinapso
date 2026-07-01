@@ -35,43 +35,54 @@
           <button id="mi-fullscreen">Toggle Fullscreen <span class="mi-hint">F11</span></button>
           <button id="mi-resetcam">Reset Camera</button>
           <hr />
-          <div class="submenu">
-            <button class="submenu-label">Theme <span class="caret">▾</span></button>
-            <div class="submenu-panel mi-group" id="mi-themes"></div>
-          </div>
-          <div class="submenu">
-            <button class="submenu-label">Graphics <span class="caret">▾</span></button>
-            <div class="submenu-panel mi-group" id="mi-gfx"></div>
-          </div>
-          <div class="submenu">
-            <button class="submenu-label">Display <span class="caret">▾</span></button>
-            <div class="submenu-panel" id="mi-controls">
-              <label class="ctl"><input type="checkbox" id="toggle-glow" checked /> glow</label>
-              <label class="ctl"><input type="checkbox" id="toggle-labels" checked /> labels</label>
-              <label class="ctl"><input type="checkbox" id="toggle-phantoms" /> unwritten</label>
-              <label class="ctl"><input type="checkbox" id="toggle-orphans" checked /> orphans</label>
-              <label class="ctl">focus depth
-                <select id="depth">
-                  <option value="1">1</option>
-                  <option value="2" selected>2</option>
-                  <option value="3">3</option>
-                </select>
-              </label>
-              <label class="ctl">group by
-                <select id="group">
-                  <option value="folder">folder</option>
-                  <option value="tag">tag</option>
-                </select>
-              </label>
-              <label class="ctl">nodes
-                <select id="nodes">
-                  <option value="classic">classic</option>
-                  <option value="dodecahedron">dodecahedron</option>
-                  <option value="starlight">starlight</option>
-                  <option value="particles">particles</option>
-                </select>
-              </label>
-            </div>
+          <div class="mi-group" id="mi-controls">
+            <label class="ctl">theme
+              <select id="theme">
+                <option value="midnight">midnight</option>
+                <option value="gilded">gilded</option>
+                <option value="manuscript">manuscript</option>
+                <option value="notebook">notebook</option>
+                <option value="cosmos">cosmos</option>
+                <option value="dracula">dracula</option>
+                <option value="nord">nord</option>
+                <option value="tokyonight">tokyo night</option>
+                <option value="gruvbox">gruvbox</option>
+                <option value="monokai">monokai</option>
+              </select>
+            </label>
+            <label class="ctl">graphics
+              <select id="gfx">
+                <option value="low">low</option>
+                <option value="medium">med</option>
+                <option value="high">high</option>
+              </select>
+            </label>
+            <label class="ctl">nodes
+              <select id="nodes">
+                <option value="classic">classic</option>
+                <option value="dodecahedron">dodecahedron</option>
+                <option value="starlight">starlight</option>
+                <option value="particles">particles</option>
+              </select>
+            </label>
+            <label class="ctl">focus depth
+              <select id="depth">
+                <option value="1">1</option>
+                <option value="2" selected>2</option>
+                <option value="3">3</option>
+              </select>
+            </label>
+            <label class="ctl">group by
+              <select id="group">
+                <option value="folder">folder</option>
+                <option value="tag">tag</option>
+              </select>
+            </label>
+            <hr />
+            <label class="ctl"><input type="checkbox" id="toggle-glow" checked /> glow</label>
+            <label class="ctl"><input type="checkbox" id="toggle-labels" checked /> labels</label>
+            <label class="ctl"><input type="checkbox" id="toggle-phantoms" /> unwritten</label>
+            <label class="ctl"><input type="checkbox" id="toggle-orphans" checked /> orphans</label>
           </div>
         </div>
       </div>
