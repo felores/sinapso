@@ -15,12 +15,15 @@ import { createApp } from "./app.js";
 
 // Resolve graph.json path from environment or defaults
 const ROOT = resolve(fileURLToPath(import.meta.url), "..", "..");
-const GRAPH_PATH = process.env.AKASHA_GRAPH ?? resolve(ROOT, "data", "graph.json");
+const GRAPH_PATH =
+  process.env.AKASHA_GRAPH ?? resolve(ROOT, "data", "graph.json");
 const PORT = Number(process.env.AKASHA_PORT ?? 5175);
 
 // Verify graph.json exists before starting server
 if (!existsSync(GRAPH_PATH)) {
-  console.error(`No graph at ${GRAPH_PATH} \u2014 run:  npm run scan -- "<vault-path>"`);
+  console.error(
+    `No graph at ${GRAPH_PATH} \u2014 run:  npm run scan -- "<vault-path>"`,
+  );
   process.exit(1);
 }
 
@@ -28,5 +31,7 @@ if (!existsSync(GRAPH_PATH)) {
 const { app, meta } = createApp(GRAPH_PATH, resolve(ROOT, "web", "dist"));
 app.listen(PORT, "127.0.0.1", () => {
   const m = meta();
-  console.log(`Akasha: http://localhost:${PORT}  (vault: ${m.vaultName}, ${m.notes} notes)`);
+  console.log(
+    `Solaris: http://localhost:${PORT}  (vault: ${m.vaultName}, ${m.notes} notes)`,
+  );
 });

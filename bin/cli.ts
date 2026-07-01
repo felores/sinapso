@@ -23,7 +23,13 @@ import { createApp } from "../server/app";
 
 // Parse command-line arguments
 const argv = process.argv.slice(2);
-const args = { vault: "", exclude: [] as string[], port: 5175, full: false, open: true };
+const args = {
+  vault: "",
+  exclude: [] as string[],
+  port: 5175,
+  full: false,
+  open: true,
+};
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === "--exclude") args.exclude.push(argv[++i]);
@@ -36,7 +42,7 @@ for (let i = 0; i < argv.length; i++) {
 // Validate required vault argument
 if (!args.vault) {
   console.error(
-    'usage: akasha "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open]'
+    'usage: akasha "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open]',
   );
   process.exit(1);
 }
@@ -52,17 +58,22 @@ if (!existsSync(vault)) {
 const dataDir = join(
   homedir(),
   ".akasha",
-  createHash("sha1").update(vault).digest("hex").slice(0, 10)
+  createHash("sha1").update(vault).digest("hex").slice(0, 10),
 );
 mkdirSync(dataDir, { recursive: true });
 const graphPath = join(dataDir, "graph.json");
 
 // Scan vault (full or incremental based on --full flag)
-console.log("Akasha — scanning " + vault);
-const g = scanVault({ vault, out: graphPath, exclude: args.exclude, full: args.full });
+console.log("Solaris — scanning " + vault);
+const g = scanVault({
+  vault,
+  out: graphPath,
+  exclude: args.exclude,
+  full: args.full,
+});
 const s = g.meta.scanStats;
 console.log(
-  `${g.meta.notes} notes, ${g.meta.links} links — ${s.ms}ms (${s.parsed} parsed, ${s.reused} cached)`
+  `${g.meta.notes} notes, ${g.meta.links} links — ${s.ms}ms (${s.parsed} parsed, ${s.reused} cached)`,
 );
 
 // Create Express server with graph API endpoints
@@ -73,8 +84,8 @@ const { app } = createApp(graphPath, webDist);
 const listener = app.listen(args.port, "127.0.0.1", () => {
   const { port } = listener.address() as AddressInfo;
   const url = `http://localhost:${port}`;
-  console.log(`Akasha: ${url}   (Ctrl+C to stop)`);
-  
+  console.log(`Solaris: ${url}   (Ctrl+C to stop)`);
+
   // Open browser if requested (default: true unless --no-open)
   if (args.open) {
     const cmd =

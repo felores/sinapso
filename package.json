@@ -1,7 +1,7 @@
 {
-  "name": "akasha-graph",
+  "name": "solaris",
   "version": "1.0.1",
-  "description": "Akasha — your Obsidian vault or Open Knowledge Format bundle as a navigable 3D universe.",
+  "description": "Solaris — your Obsidian vault or Open Knowledge Format bundle as a navigable 3D universe.",
   "type": "module",
   "main": "dist/cli.cjs",
   "bin": {
@@ -62,15 +62,17 @@
     "esbuild": "^0.28.0",
     "marked": "^15.0.0",
     "minisearch": "^7.2.0",
+    "supertest": "^7.1.0",
     "three": "0.184.0",
     "three-spritetext": "^1.10.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vitest": "^2.1.0"
   },
   "build": {
-    "appId": "com.conquerorchin.akasha",
-    "productName": "Akasha",
+    "appId": "com.felo.solaris",
+    "productName": "Solaris",
     "directories": {
       "output": "release"
     },

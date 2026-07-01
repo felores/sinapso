@@ -26,7 +26,10 @@
  *   - Search index built lazily on first query; kept in memory; cleared on rescan
  */
 
-import ForceGraph3D, { type ForceGraph3DInstance, type ConfigOptions } from "3d-force-graph";
+import ForceGraph3D, {
+  type ForceGraph3DInstance,
+  type ConfigOptions,
+} from "3d-force-graph";
 import SpriteText from "three-spritetext";
 import { marked } from "marked";
 import * as THREE from "three";
@@ -83,8 +86,22 @@ const PALETTE: Record<string, string> = {
 };
 // Fallback colors when a pillar/tag isn't in PALETTE or theme overrides
 const FALLBACK_COLORS = [
-  "#e64980", "#15aabf", "#82c91e", "#fd7e14", "#4c6ef5", "#f06595", "#12b886", "#fab005",
-  "#7950f2", "#fa5252", "#40c057", "#228be6", "#e8590c", "#0ca678", "#cc5de8", "#94d82d",
+  "#e64980",
+  "#15aabf",
+  "#82c91e",
+  "#fd7e14",
+  "#4c6ef5",
+  "#f06595",
+  "#12b886",
+  "#fab005",
+  "#7950f2",
+  "#fa5252",
+  "#40c057",
+  "#228be6",
+  "#e8590c",
+  "#0ca678",
+  "#cc5de8",
+  "#94d82d",
 ];
 
 // ---- themes: each restyles scene, links, starfield, bloom, and UI together ----
@@ -116,8 +133,19 @@ const THEMES: Record<string, ThemeDef> = {
     dim: "rgba(70,75,85,0.18)",
     selected: "#ffffff",
     star: { color: 0x46506a, opacity: 0.55, mode: "normal" },
-    labels: { color: "#e2e8f0", bg: "rgba(7,10,16,0.72)", border: "rgba(120,150,190,0.35)" },
-    css: { "--bg": "#070a10", "--panel": "rgba(13,17,23,0.88)", "--border": "#30363d", "--fg": "#e6edf3", "--muted": "#8b949e", "--accent": "#58a6ff" },
+    labels: {
+      color: "#e2e8f0",
+      bg: "rgba(7,10,16,0.72)",
+      border: "rgba(120,150,190,0.35)",
+    },
+    css: {
+      "--bg": "#070a10",
+      "--panel": "rgba(13,17,23,0.88)",
+      "--border": "#30363d",
+      "--fg": "#e6edf3",
+      "--muted": "#8b949e",
+      "--accent": "#58a6ff",
+    },
   },
   gilded: {
     label: "Gilded",
@@ -129,8 +157,19 @@ const THEMES: Record<string, ThemeDef> = {
     dim: "rgba(90,78,48,0.18)",
     selected: "#fff3d0",
     star: { color: 0x6b5a2a, opacity: 0.4, mode: "normal" },
-    labels: { color: "#f0e6c8", bg: "rgba(10,8,2,0.78)", border: "rgba(212,175,55,0.45)" },
-    css: { "--bg": "#040403", "--panel": "rgba(14,12,6,0.9)", "--border": "#3a3320", "--fg": "#ece4cc", "--muted": "#8a8064", "--accent": "#d4af37" },
+    labels: {
+      color: "#f0e6c8",
+      bg: "rgba(10,8,2,0.78)",
+      border: "rgba(212,175,55,0.45)",
+    },
+    css: {
+      "--bg": "#040403",
+      "--panel": "rgba(14,12,6,0.9)",
+      "--border": "#3a3320",
+      "--fg": "#ece4cc",
+      "--muted": "#8a8064",
+      "--accent": "#d4af37",
+    },
   },
   manuscript: {
     label: "Manuscript",
@@ -142,13 +181,30 @@ const THEMES: Record<string, ThemeDef> = {
     dim: "rgba(187,178,154,0.5)",
     selected: "#16140e",
     star: { color: 0x000000, opacity: 0, mode: "off" },
-    labels: { color: "#23201a", bg: "rgba(249,245,235,0.85)", border: "rgba(90,80,55,0.4)" },
-    palette: {
-      Biology: "#1e7d32", Chemistry: "#9a7d0a", Physics: "#1a5fb4",
-      Mathematics: "#5e35b1", History: "#795548", Metaphysics: "#6a4c93", Books: "#b35c00",
-      Root: "#5f6368", Unwritten: "#9e9e9e",
+    labels: {
+      color: "#23201a",
+      bg: "rgba(249,245,235,0.85)",
+      border: "rgba(90,80,55,0.4)",
     },
-    css: { "--bg": "#f2ecdf", "--panel": "rgba(250,246,237,0.92)", "--border": "#d6cdb6", "--fg": "#23201a", "--muted": "#6b6353", "--accent": "#8a6d1f" },
+    palette: {
+      Biology: "#1e7d32",
+      Chemistry: "#9a7d0a",
+      Physics: "#1a5fb4",
+      Mathematics: "#5e35b1",
+      History: "#795548",
+      Metaphysics: "#6a4c93",
+      Books: "#b35c00",
+      Root: "#5f6368",
+      Unwritten: "#9e9e9e",
+    },
+    css: {
+      "--bg": "#f2ecdf",
+      "--panel": "rgba(250,246,237,0.92)",
+      "--border": "#d6cdb6",
+      "--fg": "#23201a",
+      "--muted": "#6b6353",
+      "--accent": "#8a6d1f",
+    },
   },
   notebook: {
     label: "Notebook",
@@ -160,13 +216,30 @@ const THEMES: Record<string, ThemeDef> = {
     dim: "rgba(170,155,120,0.5)",
     selected: "#1a1508",
     star: { color: 0x000000, opacity: 0, mode: "off" },
-    labels: { color: "#2b2417", bg: "rgba(248,242,228,0.85)", border: "rgba(140,120,80,0.4)" },
-    palette: {
-      Biology: "#1e7d32", Chemistry: "#9a7d0a", Physics: "#1a5fb4",
-      Mathematics: "#5e35b1", History: "#795548", Metaphysics: "#6a4c93", Books: "#b35c00",
-      Root: "#5f6368", Unwritten: "#9e9e9e",
+    labels: {
+      color: "#2b2417",
+      bg: "rgba(248,242,228,0.85)",
+      border: "rgba(140,120,80,0.4)",
     },
-    css: { "--bg": "#f4ecd8", "--panel": "rgba(247,240,224,0.94)", "--border": "#d8ccae", "--fg": "#2b2417", "--muted": "#6f6448", "--accent": "#a06a1f" },
+    palette: {
+      Biology: "#1e7d32",
+      Chemistry: "#9a7d0a",
+      Physics: "#1a5fb4",
+      Mathematics: "#5e35b1",
+      History: "#795548",
+      Metaphysics: "#6a4c93",
+      Books: "#b35c00",
+      Root: "#5f6368",
+      Unwritten: "#9e9e9e",
+    },
+    css: {
+      "--bg": "#f4ecd8",
+      "--panel": "rgba(247,240,224,0.94)",
+      "--border": "#d8ccae",
+      "--fg": "#2b2417",
+      "--muted": "#6f6448",
+      "--accent": "#a06a1f",
+    },
   },
   cosmos: {
     label: "Cosmos",
@@ -178,8 +251,19 @@ const THEMES: Record<string, ThemeDef> = {
     dim: "rgba(60,70,95,0.16)",
     selected: "#ffffff",
     star: { color: 0x9aa8d8, opacity: 0.85, mode: "dense" },
-    labels: { color: "#e2e8f0", bg: "rgba(4,6,14,0.7)", border: "rgba(140,165,215,0.4)" },
-    css: { "--bg": "#020308", "--panel": "rgba(8,11,22,0.88)", "--border": "#252c42", "--fg": "#e6edf3", "--muted": "#828cab", "--accent": "#9ecbff" },
+    labels: {
+      color: "#e2e8f0",
+      bg: "rgba(4,6,14,0.7)",
+      border: "rgba(140,165,215,0.4)",
+    },
+    css: {
+      "--bg": "#020308",
+      "--panel": "rgba(8,11,22,0.88)",
+      "--border": "#252c42",
+      "--fg": "#e6edf3",
+      "--muted": "#828cab",
+      "--accent": "#9ecbff",
+    },
   },
   // ---- VS Code-inspired palettes (flat editor look, bloom off) ----
   dracula: {
@@ -192,8 +276,19 @@ const THEMES: Record<string, ThemeDef> = {
     dim: "rgba(98,114,164,0.18)",
     selected: "#f8f8f2",
     star: { color: 0x6272a4, opacity: 0.4, mode: "normal" },
-    labels: { color: "#f8f8f2", bg: "rgba(40,42,54,0.78)", border: "rgba(189,147,249,0.4)" },
-    css: { "--bg": "#282a36", "--panel": "rgba(40,42,54,0.9)", "--border": "#44475a", "--fg": "#f8f8f2", "--muted": "#6272a4", "--accent": "#bd93f9" },
+    labels: {
+      color: "#f8f8f2",
+      bg: "rgba(40,42,54,0.78)",
+      border: "rgba(189,147,249,0.4)",
+    },
+    css: {
+      "--bg": "#282a36",
+      "--panel": "rgba(40,42,54,0.9)",
+      "--border": "#44475a",
+      "--fg": "#f8f8f2",
+      "--muted": "#6272a4",
+      "--accent": "#bd93f9",
+    },
   },
   nord: {
     label: "Nord",
@@ -205,8 +300,19 @@ const THEMES: Record<string, ThemeDef> = {
     dim: "rgba(76,86,106,0.2)",
     selected: "#eceff4",
     star: { color: 0x4c566a, opacity: 0.45, mode: "normal" },
-    labels: { color: "#e5e9f0", bg: "rgba(46,52,64,0.78)", border: "rgba(136,192,208,0.4)" },
-    css: { "--bg": "#2e3440", "--panel": "rgba(59,66,82,0.9)", "--border": "#434c5e", "--fg": "#eceff4", "--muted": "#81a1c1", "--accent": "#88c0d0" },
+    labels: {
+      color: "#e5e9f0",
+      bg: "rgba(46,52,64,0.78)",
+      border: "rgba(136,192,208,0.4)",
+    },
+    css: {
+      "--bg": "#2e3440",
+      "--panel": "rgba(59,66,82,0.9)",
+      "--border": "#434c5e",
+      "--fg": "#eceff4",
+      "--muted": "#81a1c1",
+      "--accent": "#88c0d0",
+    },
   },
   tokyonight: {
     label: "Tokyo Night",
@@ -218,8 +324,19 @@ const THEMES: Record<string, ThemeDef> = {
     dim: "rgba(86,95,137,0.2)",
     selected: "#c0caf5",
     star: { color: 0x565f89, opacity: 0.6, mode: "dense" },
-    labels: { color: "#c0caf5", bg: "rgba(26,27,38,0.78)", border: "rgba(122,162,247,0.4)" },
-    css: { "--bg": "#1a1b26", "--panel": "rgba(22,22,30,0.9)", "--border": "#2a2e42", "--fg": "#c0caf5", "--muted": "#565f89", "--accent": "#7aa2f7" },
+    labels: {
+      color: "#c0caf5",
+      bg: "rgba(26,27,38,0.78)",
+      border: "rgba(122,162,247,0.4)",
+    },
+    css: {
+      "--bg": "#1a1b26",
+      "--panel": "rgba(22,22,30,0.9)",
+      "--border": "#2a2e42",
+      "--fg": "#c0caf5",
+      "--muted": "#565f89",
+      "--accent": "#7aa2f7",
+    },
   },
   gruvbox: {
     label: "Gruvbox",
@@ -231,8 +348,19 @@ const THEMES: Record<string, ThemeDef> = {
     dim: "rgba(146,131,116,0.2)",
     selected: "#fbf1c7",
     star: { color: 0x665c54, opacity: 0.4, mode: "normal" },
-    labels: { color: "#ebdbb2", bg: "rgba(40,40,40,0.8)", border: "rgba(250,189,47,0.4)" },
-    css: { "--bg": "#282828", "--panel": "rgba(40,40,40,0.92)", "--border": "#3c3836", "--fg": "#ebdbb2", "--muted": "#928374", "--accent": "#fabd2f" },
+    labels: {
+      color: "#ebdbb2",
+      bg: "rgba(40,40,40,0.8)",
+      border: "rgba(250,189,47,0.4)",
+    },
+    css: {
+      "--bg": "#282828",
+      "--panel": "rgba(40,40,40,0.92)",
+      "--border": "#3c3836",
+      "--fg": "#ebdbb2",
+      "--muted": "#928374",
+      "--accent": "#fabd2f",
+    },
   },
   monokai: {
     label: "Monokai",
@@ -244,12 +372,24 @@ const THEMES: Record<string, ThemeDef> = {
     dim: "rgba(117,113,94,0.2)",
     selected: "#f8f8f2",
     star: { color: 0x75715e, opacity: 0.4, mode: "normal" },
-    labels: { color: "#f8f8f2", bg: "rgba(39,40,34,0.8)", border: "rgba(249,38,114,0.4)" },
-    css: { "--bg": "#272822", "--panel": "rgba(39,40,34,0.92)", "--border": "#3e3d32", "--fg": "#f8f8f2", "--muted": "#75715e", "--accent": "#f92672" },
+    labels: {
+      color: "#f8f8f2",
+      bg: "rgba(39,40,34,0.8)",
+      border: "rgba(249,38,114,0.4)",
+    },
+    css: {
+      "--bg": "#272822",
+      "--panel": "rgba(39,40,34,0.92)",
+      "--border": "#3e3d32",
+      "--fg": "#f8f8f2",
+      "--muted": "#75715e",
+      "--accent": "#f92672",
+    },
   },
 };
 
-const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
+const $ = <T extends HTMLElement>(sel: string) =>
+  document.querySelector(sel) as T;
 
 // ===== BOOT & INITIALIZATION =====
 async function boot() {
@@ -259,7 +399,10 @@ async function boot() {
     fetch("/api/graph").then((r) => r.json()) as Promise<Graph>,
     fetch("/api/layout")
       .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null) as Promise<{ fingerprint: string; positions: Record<string, number[]> } | null>,
+      .catch(() => null) as Promise<{
+      fingerprint: string;
+      positions: Record<string, number[]>;
+    } | null>,
   ]);
 
   // Layout cache hit: seed every node with its settled position and skip
@@ -267,7 +410,9 @@ async function boot() {
   // Keyed by content fingerprint, so no-op rescans don't invalidate it.
   // If fingerprint matches, graph appears instantly, already stable
   const cachedPositions =
-    layout && layout.fingerprint === data.meta.fingerprint ? layout.positions : null;
+    layout && layout.fingerprint === data.meta.fingerprint
+      ? layout.positions
+      : null;
   if (cachedPositions) {
     for (const n of data.nodes) {
       const p = cachedPositions[n.id];
@@ -309,7 +454,11 @@ async function boot() {
   function computeGroups() {
     groupOfId.clear();
     const raw = (n: GNode) =>
-      n.phantom ? "Unwritten" : groupMode === "folder" ? n.pillar : (n.tags?.[0] ?? "untagged");
+      n.phantom
+        ? "Unwritten"
+        : groupMode === "folder"
+          ? n.pillar
+          : (n.tags?.[0] ?? "untagged");
     const rawCounts = new Map<string, number>();
     for (const n of data.nodes) {
       const g = raw(n);
@@ -321,7 +470,7 @@ async function boot() {
         .filter(([g]) => g !== "Unwritten")
         .sort((a, b) => b[1] - a[1])
         .slice(0, 18)
-        .map(([g]) => g)
+        .map(([g]) => g),
     );
     groupCounts = new Map();
     for (const n of data.nodes) {
@@ -331,13 +480,13 @@ async function boot() {
       groupCounts.set(g, (groupCounts.get(g) ?? 0) + 1);
     }
     groups = [...groupCounts.keys()].sort(
-      (a, b) => groupCounts.get(b)! - groupCounts.get(a)!
+      (a, b) => groupCounts.get(b)! - groupCounts.get(a)!,
     );
   }
 
   // user-picked colors override theme + defaults; persisted per browser
   const customColors: Record<string, string> = JSON.parse(
-    localStorage.getItem("akasha-colors") ?? "{}"
+    localStorage.getItem("akasha-colors") ?? "{}",
   );
   const colorOf: Record<string, string> = {};
   function recomputeColors() {
@@ -349,7 +498,8 @@ async function boot() {
         PALETTE[g] ??
         FALLBACK_COLORS[fb++ % FALLBACK_COLORS.length];
     }
-    colorOf.Unwritten = customColors.Unwritten ?? T().palette?.Unwritten ?? PALETTE.Unwritten;
+    colorOf.Unwritten =
+      customColors.Unwritten ?? T().palette?.Unwritten ?? PALETTE.Unwritten;
   }
   computeGroups();
   recomputeColors();
@@ -397,9 +547,12 @@ async function boot() {
 
   const inFocus = (id: string) => !focusSet || focusSet.has(id);
 
-  const endNode = (e: string | GNode): GNode => (typeof e === "object" ? e : byId.get(e)!);
+  const endNode = (e: string | GNode): GNode =>
+    typeof e === "object" ? e : byId.get(e)!;
   const linkShown = (l: GLink) =>
-    l.weight >= minWeight && visible(endNode(l.source)) && visible(endNode(l.target));
+    l.weight >= minWeight &&
+    visible(endNode(l.source)) &&
+    visible(endNode(l.target));
 
   const bfs = (start: string, depth: number) => {
     const seen = new Set([start]);
@@ -425,19 +578,51 @@ async function boot() {
   // Allow users to trade visual fidelity for frame rate
   // Persisted in localStorage; applied on boot and when changed
   type QKey = "low" | "medium" | "high";
-  const QUALITY: Record<QKey, { nodeRes: number; pixelRatio: number; bloom: boolean; stars: boolean; labels: number; pc: number }> = {
-    low: { nodeRes: 6, pixelRatio: 1, bloom: false, stars: false, labels: 60, pc: 1024 },
-    medium: { nodeRes: 9, pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5), bloom: true, stars: true, labels: 140, pc: 4096 },
-    high: { nodeRes: 18, pixelRatio: Math.min(window.devicePixelRatio || 1, 2), bloom: true, stars: true, labels: 260, pc: 16384 },
+  const QUALITY: Record<
+    QKey,
+    {
+      nodeRes: number;
+      pixelRatio: number;
+      bloom: boolean;
+      stars: boolean;
+      labels: number;
+      pc: number;
+    }
+  > = {
+    low: {
+      nodeRes: 6,
+      pixelRatio: 1,
+      bloom: false,
+      stars: false,
+      labels: 60,
+      pc: 1024,
+    },
+    medium: {
+      nodeRes: 9,
+      pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5),
+      bloom: true,
+      stars: true,
+      labels: 140,
+      pc: 4096,
+    },
+    high: {
+      nodeRes: 18,
+      pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+      bloom: true,
+      stars: true,
+      labels: 260,
+      pc: 16384,
+    },
   };
-  let quality: QKey = (localStorage.getItem("akasha-quality") as QKey) || "medium";
+  let quality: QKey =
+    (localStorage.getItem("akasha-quality") as QKey) || "medium";
   if (!QUALITY[quality]) quality = "medium";
 
   // ---- rendering: 3D scene setup ----
   // The library's generics sit on its interface, not the constructor signature.
   const Graph3D = ForceGraph3D as unknown as new (
     el: HTMLElement,
-    config?: ConfigOptions
+    config?: ConfigOptions,
   ) => ForceGraph3DInstance<GNode, GLink>;
   const graph = new Graph3D($("#graph"), {
     rendererConfig: {
@@ -453,7 +638,7 @@ async function boot() {
       (n: GNode) =>
         `<div class="tip"><b>${n.title}</b><br>${n.pillar}${
           n.tags?.length ? " · #" + n.tags.slice(0, 3).join(" #") : ""
-        } · ${degree(n)} links</div>`
+        } · ${degree(n)} links</div>`,
     )
     .nodeVal((n: GNode) => Math.max(1.2, Math.sqrt(degree(n)) * 1.6))
     .nodeColor((n: GNode) => nodeColor(n))
@@ -489,7 +674,7 @@ async function boot() {
     new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2),
     0.35, // strength: subtle halo; higher washes out the dense core
     0.35, // radius
-    0.3 // threshold
+    0.3, // threshold
   );
   graph.postProcessingComposer().addPass(bloom);
   let glowOn = true;
@@ -497,7 +682,12 @@ async function boot() {
 
   // Starfield shells far behind the graph: a faint base field for the dark
   // themes, plus a dense immersive field that only Cosmos switches on.
-  function makeStars(count: number, rMin: number, rSpread: number, size: number): THREE.Points {
+  function makeStars(
+    count: number,
+    rMin: number,
+    rSpread: number,
+    size: number,
+  ): THREE.Points {
     const positions = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
       const r = rMin + Math.random() * rSpread;
@@ -511,7 +701,12 @@ async function boot() {
     geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     const pts = new THREE.Points(
       geo,
-      new THREE.PointsMaterial({ color: 0xffffff, size, transparent: true, opacity: 0.5 })
+      new THREE.PointsMaterial({
+        color: 0xffffff,
+        size,
+        transparent: true,
+        opacity: 0.5,
+      }),
     );
     graph.scene().add(pts);
     return pts;
@@ -652,7 +847,10 @@ async function boot() {
       const l = data.links[i];
       let c = C_BASE;
       if (isLit(l)) c = C_LIT;
-      else if (selected && !(inFocus(endNode(l.source).id) && inFocus(endNode(l.target).id)))
+      else if (
+        selected &&
+        !(inFocus(endNode(l.source).id) && inFocus(endNode(l.target).id))
+      )
         c = C_OUT;
       const o = i * 6;
       lineCol[o] = lineCol[o + 3] = c.r;
@@ -720,7 +918,10 @@ async function boot() {
       const raw = JSON.parse(localStorage.getItem("akasha-filters") || "[]");
       if (Array.isArray(raw))
         return raw.filter(
-          (f) => f && (f.mode === "show" || f.mode === "ignore") && typeof f.pattern === "string"
+          (f) =>
+            f &&
+            (f.mode === "show" || f.mode === "ignore") &&
+            typeof f.pattern === "string",
         );
     } catch {
       /* ignore corrupt value */
@@ -733,12 +934,15 @@ async function boot() {
 
   // A node's searchable text: title, group (pillar/tag), and its #tags.
   function filterFields(n: GNode): string[] {
-    return [n.title || "", groupOf(n) || "", ...(n.tags || [])].map((s) => s.toLowerCase());
+    return [n.title || "", groupOf(n) || "", ...(n.tags || [])].map((s) =>
+      s.toLowerCase(),
+    );
   }
   // needle's chars appear in order within hay (loose fuzzy match).
   function subsequence(needle: string, hay: string): boolean {
     let i = 0;
-    for (let j = 0; j < hay.length && i < needle.length; j++) if (hay[j] === needle[i]) i++;
+    for (let j = 0; j < hay.length && i < needle.length; j++)
+      if (hay[j] === needle[i]) i++;
     return i === needle.length;
   }
   // Compile a pattern to a node predicate: wildcards (*, ?) glob-match a field
@@ -748,20 +952,30 @@ async function boot() {
     if (!p) return () => false;
     if (/[*?]/.test(p)) {
       const re = new RegExp(
-        "^" + p.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") + "$"
+        "^" +
+          p
+            .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+            .replace(/\*/g, ".*")
+            .replace(/\?/g, ".") +
+          "$",
       );
       return (n) => filterFields(n).some((f) => re.test(f));
     }
     return (n) => {
       const fs = filterFields(n);
-      return fs.some((f) => f.includes(p)) || (p.length >= 3 && subsequence(p, fs[0]));
+      return (
+        fs.some((f) => f.includes(p)) ||
+        (p.length >= 3 && subsequence(p, fs[0]))
+      );
     };
   }
 
   // The active chain = persisted filters, plus the live input as a low-priority
   // preview at the end so typing shows its effect before you commit it.
   function activeChain(): Filter[] {
-    return liveFilter && liveFilter.pattern.trim() ? [...filters, liveFilter] : filters;
+    return liveFilter && liveFilter.pattern.trim()
+      ? [...filters, liveFilter]
+      : filters;
   }
   // Recompute which nodes the chain hides, then refresh the scene. First rule to
   // match a node decides it (show -> keep, ignore -> hide). A node matched by no
@@ -771,7 +985,10 @@ async function boot() {
     filterHidden = new Set<string>();
     if (chain.length) {
       const hasShow = chain.some((f) => f.mode === "show");
-      const rules = chain.map((f) => ({ keep: f.mode === "show", test: compileMatcher(f.pattern) }));
+      const rules = chain.map((f) => ({
+        keep: f.mode === "show",
+        test: compileMatcher(f.pattern),
+      }));
       for (const n of data.nodes) {
         let keep = !hasShow;
         for (const r of rules) {
@@ -800,7 +1017,12 @@ async function boot() {
   type SpriteRT = {
     visible: boolean;
     renderOrder: number;
-    material: { transparent: boolean; opacity: number; depthWrite: boolean; depthTest: boolean };
+    material: {
+      transparent: boolean;
+      opacity: number;
+      depthWrite: boolean;
+      depthTest: boolean;
+    };
     position: { set(x: number, y: number, z: number): void };
     center: { set(x: number, y: number): void };
   };
@@ -840,7 +1062,10 @@ async function boot() {
     localStorage.getItem("akasha-nodes") ||
     "classic") as NodeStyle;
   if ((nodeStyle as string) === "crystal") nodeStyle = "dodecahedron"; // pre-rename saved setting
-  if (!["classic", "dodecahedron", "starlight", "particles"].includes(nodeStyle)) nodeStyle = "classic";
+  if (
+    !["classic", "dodecahedron", "starlight", "particles"].includes(nodeStyle)
+  )
+    nodeStyle = "classic";
 
   let sizeFactor = 4; // node-size slider (matches the lib's default nodeRelSize)
 
@@ -848,7 +1073,12 @@ async function boot() {
   // Each factor is log-normalized against the vault max (counts are heavy-
   // tailed; raw scaling would make a few hubs flatten everything else),
   // then blended by user-adjustable weights.
-  const sizeWeights: { in: number; out: number; words: number; contrast: number } = {
+  const sizeWeights: {
+    in: number;
+    out: number;
+    words: number;
+    contrast: number;
+  } = {
     in: 1,
     out: 0.5,
     words: 0.5,
@@ -887,14 +1117,19 @@ async function boot() {
       if (!n) continue;
       const r = radiusOf(n);
       mesh.scale.setScalar(
-        nodeStyle === "starlight" ? r * 0.65 : nodeStyle === "particles" ? r * 1.25 : r
+        nodeStyle === "starlight"
+          ? r * 0.65
+          : nodeStyle === "particles"
+            ? r * 1.25
+            : r,
       );
       if (nodeStyle === "particles") {
         (mesh.material as THREE.PointsMaterial).size = r * 0.22 * pcSizeNorm();
         const pair = spinOf.get(id);
         if (pair) {
           pair.core.scale.setScalar(r * 1.25);
-          (pair.core.material as THREE.PointsMaterial).size = r * 0.34 * pcSizeNorm();
+          (pair.core.material as THREE.PointsMaterial).size =
+            r * 0.34 * pcSizeNorm();
         }
       }
       glowOf.get(id)?.scale.setScalar(r * 3);
@@ -902,7 +1137,12 @@ async function boot() {
   }
 
   // shared geometries (unit-sized; scaled per node)
-  const sphereGeo = () => new THREE.SphereGeometry(1, QUALITY[quality].nodeRes, Math.max(4, QUALITY[quality].nodeRes / 2));
+  const sphereGeo = () =>
+    new THREE.SphereGeometry(
+      1,
+      QUALITY[quality].nodeRes,
+      Math.max(4, QUALITY[quality].nodeRes / 2),
+    );
   // detail stays 0 at every tier; subdividing would round away the 12 pentagonal faces
   const dodecaGeo = () => new THREE.DodecahedronGeometry(1, 0);
 
@@ -914,14 +1154,20 @@ async function boot() {
   // discrete GPU holds ~55fps from 256 to 16,384/node; the cost lives in
   // draw calls + close-range fill rate, so tiers map to GPU class).
   const pcExplicit =
-    new URLSearchParams(window.location.search).get("pc") || localStorage.getItem("akasha-pc");
+    new URLSearchParams(window.location.search).get("pc") ||
+    localStorage.getItem("akasha-pc");
   const tierPc = () => QUALITY[quality].pc;
   let particleCount =
     pcExplicit && pcExplicit !== "auto" ? Number(pcExplicit) : tierPc();
   // ?pc= accepts any value for benchmarking/power users (clamped to keep the tab alive)
   particleCount = Math.max(16, Math.min(32768, particleCount || tierPc()));
 
-  const particleCloud = (count: number, rPow: number, rMin: number, rMax: number) => {
+  const particleCloud = (
+    count: number,
+    rPow: number,
+    rMin: number,
+    rMax: number,
+  ) => {
     const pos = new Float32Array(count * 3);
     const golden = Math.PI * (3 - Math.sqrt(5));
     for (let i = 0; i < count; i++) {
@@ -938,7 +1184,12 @@ async function boot() {
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     return geo;
   };
-  let coreGeo = particleCloud(Math.round(particleCount * 0.45), 1.8, 0.05, 0.55);
+  let coreGeo = particleCloud(
+    Math.round(particleCount * 0.45),
+    1.8,
+    0.05,
+    0.55,
+  );
   let haloGeo = particleCloud(Math.round(particleCount * 0.55), 0.6, 0.35, 1.0);
   const spinOf = new Map<string, { core: THREE.Points; halo: THREE.Points }>();
 
@@ -967,7 +1218,8 @@ async function boot() {
 
   const meshOf = new Map<string, THREE.Mesh | THREE.Points>();
   const glowOf = new Map<string, THREE.Sprite>();
-  let geoShared: THREE.BufferGeometry = nodeStyle === "dodecahedron" ? dodecaGeo() : sphereGeo();
+  let geoShared: THREE.BufferGeometry =
+    nodeStyle === "dodecahedron" ? dodecaGeo() : sphereGeo();
 
   graph.nodeThreeObjectExtend(false).nodeThreeObject((n: GNode) => {
     const group = new THREE.Group();
@@ -985,8 +1237,14 @@ async function boot() {
           depthWrite: false,
           sizeAttenuation: true,
         });
-      const core = new THREE.Points(coreGeo, glowMat(r * 0.34 * pcSizeNorm(), 0.85 * pcOpacityNorm()));
-      const halo = new THREE.Points(haloGeo, glowMat(r * 0.22 * pcSizeNorm(), 0.5 * pcOpacityNorm()));
+      const core = new THREE.Points(
+        coreGeo,
+        glowMat(r * 0.34 * pcSizeNorm(), 0.85 * pcOpacityNorm()),
+      );
+      const halo = new THREE.Points(
+        haloGeo,
+        glowMat(r * 0.22 * pcSizeNorm(), 0.5 * pcOpacityNorm()),
+      );
       core.scale.setScalar(r * 1.25);
       halo.scale.setScalar(r * 1.25);
       // per-node phase + tilt so the field doesn't spin in lockstep
@@ -1000,7 +1258,11 @@ async function boot() {
     } else if (nodeStyle === "dodecahedron") {
       mesh = new THREE.Mesh(
         geoShared,
-        new THREE.MeshStandardMaterial({ flatShading: true, metalness: 0.25, roughness: 0.4 })
+        new THREE.MeshStandardMaterial({
+          flatShading: true,
+          metalness: 0.25,
+          roughness: 0.4,
+        }),
       );
       mesh.scale.setScalar(r);
     } else if (nodeStyle === "starlight") {
@@ -1012,7 +1274,7 @@ async function boot() {
           transparent: true,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
-        })
+        }),
       );
       glow.scale.setScalar(r * 3);
       group.add(glow);
@@ -1028,7 +1290,8 @@ async function boot() {
   });
 
   // rgba()/hex -> color + alpha (dim states use rgba strings)
-  const RGBA_RE = /^rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)$/;
+  const RGBA_RE =
+    /^rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)$/;
   const WHITE = new THREE.Color(1, 1, 1);
   const parseColor = (s: string): { color: THREE.Color; opacity: number } => {
     const m = s.match(RGBA_RE);
@@ -1075,8 +1338,10 @@ async function boot() {
     // three.js frees GPU buffers only on dispose(); without it,
     // every style/quality/count switch strands the old geometries and ~1.8k
     // per-node materials in VRAM. (glowTex is shared and deliberately kept.)
-    for (const mesh of meshOf.values()) (mesh.material as THREE.Material).dispose();
-    for (const { core } of spinOf.values()) (core.material as THREE.Material).dispose();
+    for (const mesh of meshOf.values())
+      (mesh.material as THREE.Material).dispose();
+    for (const { core } of spinOf.values())
+      (core.material as THREE.Material).dispose();
     for (const glow of glowOf.values()) glow.material.dispose();
     geoShared.dispose();
     coreGeo.dispose();
@@ -1136,7 +1401,8 @@ async function boot() {
       if (fpsReport && nowMs - reportStart > 4000) reportSamples.push(fps); // skip warm-up
       if (fpsReport && !reported && reportSamples.length >= 6) {
         reported = true;
-        const avg = reportSamples.reduce((a, b) => a + b, 0) / reportSamples.length;
+        const avg =
+          reportSamples.reduce((a, b) => a + b, 0) / reportSamples.length;
         fetch("/api/fpslog", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1227,7 +1493,7 @@ async function boot() {
     graph.cameraPosition(
       { x: (n.x ?? 0) * k, y: (n.y ?? 0) * k, z: (n.z ?? 0) * k },
       { x: n.x ?? 0, y: n.y ?? 0, z: n.z ?? 0 },
-      ms
+      ms,
     );
   }
 
@@ -1250,7 +1516,9 @@ async function boot() {
   async function openReader(n: GNode) {
     const reader = $("#reader");
     $("#reader-title").textContent = n.title;
-    $("#reader-path").textContent = n.phantom ? "unwritten — linked but not yet created" : n.id;
+    $("#reader-path").textContent = n.phantom
+      ? "unwritten — linked but not yet created"
+      : n.id;
     reader.classList.remove("hidden");
     const body = $("#reader-body");
     if (n.phantom) {
@@ -1270,7 +1538,7 @@ async function boot() {
       const prepped = stripped.replace(
         /\[\[([^\]|#\n]+)(?:#[^\]|\n]*)?(?:\|([^\]\n]*))?\]\]/g,
         (_m: string, target: string, alias?: string) =>
-          `<a class="wiki" data-target="${target.trim().replace(/"/g, "&quot;")}">${alias ?? target}</a>`
+          `<a class="wiki" data-target="${target.trim().replace(/"/g, "&quot;")}">${alias ?? target}</a>`,
       );
       body.innerHTML = await marked.parse(prepped);
     } catch {
@@ -1282,7 +1550,8 @@ async function boot() {
     const a = (e.target as HTMLElement).closest("a.wiki") as HTMLElement | null;
     if (!a) return;
     const t = (a.dataset.target ?? "").toLowerCase();
-    const node = byBasename.get(t.split("/").pop()!) ?? byId.get(`phantom:${t}`);
+    const node =
+      byBasename.get(t.split("/").pop()!) ?? byId.get(`phantom:${t}`);
     if (node) select(node);
   });
 
@@ -1301,9 +1570,12 @@ async function boot() {
       left: number;
       top: number;
     }
-    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+    const clamp = (v: number, lo: number, hi: number) =>
+      Math.max(lo, Math.min(hi, v));
 
-    const saved: ReaderGeom | null = JSON.parse(localStorage.getItem("akasha-reader") ?? "null");
+    const saved: ReaderGeom | null = JSON.parse(
+      localStorage.getItem("akasha-reader") ?? "null",
+    );
     const geom: ReaderGeom = saved ?? {
       floating: false,
       width: Math.min(440, window.innerWidth * 0.42),
@@ -1311,7 +1583,8 @@ async function boot() {
       left: 80,
       top: 60,
     };
-    const persist = () => localStorage.setItem("akasha-reader", JSON.stringify(geom));
+    const persist = () =>
+      localStorage.setItem("akasha-reader", JSON.stringify(geom));
 
     function applyGeom() {
       geom.width = clamp(geom.width, 280, window.innerWidth - 40);
@@ -1319,7 +1592,11 @@ async function boot() {
       reader.classList.toggle("floating", geom.floating);
       if (geom.floating) {
         geom.height = clamp(geom.height, 220, window.innerHeight - 24);
-        geom.left = clamp(geom.left, 12 - geom.width + 80, window.innerWidth - 80);
+        geom.left = clamp(
+          geom.left,
+          12 - geom.width + 80,
+          window.innerWidth - 80,
+        );
         geom.top = clamp(geom.top, 0, window.innerHeight - 48);
         reader.style.left = geom.left + "px";
         reader.style.top = geom.top + "px";
@@ -1337,26 +1614,29 @@ async function boot() {
     applyGeom();
 
     // generic pointer-drag helper (pointer capture handles mouseup outside)
-    const dragOp = (
-      onMove: (dx: number, dy: number) => void,
-      cls: "dragging" | "resizing"
-    ) => (down: PointerEvent) => {
-      down.preventDefault();
-      const startX = down.clientX;
-      const startY = down.clientY;
-      const el = down.currentTarget as HTMLElement;
-      el.setPointerCapture(down.pointerId);
-      reader.classList.add(cls);
-      const move = (e: PointerEvent) => onMove(e.clientX - startX, e.clientY - startY);
-      const up = () => {
-        el.removeEventListener("pointermove", move);
-        el.removeEventListener("pointerup", up);
-        reader.classList.remove(cls);
-        persist();
+    const dragOp =
+      (
+        onMove: (dx: number, dy: number) => void,
+        cls: "dragging" | "resizing",
+      ) =>
+      (down: PointerEvent) => {
+        down.preventDefault();
+        const startX = down.clientX;
+        const startY = down.clientY;
+        const el = down.currentTarget as HTMLElement;
+        el.setPointerCapture(down.pointerId);
+        reader.classList.add(cls);
+        const move = (e: PointerEvent) =>
+          onMove(e.clientX - startX, e.clientY - startY);
+        const up = () => {
+          el.removeEventListener("pointermove", move);
+          el.removeEventListener("pointerup", up);
+          reader.classList.remove(cls);
+          persist();
+        };
+        el.addEventListener("pointermove", move);
+        el.addEventListener("pointerup", up);
       };
-      el.addEventListener("pointermove", move);
-      el.addEventListener("pointerup", up);
-    };
 
     // left-edge: width resize (works docked and floating)
     {
@@ -1435,10 +1715,13 @@ async function boot() {
     if (n.phantom) return;
     const file = n.id.replace(/\.md$/i, "");
     window.location.href = `obsidian://open?vault=${encodeURIComponent(
-      data.meta.vaultName
+      data.meta.vaultName,
     )}&file=${encodeURIComponent(file)}`;
   };
-  $("#open-obsidian").addEventListener("click", () => selected && openInObsidian(selected));
+  $("#open-obsidian").addEventListener(
+    "click",
+    () => selected && openInObsidian(selected),
+  );
   graph.onNodeRightClick((n: GNode) => openInObsidian(n));
   let lastClick = 0;
   let lastClickId = "";
@@ -1451,7 +1734,8 @@ async function boot() {
   });
 
   // --- topbar stats ---
-  $("#brand-stats").textContent = `${data.meta.notes.toLocaleString()} notes · ${data.meta.links.toLocaleString()} links`;
+  $("#brand-stats").textContent =
+    `${data.meta.notes.toLocaleString()} notes · ${data.meta.links.toLocaleString()} links`;
 
   // --- legend (rebuilt on theme/group/color changes) ---
   // Each swatch is a color picker: pick your own group colors, persisted.
@@ -1505,10 +1789,13 @@ async function boot() {
   });
 
   // --- controls ---
-  ($("#toggle-phantoms") as HTMLInputElement).addEventListener("change", (e) => {
-    showPhantoms = (e.target as HTMLInputElement).checked;
-    refreshVisibility();
-  });
+  ($("#toggle-phantoms") as HTMLInputElement).addEventListener(
+    "change",
+    (e) => {
+      showPhantoms = (e.target as HTMLInputElement).checked;
+      refreshVisibility();
+    },
+  );
   ($("#toggle-orphans") as HTMLInputElement).addEventListener("change", (e) => {
     showOrphans = (e.target as HTMLInputElement).checked;
     refreshVisibility();
@@ -1538,7 +1825,9 @@ async function boot() {
   });
 
   // ---- filters panel ----
-  $("#filters-btn").addEventListener("click", () => $("#filters").classList.toggle("hidden"));
+  $("#filters-btn").addEventListener("click", () =>
+    $("#filters").classList.toggle("hidden"),
+  );
   {
     const modeBtn = $("#filter-mode") as HTMLButtonElement;
     const input = $("#filter-input") as HTMLInputElement;
@@ -1596,13 +1885,17 @@ async function boot() {
         });
         row.addEventListener("dragend", () => {
           dragFrom = -1;
-          list.querySelectorAll(".filter-row").forEach((e) => e.classList.remove("dragging", "drop-target"));
+          list
+            .querySelectorAll(".filter-row")
+            .forEach((e) => e.classList.remove("dragging", "drop-target"));
         });
         row.addEventListener("dragover", (e) => {
           e.preventDefault();
           row.classList.add("drop-target");
         });
-        row.addEventListener("dragleave", () => row.classList.remove("drop-target"));
+        row.addEventListener("dragleave", () =>
+          row.classList.remove("drop-target"),
+        );
         row.addEventListener("drop", (e) => {
           e.preventDefault();
           row.classList.remove("drop-target");
@@ -1619,7 +1912,9 @@ async function boot() {
     }
 
     const setLive = () => {
-      liveFilter = input.value.trim() ? { mode: liveMode, pattern: input.value } : null;
+      liveFilter = input.value.trim()
+        ? { mode: liveMode, pattern: input.value }
+        : null;
       clearTimeout(debounce);
       debounce = window.setTimeout(applyFilters, 70);
     };
@@ -1654,8 +1949,14 @@ async function boot() {
   }
 
   // ---- display settings panel ----
-  $("#settings-btn").addEventListener("click", () => $("#settings").classList.toggle("hidden"));
-  const bindRange = (id: string, fmt: (v: number) => string, apply: (v: number) => void) => {
+  $("#settings-btn").addEventListener("click", () =>
+    $("#settings").classList.toggle("hidden"),
+  );
+  const bindRange = (
+    id: string,
+    fmt: (v: number) => string,
+    apply: (v: number) => void,
+  ) => {
     const el = $(`#${id}`) as HTMLInputElement;
     el.addEventListener("input", () => {
       const v = Number(el.value);
@@ -1689,7 +1990,8 @@ async function boot() {
   bindWeight("w-contrast", "contrast");
 
   const pcSel = $("#pc") as HTMLSelectElement;
-  pcSel.value = pcExplicit && pcExplicit !== "auto" ? String(particleCount) : "auto";
+  pcSel.value =
+    pcExplicit && pcExplicit !== "auto" ? String(particleCount) : "auto";
   if (pcSel.value === "") pcSel.value = "auto"; // value not among presets
   pcSel.addEventListener("change", () => {
     if (pcSel.value === "auto") {
@@ -1701,7 +2003,11 @@ async function boot() {
     }
     if (nodeStyle === "particles") rebuildNodes();
   });
-  bindRange("link-opacity", (v) => `${v}%`, (v) => (lineMat.opacity = v / 100));
+  bindRange(
+    "link-opacity",
+    (v) => `${v}%`,
+    (v) => (lineMat.opacity = v / 100),
+  );
   bindRange("min-weight", String, (v) => {
     minWeight = v;
     refreshVisibility();
@@ -1726,7 +2032,8 @@ async function boot() {
       `<span class="result-main"><span>${n.title}</span>` +
       (snippetText ? `<span class="snippet"></span>` : "") +
       `</span><span class="count">${n.pillar}</span>`;
-    if (snippetText) (row.querySelector(".snippet") as HTMLElement).textContent = snippetText;
+    if (snippetText)
+      (row.querySelector(".snippet") as HTMLElement).textContent = snippetText;
     row.addEventListener("click", () => {
       select(n);
       results.innerHTML = "";
@@ -1764,7 +2071,7 @@ async function boot() {
     searchTimer = setTimeout(async () => {
       try {
         const hits: Array<{ id: string; snippet: string }> = await fetch(
-          `/api/search?q=${encodeURIComponent(q)}`
+          `/api/search?q=${encodeURIComponent(q)}`,
         ).then((r) => r.json());
         if (token !== searchToken) return; // stale response
         for (const h of hits) {
@@ -1779,7 +2086,9 @@ async function boot() {
       }
     }, 220);
   };
-  searchBox.addEventListener("input", () => renderResults(searchBox.value.trim()));
+  searchBox.addEventListener("input", () =>
+    renderResults(searchBox.value.trim()),
+  );
   searchBox.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       (results.firstElementChild as HTMLElement | null)?.click();
@@ -1803,7 +2112,10 @@ async function boot() {
     });
     // standard menubar behavior: once one menu is open, hover switches
     label.addEventListener("mouseenter", () => {
-      if (menus.some((x) => x.classList.contains("open")) && !m.classList.contains("open")) {
+      if (
+        menus.some((x) => x.classList.contains("open")) &&
+        !m.classList.contains("open")
+      ) {
         closeMenus();
         m.classList.add("open");
       }
@@ -1828,12 +2140,12 @@ async function boot() {
     closeMenus();
     showModal(
       full ? "Full rescan…" : "Rescanning vault…",
-      '<p class="muted">Re-reading the vault and rebuilding the graph…</p>'
+      '<p class="muted">Re-reading the vault and rebuilding the graph…</p>',
     );
     try {
-      const r = await fetch(`/api/rescan${full ? "?full=true" : ""}`, { method: "POST" }).then(
-        (x) => x.json()
-      );
+      const r = await fetch(`/api/rescan${full ? "?full=true" : ""}`, {
+        method: "POST",
+      }).then((x) => x.json());
       if (!r.ok) throw new Error(r.error);
       // reload picks up the new graph; the layout cache is fingerprint-keyed,
       // so an unchanged vault comes back instantly with the same layout.
@@ -1841,7 +2153,7 @@ async function boot() {
     } catch {
       showModal(
         "Rescan failed",
-        "<p>Could not rescan. The server needs access to the original vault path.</p>"
+        "<p>Could not rescan. The server needs access to the original vault path.</p>",
       );
     }
   }
@@ -1851,7 +2163,7 @@ async function boot() {
   $("#mi-export").addEventListener("click", () => {
     closeMenus();
     const a = document.createElement("a");
-    a.download = `akasha-${data.meta.vaultName ?? "vault"}-${new Date().toISOString().slice(0, 10)}.png`;
+    a.download = `solaris-${data.meta.vaultName ?? "vault"}-${new Date().toISOString().slice(0, 10)}.png`;
     a.href = graph.renderer().domElement.toDataURL("image/png");
     a.click();
   });
@@ -1907,11 +2219,14 @@ async function boot() {
   $("#mi-copyfocus").addEventListener("click", () => {
     closeMenus();
     if (!selected) {
-      showModal("No note selected", "<p>Click a node first, then copy a link to it.</p>");
+      showModal(
+        "No note selected",
+        "<p>Click a node first, then copy a link to it.</p>",
+      );
       return;
     }
     navigator.clipboard.writeText(
-      `${window.location.origin}/?focus=${encodeURIComponent(selected.title)}`
+      `${window.location.origin}/?focus=${encodeURIComponent(selected.title)}`,
     );
   });
   $("#mi-obsidian").addEventListener("click", () => {
@@ -1935,15 +2250,15 @@ async function boot() {
         <tr><td>Open in Obsidian</td><td>double-click or right-click a node</td></tr>
         <tr><td>Clear selection</td><td><kbd>Esc</kbd></td></tr>
         <tr><td>Focus depth</td><td>1–3 in the bottom bar (local-graph radius)</td></tr>
-      </table>`
+      </table>`,
     );
   });
   $("#mi-about").addEventListener("click", () => {
     closeMenus();
     const m = data.meta;
     showModal(
-      "About Akasha",
-      `<p><b>Akasha</b> — आकाश — your vault as a navigable 3D universe.</p>
+      "About Solaris",
+      `<p><b>Solaris</b> — your vault as a navigable 3D universe.</p>
        <table>
         <tr><td>Vault</td><td>${m.vaultName ?? "—"}</td></tr>
         <tr><td>Notes</td><td>${m.notes.toLocaleString()}</td></tr>
@@ -1951,7 +2266,7 @@ async function boot() {
         <tr><td>Unwritten targets</td><td>${m.phantoms.toLocaleString()}</td></tr>
         <tr><td>Last scanned</td><td>${new Date(m.scannedAt).toLocaleString()}</td></tr>
        </table>
-       <p class="muted" style="margin-bottom:0">MIT licensed · built with three.js</p>`
+       <p class="muted" style="margin-bottom:0">MIT licensed · built with three.js</p>`,
     );
   });
 

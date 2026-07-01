@@ -1,4 +1,4 @@
-# Akasha
+# Solaris
 
 **Your Vault as a navigable 3D universe.**
 
@@ -22,7 +22,7 @@ camera approaches. [Watch in HD (mp4).](assets/flythrough.mp4)*
 
 ## What it is
 
-Akasha (Sanskrit: *ākāśa*, "the ether, the space that holds everything") scans any
+Solaris scans any
 **folder of Markdown files connected by links** and renders the link graph as an
 interactive force-directed map in WebGL: rotate it, fly through it, read any note
 without leaving the map. It reads both link styles: Obsidian `[[wiki links]]`
@@ -33,11 +33,11 @@ deep links into Obsidian are an optional convenience.
 
 ## Why I made it
 
-Obsidian renders vaults and notes in 2d. When visualizing large data sets, 3d visualizations are often needed for seeing patterns at scale or discovering intersections. Akasha seeks to solve that problem by providing the ability to traverse and visualize your second brain in a 3d navigatable space.  
+Obsidian renders vaults and notes in 2d. When visualizing large data sets, 3d visualizations are often needed for seeing patterns at scale or discovering intersections. Solaris seeks to solve that problem by providing the ability to traverse and visualize your second brain in a 3d navigatable space.  
 
 ## Reads Google's Open Knowledge Format
 
-Point Akasha at an [Open Knowledge Format](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing/)
+Point Solaris at an [Open Knowledge Format](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing/)
 bundle — Google Cloud's open spec for markdown knowledge — and it renders like any
 vault: concepts become nodes, the `[name](path.md)` links become edges, and the whole
 bundle becomes a navigable 3D graph.
@@ -46,7 +46,7 @@ bundle becomes a navigable 3D graph.
 npx akasha-graph "C:/path/to/okf-bundle"
 ```
 
-Akasha reads OKF frontmatter fully: each concept is labeled by its `title` (falling back
+Solaris reads OKF frontmatter fully: each concept is labeled by its `title` (falling back
 to the filename), and its `type`, `tags`, and `description` are carried into the graph.
 Markdown links between concepts become the edges; the folder hierarchy becomes the
 pillars.
@@ -74,7 +74,7 @@ For development (hot reload): `npm run dev` and open http://localhost:5173.
 npm run desktop
 ```
 
-Builds the frontend, bundles the Electron main process, and opens Akasha as a
+Builds the frontend, bundles the Electron main process, and opens Solaris as a
 native window with hardware acceleration unlocked (GPU rasterization,
 zero-copy uploads, no GPU blocklist, `powerPreference: high-performance`). The
 20k-link scene, bloom, and particles all render on the dedicated GPU.
@@ -86,7 +86,7 @@ localhost-only port.
 
 ## How it works
 
-```
+```python
 scanner/   walks the vault, resolves [[wiki links]] by basename (case-
            insensitive, like Obsidian) and standard [markdown](links.md) by
            relative path (the OKF link style), emits data/graph.json: nodes,
@@ -137,7 +137,7 @@ colors, and clusters derive from your folder structure and your links.
 
 ### Built for massive vaults
 
-Akasha holds the entire graph in view and stays interactive as vaults grow into
+Solaris holds the entire graph in view and stays interactive as vaults grow into
 the thousands of notes. Below, the same vault from another angle, ~20k links,
 every node and edge rendered at once:
 
@@ -145,7 +145,7 @@ every node and edge rendered at once:
   <img src="assets/big-vault.png" alt="A 1,800-note vault rendered dense, clusters and cross-links visible" width="100%">
 </p>
 
-Akasha keeps rescan and render cost proportional to what changed:
+Solaris keeps rescan and render cost proportional to what changed:
 
 - **Incremental rescans**: the scanner caches per-file parse results by mtime+size
   (`scan-cache.json`) and re-reads only the files that changed.

@@ -45,7 +45,8 @@ interface Settings {
   excludes: string[];
 }
 
-const settingsPath = () => resolve(app.getPath("userData"), "akasha-settings.json");
+const settingsPath = () =>
+  resolve(app.getPath("userData"), "akasha-settings.json");
 
 function loadSettings(): Settings {
   try {
@@ -74,14 +75,14 @@ async function pickAndScanVault(): Promise<boolean> {
     properties: ["openDirectory"],
   });
   if (result.canceled || !result.filePaths[0]) return false;
-  
+
   const vault = result.filePaths[0];
   const settings = loadSettings();
-  
+
   // Scan vault (incremental by default; only changed files are re-parsed)
   const g = scanVault({ vault, out: GRAPH_PATH, exclude: settings.excludes });
   server?.reload(); // Hot-swap graph if server already running
-  
+
   // Show scan results to user
   const s = g.meta.scanStats;
   await dialog.showMessageBox({
@@ -99,17 +100,21 @@ async function pickAndScanVault(): Promise<boolean> {
 function rescanCurrentVault() {
   if (!server) return;
   const m = server.meta();
-  
+
   if (!existsSync(m.vaultPath)) {
     dialog.showErrorBox("Vault missing", `Cannot find ${m.vaultPath}`);
     return;
   }
-  
+
   // Scan only changed files
-  const g = scanVault({ vault: m.vaultPath, out: GRAPH_PATH, exclude: m.excludes ?? [] });
+  const g = scanVault({
+    vault: m.vaultPath,
+    out: GRAPH_PATH,
+    exclude: m.excludes ?? [],
+  });
   server.reload(); // Hot-swap graph
   win?.reload(); // Reload frontend
-  win?.setTitle(`Akasha — ${g.meta.vaultName} (${g.meta.notes} notes)`);
+  win?.setTitle(`Solaris — ${g.meta.vaultName} (${g.meta.notes} notes)`);
 }
 
 function buildMenu() {
@@ -124,7 +129,7 @@ function buildMenu() {
             if (await pickAndScanVault()) {
               win?.reload();
               const m = server!.meta();
-              win?.setTitle(`Akasha — ${m.vaultName} (${m.notes} notes)`);
+              win?.setTitle(`Solaris — ${m.vaultName} (${m.notes} notes)`);
             }
           },
         },
@@ -185,7 +190,7 @@ async function start() {
       width: 1680,
       height: 1000,
       backgroundColor: "#070a10",
-      title: `Akasha — ${m.vaultName} (${m.notes} notes)`,
+      title: `Solaris — ${m.vaultName} (${m.notes} notes)`,
       autoHideMenuBar: false,
       webPreferences: {
         contextIsolation: true,
