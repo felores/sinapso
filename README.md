@@ -1,4 +1,6 @@
-# Solaris
+<div align="center">
+<img src="assets/title.svg" alt="Solaris" width="760" />
+</div>
 
 **Your Vault as a navigable 3D universe.**
 
