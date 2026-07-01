@@ -38,6 +38,34 @@
           <div class="mi-group" id="mi-themes"></div>
           <hr />
           <div class="mi-group" id="mi-gfx"></div>
+          <hr />
+          <div class="mi-group" id="mi-controls">
+            <label class="ctl"><input type="checkbox" id="toggle-glow" checked /> glow</label>
+            <label class="ctl"><input type="checkbox" id="toggle-labels" checked /> labels</label>
+            <label class="ctl"><input type="checkbox" id="toggle-phantoms" /> unwritten</label>
+            <label class="ctl"><input type="checkbox" id="toggle-orphans" checked /> orphans</label>
+            <label class="ctl">focus depth
+              <select id="depth">
+                <option value="1">1</option>
+                <option value="2" selected>2</option>
+                <option value="3">3</option>
+              </select>
+            </label>
+            <label class="ctl">group by
+              <select id="group">
+                <option value="folder">folder</option>
+                <option value="tag">tag</option>
+              </select>
+            </label>
+            <label class="ctl">nodes
+              <select id="nodes">
+                <option value="classic">classic</option>
+                <option value="dodecahedron">dodecahedron</option>
+                <option value="starlight">starlight</option>
+                <option value="particles">particles</option>
+              </select>
+            </label>
+          </div>
         </div>
       </div>
       <div class="menu">
@@ -62,7 +90,6 @@
       <input id="search" type="search" placeholder="Search notes…  (press /)" autocomplete="off" />
       <div id="search-results"></div>
     </div>
-    <span id="brand-stats"></span>
   </header>
 
   <div id="modal-backdrop" class="hidden">
@@ -74,56 +101,10 @@
 
   <!-- legend moved into the Layers menu above -->
 
-  <div id="controls">
-    <label><input type="checkbox" id="toggle-glow" checked /> glow</label>
-    <label><input type="checkbox" id="toggle-labels" checked /> labels</label>
-    <label><input type="checkbox" id="toggle-phantoms" /> unwritten notes</label>
-    <label><input type="checkbox" id="toggle-orphans" checked /> orphans</label>
-    <label>focus depth
-      <select id="depth">
-        <option value="1">1</option>
-        <option value="2" selected>2</option>
-        <option value="3">3</option>
-      </select>
-    </label>
-    <label>group by
-      <select id="group">
-        <option value="folder">folder</option>
-        <option value="tag">tag</option>
-      </select>
-    </label>
-    <label>graphics
-      <select id="gfx">
-        <option value="low">low</option>
-        <option value="medium">med</option>
-        <option value="high">high</option>
-      </select>
-    </label>
-    <label>nodes
-      <select id="nodes">
-        <option value="classic">classic</option>
-        <option value="dodecahedron">dodecahedron</option>
-        <option value="starlight">starlight</option>
-        <option value="particles">particles</option>
-      </select>
-    </label>
-    <label>theme
-      <select id="theme">
-        <option value="midnight">midnight</option>
-        <option value="gilded">gilded</option>
-        <option value="manuscript">manuscript</option>
-        <option value="notebook">notebook</option>
-        <option value="cosmos">cosmos</option>
-        <option value="dracula">dracula</option>
-        <option value="nord">nord</option>
-        <option value="tokyonight">tokyo night</option>
-        <option value="gruvbox">gruvbox</option>
-        <option value="monokai">monokai</option>
-      </select>
-    </label>
-    <button id="filters-btn" title="Filter which nodes show">⛃ filters</button>
+  <button id="filters-btn" title="Filter which nodes show">⛃ filters</button>
+  <div id="corner-br">
+    <span id="brand-stats"></span>
     <button id="settings-btn" title="Display settings">⚙ settings</button>
-    <span id="hint">drag rotate · arrows fly · scroll/± zoom · right-drag/shift+arrows pan · click focus · dbl-click → Obsidian · esc clear</span>
   </div>
 
   <aside id="settings" class="hidden">

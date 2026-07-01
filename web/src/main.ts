@@ -1805,13 +1805,6 @@ async function boot() {
     glowOn = (e.target as HTMLInputElement).checked;
     bloom.enabled = glowOn && QUALITY[quality].bloom;
   });
-  const gfxSel = $("#gfx") as HTMLSelectElement;
-  gfxSel.value = quality;
-  gfxSel.addEventListener("change", () => applyQuality(gfxSel.value as QKey));
-
-  const themeSel = $("#theme") as HTMLSelectElement;
-  themeSel.value = theme;
-  themeSel.addEventListener("change", () => applyTheme(themeSel.value));
   applyTheme(theme); // sync CSS vars + scene for the persisted choice
 
   const nodesSel = $("#nodes") as HTMLSelectElement;
@@ -2194,7 +2187,6 @@ async function boot() {
     b.textContent = `Theme: ${t.label}`;
     b.addEventListener("click", () => {
       applyTheme(k);
-      ($("#theme") as HTMLSelectElement).value = theme;
       syncRadioGroups();
     });
     $("#mi-themes").appendChild(b);
@@ -2205,7 +2197,6 @@ async function boot() {
     b.textContent = `Graphics: ${k}`;
     b.addEventListener("click", () => {
       applyQuality(k);
-      ($("#gfx") as HTMLSelectElement).value = k;
       syncRadioGroups();
     });
     $("#mi-gfx").appendChild(b);
