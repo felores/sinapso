@@ -1586,6 +1586,20 @@ async function boot() {
     const persist = () =>
       localStorage.setItem("akasha-reader", JSON.stringify(geom));
 
+    // dock/undock icon: docked shows "float free", floating shows "dock to edge"
+    const DOCK_SVG =
+      '<svg viewBox="0 0 16 16" width="15" height="15"><rect x="1.5" y="1.5" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="4" width="3.5" height="8" fill="currentColor"/></svg>';
+    const UNDOCK_SVG =
+      '<svg viewBox="0 0 16 16" width="15" height="15"><rect x="1.5" y="1.5" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="5" y="5" width="6" height="6" fill="currentColor"/></svg>';
+    const dockBtn = $("#reader-dock");
+    let dockIconState: boolean | null = null;
+    function updateDockIcon() {
+      if (dockIconState === geom.floating) return;
+      dockIconState = geom.floating;
+      dockBtn.innerHTML = geom.floating ? DOCK_SVG : UNDOCK_SVG;
+      dockBtn.title = geom.floating ? "Dock to right edge" : "Undock (float)";
+    }
+
     function applyGeom() {
       geom.width = clamp(geom.width, 280, window.innerWidth - 40);
       reader.style.width = geom.width + "px";
@@ -1610,8 +1624,15 @@ async function boot() {
         reader.style.bottom = "0";
         reader.style.height = "auto";
       }
+      updateDockIcon();
     }
     applyGeom();
+
+    dockBtn.addEventListener("click", () => {
+      geom.floating = !geom.floating;
+      applyGeom();
+      persist();
+    });
 
     // generic pointer-drag helper (pointer capture handles mouseup outside)
     const dragOp =

@@ -262,7 +262,8 @@ html, body {
 #corner-br {
   position: fixed;
   bottom: 14px;
-  right: 18px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 12;
   display: flex;
   align-items: center;
@@ -498,6 +499,16 @@ html, body {
   cursor: pointer;
 }
 #reader-actions button:hover { border-color: var(--accent); }
+#reader-actions .reader-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+#reader-actions .reader-icon svg { display: block; }
 
 #reader-body {
   padding: 14px 18px 30px;
