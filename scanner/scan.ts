@@ -26,7 +26,14 @@
  * the machine.
  */
 
-import { readdirSync, readFileSync, statSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import {
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+} from "node:fs";
 import { resolve, relative, sep, dirname } from "node:path";
 import { createHash } from "node:crypto";
 
@@ -39,6 +46,11 @@ const DEFAULT_EXCLUDES = [
   "Raw",
   "graphify-out",
   "node_modules",
+  ".firecrawl",
+  ".gsd",
+  ".n8n",
+  ".opencode",
+  "history",
 ];
 
 // Operational files at the vault root that aren't knowledge notes.
@@ -178,10 +190,16 @@ function parseFrontmatter(text: string): Frontmatter {
     const key = line.slice(0, idx).trim().toLowerCase();
     let val = line.slice(idx + 1).trim();
     if (key === "tags") {
-      const inner = val.startsWith("[") && val.endsWith("]") ? val.slice(1, -1) : val;
+      const inner =
+        val.startsWith("[") && val.endsWith("]") ? val.slice(1, -1) : val;
       fm.tags = inner
         .split(",")
-        .map((t) => t.trim().replace(/^['"]|['"]$/g, "").toLowerCase())
+        .map((t) =>
+          t
+            .trim()
+            .replace(/^['"]|['"]$/g, "")
+            .toLowerCase(),
+        )
         .filter(Boolean);
     } else if (key === "title" || key === "type" || key === "description") {
       val = val.replace(/^['"]|['"]$/g, "");
@@ -215,7 +233,8 @@ function resolveMdLink(dir: string, target: string): string | null {
   } catch {
     // leave the raw target if it isn't valid percent-encoding
   }
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t) || /^(mailto|tel):/i.test(t)) return null;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t) || /^(mailto|tel):/i.test(t))
+    return null;
   if (!/\.md$/i.test(t)) return null;
   const joined = t.startsWith("/") ? t.slice(1) : dir ? dir + "/" + t : t;
   const norm = normalizeRelPath(joined).replace(/\.md$/i, "");
@@ -223,7 +242,9 @@ function resolveMdLink(dir: string, target: string): string | null {
 }
 
 function walk(root: string, excludes: string[]): FileStat[] {
-  const excludeSet = new Set(excludes.map((e) => e.replace(/\\/g, "/").toLowerCase()));
+  const excludeSet = new Set(
+    excludes.map((e) => e.replace(/\\/g, "/").toLowerCase()),
+  );
   const files: FileStat[] = [];
   const visit = (dir: string) => {
     for (const entry of readdirSync(dir)) {
@@ -234,7 +255,8 @@ function walk(root: string, excludes: string[]): FileStat[] {
       if (st.isDirectory()) {
         visit(full);
       } else if (entry.toLowerCase().endsWith(".md")) {
-        if (!rel.includes("/") && ROOT_FILE_EXCLUDES.has(entry.toLowerCase())) continue;
+        if (!rel.includes("/") && ROOT_FILE_EXCLUDES.has(entry.toLowerCase()))
+          continue;
         files.push({ rel, mtimeMs: st.mtimeMs, size: st.size });
       }
     }
@@ -244,7 +266,11 @@ function walk(root: string, excludes: string[]): FileStat[] {
   return files;
 }
 
-function loadCache(cachePath: string, vault: string, excludes: string[]): ScanCache | null {
+function loadCache(
+  cachePath: string,
+  vault: string,
+  excludes: string[],
+): ScanCache | null {
   if (!existsSync(cachePath)) return null;
   try {
     const c: ScanCache = JSON.parse(readFileSync(cachePath, "utf-8"));
@@ -272,8 +298,11 @@ export function scanVault(opts: ScanOptions): VaultGraph {
   // This optimization allows rescans of large vaults (~5k+ notes) to complete in <100ms
   // for unchanged content. Parser results are keyed by file mtime+size.
   const outPath = opts.out ? resolve(opts.out) : null;
-  const cachePath = outPath ? resolve(dirname(outPath), "scan-cache.json") : null;
-  const cache = cachePath && !opts.full ? loadCache(cachePath, vault, extraExcludes) : null;
+  const cachePath = outPath
+    ? resolve(dirname(outPath), "scan-cache.json")
+    : null;
+  const cache =
+    cachePath && !opts.full ? loadCache(cachePath, vault, extraExcludes) : null;
 
   const fileData = new Map<string, CachedFile>();
   let parsed = 0;
@@ -294,7 +323,9 @@ export function scanVault(opts: ScanOptions): VaultGraph {
     // Standard markdown links to .md files (the OKF link syntax). Resolved here
     // to a vault-relative path because the relative target depends on this
     // file's directory; the global resolver below then treats it path-first.
-    const dir = f.rel.includes("/") ? f.rel.slice(0, f.rel.lastIndexOf("/")) : "";
+    const dir = f.rel.includes("/")
+      ? f.rel.slice(0, f.rel.lastIndexOf("/"))
+      : "";
     for (const m of text.matchAll(MD_LINK)) {
       const t = resolveMdLink(dir, m[1]);
       if (t) links.push(t);
@@ -363,7 +394,7 @@ export function scanVault(opts: ScanOptions): VaultGraph {
   for (const [rel, fd] of fileData) {
     for (const raw of fd.links) {
       let target: string | undefined;
-      
+
       // Resolve link target: path-based ("folder/file") or basename-based ("file")
       if (raw.includes("/")) {
         target =
@@ -372,7 +403,7 @@ export function scanVault(opts: ScanOptions): VaultGraph {
       } else {
         target = byBasename.get(raw.toLowerCase());
       }
-      
+
       if (!target) {
         // Phantom node: linked target doesn't exist yet (user hasn't written it)
         // Obsidian displays these as unresolved links; we preserve them in the graph
@@ -391,9 +422,9 @@ export function scanVault(opts: ScanOptions): VaultGraph {
           unresolved++;
         }
       }
-      
+
       if (target === rel) continue; // Ignore self-links
-      
+
       // Use '|' as separator (illegal in filenames, so no collisions possible)
       const key = rel + "|" + target;
       edgeWeights.set(key, (edgeWeights.get(key) ?? 0) + 1);
@@ -413,7 +444,8 @@ export function scanVault(opts: ScanOptions): VaultGraph {
   // so unchanged rescans preserve node positions without re-running physics simulation
   const h = createHash("sha1");
   h.update(vault + "\0" + extraExcludes.join(",") + "\0");
-  for (const f of files) h.update(f.rel + "|" + f.mtimeMs + "|" + f.size + "\n");
+  for (const f of files)
+    h.update(f.rel + "|" + f.mtimeMs + "|" + f.size + "\n");
   const fingerprint = h.digest("hex").slice(0, 16);
 
   const pillars = [...new Set([...nodes.values()].map((n) => n.pillar))].sort();
@@ -460,7 +492,12 @@ export function scanVault(opts: ScanOptions): VaultGraph {
 // ---- CLI entry (skipped when imported, e.g. by the desktop app bundle) ----
 if (process.argv[1] && /scan\.(ts|mts|js|mjs)$/i.test(process.argv[1])) {
   const argv = process.argv.slice(2);
-  const args = { vault: "", out: "data/graph.json", exclude: [] as string[], full: false };
+  const args = {
+    vault: "",
+    out: "data/graph.json",
+    exclude: [] as string[],
+    full: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--out") args.out = argv[++i];
     else if (argv[i] === "--exclude") args.exclude.push(argv[++i]);
@@ -469,7 +506,7 @@ if (process.argv[1] && /scan\.(ts|mts|js|mjs)$/i.test(process.argv[1])) {
   }
   if (!args.vault) {
     console.error(
-      'usage: npm run scan -- "<vault-path>" [--out file] [--exclude rel/path]... [--full]'
+      'usage: npm run scan -- "<vault-path>" [--out file] [--exclude rel/path]... [--full]',
     );
     process.exit(1);
   }
@@ -484,6 +521,6 @@ if (process.argv[1] && /scan\.(ts|mts|js|mjs)$/i.test(process.argv[1])) {
   console.log(
     `\n${g.meta.notes} notes, ${g.meta.links} links (${g.meta.phantoms} phantom targets)` +
       `\n${s.ms}ms — ${s.parsed} parsed, ${s.reused} from cache, ${s.removed} removed` +
-      `\n-> ${resolve(process.cwd(), args.out)}`
+      `\n-> ${resolve(process.cwd(), args.out)}`,
   );
 }
