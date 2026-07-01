@@ -45,6 +45,7 @@
     "desktop:build": "vite build web && esbuild desktop/main.ts --bundle --platform=node --format=cjs --external:electron --external:express --outfile=desktop/dist/main.cjs",
     "desktop": "npm run desktop:build && electron .",
     "dist:desktop": "npm run desktop:build && electron-builder --win",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run typecheck && npm run build && npm run build:cli"
   },
@@ -55,6 +56,7 @@
     "3d-force-graph": "^1.77.0",
     "@types/express": "^5.0.0",
     "@types/node": "^24.0.0",
+    "@types/supertest": "^7.0.0",
     "@types/three": "^0.184.1",
     "concurrently": "^9.0.0",
     "electron": "^42.4.0",
