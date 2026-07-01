@@ -259,18 +259,20 @@ html, body {
 }
 #filters-btn:hover { border-color: var(--accent); }
 
-#corner-br {
+#brand-stats {
   position: fixed;
   bottom: 14px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 12;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  pointer-events: none;
 }
 
 #settings-btn {
+  position: fixed;
+  bottom: 14px;
+  right: 18px;
+  z-index: 12;
   background: var(--panel);
   color: var(--fg);
   border: 1px solid var(--border);
