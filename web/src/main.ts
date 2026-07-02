@@ -2321,6 +2321,14 @@ async function boot() {
     target.add(delta);
   })(lastFlyFrame);
 
+  // Toggle a bottom-bar checkbox by selector, running its wired change handler
+  // so all side effects (refreshVisibility, bloom.enabled, persistence) apply.
+  const flipCheck = (sel: string) => {
+    const cb = $(sel) as HTMLInputElement;
+    cb.checked = !cb.checked;
+    cb.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
   window.addEventListener("keydown", (e) => {
     const typing = document.activeElement === searchBox;
     if (e.key === "/" && !typing) {
@@ -2335,6 +2343,59 @@ async function boot() {
       else clearSelection();
       return;
     }
+    if (e.key === "f" && !typing) {
+      // toggle the Fullscreen API (same path as View -> Toggle Fullscreen).
+      // F11 is browser-reserved and can't be reliably intercepted from JS,
+      // so the app uses "f" (the web convention); desktop also keeps native F11.
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+      return;
+    }
+
+    const k = e.key.toLowerCase();
+    const bare = !e.ctrlKey && !e.metaKey && !e.altKey;
+    // bare-letter shortcuts (no modifiers), ignored while typing in search.
+    // Each triggers the same control the menu/bottom-bar uses, so behavior
+    // (and persistence) stays identical to clicking it.
+    if (bare && !typing) {
+      if (k === "r") {
+        $("#mi-resetcam").click();
+        return;
+      }
+      if (k === "g") {
+        flipCheck("#toggle-glow");
+        return;
+      }
+      if (k === "l") {
+        flipCheck("#toggle-labels");
+        return;
+      }
+      if (k === "u") {
+        flipCheck("#toggle-phantoms");
+        return;
+      }
+      if (k === "o") {
+        flipCheck("#toggle-orphans");
+        return;
+      }
+    }
+    // Ctrl/Cmd+C copies a link to the selected note — unless the user has a
+    // text selection, in which case the native copy wins.
+    if ((e.ctrlKey || e.metaKey) && !typing && k === "c") {
+      const s = window.getSelection?.();
+      if (s && s.toString().length) return;
+      e.preventDefault();
+      $("#mi-copyfocus").click();
+      return;
+    }
+    // Ctrl/Cmd+O opens the selected note in Obsidian. In the desktop build
+    // this is shadowed by File -> Open Vault (Cmd/Ctrl+O accelerator).
+    if ((e.ctrlKey || e.metaKey) && !typing && k === "o") {
+      e.preventDefault();
+      $("#mi-obsidian").click();
+      return;
+    }
+
     if (typing) return;
 
     shiftHeld = e.shiftKey;
