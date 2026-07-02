@@ -924,3 +924,12 @@ html, body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* send buttons: keep the icon centered inside the 22px square */
+.send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.send-btn svg { display: block; }

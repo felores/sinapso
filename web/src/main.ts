@@ -3381,10 +3381,22 @@ async function boot() {
   };
 
   window.addEventListener("keydown", (e) => {
-    const typing = document.activeElement === searchBox;
+    // Typing in ANY text field (search, web query, agent chat, Exa key,
+    // filters, model entry…) must never trigger app shortcuts.
+    const el = document.activeElement as HTMLElement | null;
+    const typing =
+      !!el &&
+      (el.tagName === "INPUT" ||
+        el.tagName === "TEXTAREA" ||
+        el.tagName === "SELECT" ||
+        el.isContentEditable);
     if (e.key === "/" && !typing) {
       e.preventDefault();
       searchBox.focus();
+      return;
+    }
+    if (e.key === "Escape" && typing && el !== searchBox) {
+      el.blur(); // step out of the field; next Escape works on the app
       return;
     }
     if (e.key === "Escape" && !typing) {

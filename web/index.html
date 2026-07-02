@@ -102,7 +102,7 @@
             <div class="integ-row" id="integ-opencode"><b>Agent (OpenCode)</b><span class="integ-status"></span><button class="integ-install hidden" data-tool="opencode" title="Install OpenCode; existing installs are never touched">install</button></div>
             <label class="integ-row">agent permissions
               <select id="agent-mode">
-                <option value="approval">approval (review each change)</option>
+                <option value="approval">needs approval</option>
                 <option value="full">full access</option>
               </select>
             </label>
@@ -224,7 +224,7 @@
     </div>
     <div class="filter-row filter-new">
       <input id="web-query" type="text" placeholder="pick a suggestion or type a query…" autocomplete="off" spellcheck="false" />
-      <button class="filter-pm" id="web-run" title="Run web research">→</button>
+      <button class="filter-pm send-btn" id="web-run" title="Run web research"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
     </div>
     <div id="web-error" class="hidden"></div>
     <div id="web-results"></div>
@@ -241,7 +241,7 @@
     <div id="agent-messages"></div>
     <div class="filter-row filter-new" id="agent-input-row">
       <input id="agent-input" type="text" placeholder="ask your vault…" autocomplete="off" spellcheck="false" />
-      <button class="filter-pm" id="agent-send" title="Send">→</button>
+      <button class="filter-pm send-btn" id="agent-send" title="Send"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
       <button class="filter-pm hidden" id="agent-stop" title="Stop the current turn">■</button>
     </div>
   </aside>
