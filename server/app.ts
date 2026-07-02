@@ -48,6 +48,7 @@ import {
 import {
   createOpencodeBridge,
   eventSessionId,
+  zenFreeModels,
   type OpencodeBridgeDeps,
 } from "./integrations/opencode.js";
 import { installAddons } from "./integrations/install.js";
@@ -585,6 +586,28 @@ export function createApp(
     } catch (e) {
       console.error("agent status failed:", e);
       res.status(500).json({ error: "agent status failed" });
+    }
+  });
+
+  // GET /api/agent/models: OpenCode Zen free models from the running
+  // instance + the configured model. Local-only read (no egress, no
+  // consent needed); opencode unavailable -> empty list, custom entry
+  // still works in the UI. Never hardcodes model names (R13).
+  app.get("/api/agent/models", async (_req, res) => {
+    try {
+      const cfg = loadConfig(configPath);
+      let free: ReturnType<typeof zenFreeModels> = [];
+      try {
+        const client = await agentBridge.ensureRunning();
+        const r = await client.config.providers();
+        free = zenFreeModels(r.data);
+      } catch {
+        // opencode missing or failed to boot; selector falls back to custom entry
+      }
+      res.json({ free, current: cfg.defaultModel });
+    } catch (e) {
+      console.error("agent models failed:", e);
+      res.status(500).json({ error: "agent models failed" });
     }
   });
 

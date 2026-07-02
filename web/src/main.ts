@@ -2275,8 +2275,7 @@ async function boot() {
     );
     if (integrations) {
       ($("#agent-mode") as HTMLSelectElement).value = integrations.agentMode;
-      ($("#agent-model") as HTMLInputElement).value =
-        integrations.defaultModel ?? "";
+      syncModelControls();
     }
   }
 
@@ -2323,11 +2322,74 @@ async function boot() {
     }
     postConfig({ agentMode: sel.value }).catch(() => refreshIntegrations());
   });
+  // Agent model combobox (F014): free Zen models from the running
+  // instance + a custom provider/model entry. Nothing hardcoded (R13).
   const agentModelInput = $("#agent-model") as HTMLInputElement;
+  const agentModelSelect = $("#agent-model-select") as HTMLSelectElement;
+  let modelsLoaded = false;
+
+  function syncModelControls() {
+    const current = integrations?.defaultModel ?? "";
+    const options = [...agentModelSelect.options].map((o) => o.value);
+    if (current && options.includes(current)) {
+      agentModelSelect.value = current;
+      agentModelInput.classList.add("hidden");
+    } else if (current) {
+      agentModelSelect.value = "__custom";
+      agentModelInput.classList.remove("hidden");
+      agentModelInput.value = current;
+    } else {
+      agentModelSelect.value = "";
+      agentModelInput.classList.add("hidden");
+    }
+  }
+
+  async function loadFreeModels() {
+    if (modelsLoaded) return;
+    modelsLoaded = true;
+    try {
+      const data: { free: Array<{ id: string; name: string }> } = await fetch(
+        "/api/agent/models",
+      ).then((r) => r.json());
+      const customOpt = agentModelSelect.querySelector(
+        'option[value="__custom"]',
+      )!;
+      for (const m of data.free) {
+        const opt = document.createElement("option");
+        opt.value = m.id;
+        opt.textContent = `${m.name} (free)`;
+        agentModelSelect.insertBefore(opt, customOpt);
+      }
+      syncModelControls(); // the configured model may now match a listed one
+    } catch {
+      modelsLoaded = false; // retry on next open
+    }
+  }
+  // Listing spawns the local opencode child (~2s); do it lazily on first use.
+  agentModelSelect.addEventListener("focus", () => void loadFreeModels());
+
+  agentModelSelect.addEventListener("change", () => {
+    if (agentModelSelect.value === "__custom") {
+      agentModelInput.classList.remove("hidden");
+      agentModelInput.focus();
+      return;
+    }
+    agentModelInput.classList.add("hidden");
+    postConfig({ defaultModel: agentModelSelect.value || null }).catch(() =>
+      refreshIntegrations(),
+    );
+  });
+
   agentModelInput.addEventListener("keydown", async (e) => {
     if (e.key !== "Enter") return;
+    const v = agentModelInput.value.trim();
     try {
-      await postConfig({ defaultModel: agentModelInput.value.trim() || null });
+      await postConfig({ defaultModel: v || null });
+      // a typed value that matches a listed model selects it in the dropdown
+      if ([...agentModelSelect.options].some((o) => o.value === v)) {
+        agentModelSelect.value = v;
+        agentModelInput.classList.add("hidden");
+      }
       agentModelInput.placeholder = "model saved ✓";
     } catch {
       agentModelInput.placeholder = "save failed — retry";

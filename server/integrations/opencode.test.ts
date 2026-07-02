@@ -96,6 +96,43 @@ function fakeClient(events: OpencodeEvent[] = []) {
         };
       },
     },
+    config: {
+      async providers() {
+        return {
+          data: {
+            providers: [
+              {
+                id: "opencode",
+                name: "OpenCode Zen",
+                models: {
+                  "free-a": {
+                    id: "free-a",
+                    name: "Free A",
+                    cost: { input: 0, output: 0 },
+                  },
+                  "paid-b": {
+                    id: "paid-b",
+                    name: "Paid B",
+                    cost: { input: 3, output: 15 },
+                  },
+                },
+              },
+              {
+                id: "groq",
+                name: "Groq",
+                models: {
+                  zero: {
+                    id: "zero",
+                    name: "Zero-cost elsewhere",
+                    cost: { input: 0, output: 0 },
+                  },
+                },
+              },
+            ],
+          },
+        };
+      },
+    },
   };
   const makeClient = (baseUrl: string, password: string) => {
     made.push({ baseUrl, password });
@@ -352,6 +389,15 @@ describe("agent routes", () => {
       "/api/agent/stream?session=ses_123&token=wrong",
     );
     expect(res.status).toBe(403);
+  });
+
+  it("lists only the Zen provider's cost-0 models, config-ready ids (F014)", async () => {
+    const res = await request(app).get("/api/agent/models");
+    expect(res.status).toBe(200);
+    expect(res.body.free).toEqual([{ id: "opencode/free-a", name: "Free A" }]);
+    // paid zen model and zero-cost models on OTHER providers excluded
+    expect(JSON.stringify(res.body.free)).not.toContain("paid-b");
+    expect(JSON.stringify(res.body.free)).not.toContain("groq");
   });
 
   it("cancel aborts the in-flight session turn", async () => {

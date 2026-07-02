@@ -106,7 +106,13 @@
                 <option value="full">full access</option>
               </select>
             </label>
-            <input type="text" id="agent-model" placeholder="agent model (e.g. opencode/…) + Enter" autocomplete="off" spellcheck="false" />
+            <label class="integ-row">agent model
+              <select id="agent-model-select">
+                <option value="">default</option>
+                <option value="__custom">custom model…</option>
+              </select>
+            </label>
+            <input type="text" id="agent-model" class="hidden" placeholder="provider/model + Enter" autocomplete="off" spellcheck="false" />
             <button id="integ-recheck" title="Re-probe installed tools">re-check installed tools</button>
           </div>
         </div>

@@ -42,6 +42,38 @@ export interface OpencodeClientLike {
   event: {
     subscribe(): Promise<{ stream: AsyncIterable<OpencodeEvent> }>;
   };
+  config: {
+    providers(): Promise<{ data?: unknown }>;
+  };
+}
+
+export interface ZenModel {
+  /** Config-ready id, e.g. "opencode/big-pickle". */
+  id: string;
+  name: string;
+}
+
+/** Free models on the OpenCode Zen provider (id "opencode", cost 0). */
+export function zenFreeModels(providersPayload: unknown): ZenModel[] {
+  const providers = (
+    providersPayload as {
+      providers?: Array<{
+        id: string;
+        models?: Record<
+          string,
+          {
+            id: string;
+            name?: string;
+            cost?: { input: number; output: number };
+          }
+        >;
+      }>;
+    }
+  )?.providers;
+  const zen = providers?.find((p) => p.id === "opencode");
+  return Object.values(zen?.models ?? {})
+    .filter((m) => m.cost && m.cost.input === 0 && m.cost.output === 0)
+    .map((m) => ({ id: `opencode/${m.id}`, name: m.name ?? m.id }));
 }
 
 export interface SpawnedProc {

@@ -379,7 +379,7 @@
         "command": "npm test && npm run typecheck && npm run build",
         "expected": "Route test with fake opencode client returns only cost-0 zen models; typed custom value round-trips config; gates green"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": [
         "F009"
       ],
@@ -392,11 +392,11 @@
       "confidence": "needs-review",
       "context_note": "Zen = provider id 'opencode'. 5 free models live today; list is dynamic, never hardcode. Bridge must be running to list; fall back to the configured model + custom entry when agent is off.",
       "spec_ref": "user follow-up 2026-07-02 (post-plan iteration)",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "108/108 tests + typecheck + build green. Route test: only Zen cost-0 models, config-ready ids. Live browser: dropdown listed the 5 real free models dynamically, selection round-trips config, typed custom value matching a listed model snaps the select and hides the input. Test model reset from config afterwards",
+      "implemented_by": "claude-fable-5",
+      "implemented_at": "2026-07-02T08:50:00Z",
+      "verified_by": "gates exit 0 + live browser check",
+      "verified_at": "2026-07-02T08:52:00Z"
     },
     {
       "id": "F015",
