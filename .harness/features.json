@@ -75,17 +75,17 @@
         "command": "npm run typecheck && npm run build && npm test",
         "expected": "Typecheck, build, and existing test suites pass (DOMPurify added as dependency). Manual checklist (deferred review): F1 and F2 flows on a real vault, collection toggle changes related results, indexing state during first index (AE4)"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": ["F002", "F003"],
       "files_touched": ["web/src/main.ts", "web/index.html", "web/src/style.css", "package.json"],
       "confidence": "needs-review",
       "context_note": "Follow openReader() loading-then-replace, renderFilters() imperative rows, and the search debounce + dedup pattern. Error state must be distinct from empty so a qmd 503 does not read as 'no related notes'.",
       "spec_ref": "docs/plans/2026-07-01-002-feat-optional-integrations-qmd-exa-opencode-plan.md#u4-semantic-surfaces-in-the-ui",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "typecheck+build+46 tests green. Playwright smoke on real vault: F2 end-to-end (search -> note -> related loads async -> 8 rows -> click swaps note + flies camera), collections group renders 9 toggles, semantic mode hits /api/semantic-search (network log), AE5 tooltip on disabled Web button, DOMPurify sanitizes reader HTML. Screenshot in session scratchpad. DEFERRED HUMAN REVIEW: F1 fresh-vault prompt flow + AE1 (qmd-absent) covered by unit tests only",
+      "implemented_by": "claude-fable-5",
+      "implemented_at": "2026-07-02T05:55:00Z",
+      "verified_by": "harness-progress verify (typecheck+build+test, exit 0) + playwright smoke",
+      "verified_at": "2026-07-02T06:05:00Z"
     },
     {
       "id": "F005",

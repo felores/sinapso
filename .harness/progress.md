@@ -10,3 +10,13 @@ Initialized 2026-07-02 from docs/plans/2026-07-01-002-feat-optional-integrations
   - commit: d27a035
 
 **Passing:** 1/12 (8.3%)
+
+## Session 2026-07-02 (2-4): Milestone 1 complete
+
+**Features:**
+- F002: not_started -> passing (mode selector chrome + integrations settings UI) — commit a65e9c8
+- F003: not_started -> passing (qmd bridge: related, semantic search, setup/status) — commit c68d28a
+  - Real-vault finding: vsearch must be vec:-typed (skips 30s+ LLM expansion); per-spawn floor 5-9s, upgrade path = warm qmd mcp child. See docs/solutions/qmd-vsearch-latency.md
+- F004: not_started -> passing (semantic surfaces UI + DOMPurify sanitize) — playwright smoke on FeloVault: F2 flow, collections toggles, semantic search swap all verified in browser
+
+**Passing:** 4/12 (33%) — M1 done. Next: F005 (topology/gaps, M2)

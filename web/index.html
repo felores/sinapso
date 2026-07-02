@@ -180,6 +180,7 @@
     <button id="reset-colors" title="Forget custom group colors">reset custom colors</button>
     <h3 style="margin-top:10px">Integrations</h3>
     <div class="integ-row" id="integ-qmd"><b>Semantic (qmd)</b><span class="integ-status"></span></div>
+    <button id="qmd-enable" class="hidden">enable semantic search</button>
     <div class="integ-row" id="integ-exa"><b>Web (Exa)</b><span class="integ-status"></span></div>
     <input type="password" id="exa-key" placeholder="Exa API key — paste + Enter" autocomplete="off" />
     <div class="integ-row" id="integ-opencode"><b>Agent (OpenCode)</b><span class="integ-status"></span></div>
@@ -201,6 +202,10 @@
     </div>
     <div id="filter-list"></div>
     <div id="filter-help"><b>show</b> keeps matches, <b>ignore</b> hides them. Top rule wins; drag to reorder.</div>
+    <div id="collections-group" class="hidden">
+      <h3>Collections <span class="rel-tag">semantic</span></h3>
+      <div id="collections-list"></div>
+    </div>
   </aside>
 
   <aside id="reader" class="hidden">

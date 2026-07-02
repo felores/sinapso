@@ -32,6 +32,7 @@ import ForceGraph3D, {
 } from "3d-force-graph";
 import SpriteText from "three-spritetext";
 import { marked } from "marked";
+import DOMPurify from "dompurify";
 import * as THREE from "three";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 
@@ -1540,7 +1541,11 @@ async function boot() {
         (_m: string, target: string, alias?: string) =>
           `<a class="wiki" data-target="${target.trim().replace(/"/g, "&quot;")}">${alias ?? target}</a>`,
       );
-      body.innerHTML = await marked.parse(prepped);
+      // KTD13: sanitize rendered note HTML. Notes saved from Exa results or
+      // agent proposals carry untrusted content; unsanitized script would run
+      // same-origin and could drive the token-authenticated endpoints.
+      body.innerHTML = DOMPurify.sanitize(await marked.parse(prepped));
+      void appendRelated(n, body);
     } catch {
       body.innerHTML = '<p class="muted">could not load note</p>';
     }
@@ -2089,24 +2094,38 @@ async function boot() {
       shown.add(n.id);
     }
 
-    // 2) Content matches: debounced hit on the server's full-text index.
-    searchTimer = setTimeout(async () => {
-      try {
-        const hits: Array<{ id: string; snippet: string }> = await fetch(
-          `/api/search?q=${encodeURIComponent(q)}`,
-        ).then((r) => r.json());
-        if (token !== searchToken) return; // stale response
-        for (const h of hits) {
-          if (shown.has(h.id) || shown.size >= 16) continue;
-          const n = byId.get(h.id);
-          if (!n) continue;
-          addResult(n, h.snippet);
-          shown.add(h.id);
+    // 2) Content matches: debounced. Semantic mode swaps the source to the
+    // qmd-powered endpoint (R9); default is the server's full-text index.
+    // Semantic gets a longer debounce: each query spawns a qmd process.
+    const semantic = activeMode === "semantic";
+    searchTimer = setTimeout(
+      async () => {
+        try {
+          let hits: Array<{ id: string; snippet: string }>;
+          if (semantic) {
+            const resp = await fetch(
+              `/api/semantic-search?q=${encodeURIComponent(q)}${collectionsParam()}`,
+            ).then((r) => r.json());
+            hits = resp.results ?? [];
+          } else {
+            hits = await fetch(`/api/search?q=${encodeURIComponent(q)}`).then(
+              (r) => r.json(),
+            );
+          }
+          if (token !== searchToken) return; // stale response
+          for (const h of hits) {
+            if (shown.has(h.id) || shown.size >= 16) continue;
+            const n = byId.get(h.id);
+            if (!n) continue;
+            addResult(n, h.snippet);
+            shown.add(h.id);
+          }
+        } catch {
+          // index unavailable; title results already shown
         }
-      } catch {
-        // index unavailable; title results already shown
-      }
-    }, 220);
+      },
+      semantic ? 600 : 220,
+    );
   };
   searchBox.addEventListener("input", () =>
     renderResults(searchBox.value.trim()),
@@ -2276,9 +2295,190 @@ async function boot() {
     );
   });
   $("#integ-recheck").addEventListener("click", () =>
-    refreshIntegrations(true),
+    refreshIntegrations(true).then(refreshQmdStatus),
   );
-  refreshIntegrations();
+  const integrationsLoaded = refreshIntegrations().then(refreshQmdStatus);
+
+  // ---- semantic surfaces: related notes, setup prompt, collection toggles (U4) ----
+  type QmdState = "missing" | "uncovered" | "indexing" | "error" | "ready";
+  let qmdStatus: { state: QmdState; collections?: string[] } = {
+    state: "missing",
+  };
+  // Per-collection on/off prefs (R8), keyed by collection name.
+  let colPrefs: Record<string, boolean> = JSON.parse(
+    localStorage.getItem("akasha-collections") ?? "{}",
+  );
+
+  // Enabled subset, or null when no narrowing is needed (all on / all off).
+  function enabledCollections(): string[] | null {
+    const cols = qmdStatus.collections ?? [];
+    const enabled = cols.filter((c) => colPrefs[c] !== false);
+    return enabled.length && enabled.length < cols.length ? enabled : null;
+  }
+  function collectionsParam(): string {
+    const list = enabledCollections();
+    return list ? `&collections=${encodeURIComponent(list.join(","))}` : "";
+  }
+
+  async function refreshQmdStatus() {
+    if (!integrations?.tools.qmd.installed) {
+      qmdStatus = { state: "missing" };
+    } else {
+      try {
+        qmdStatus = await fetch("/api/qmd/status").then((r) => r.json());
+      } catch {
+        qmdStatus = { state: "error" };
+      }
+    }
+    renderCollections();
+    renderQmdSettings();
+    maybePromptSetup();
+  }
+
+  function renderCollections() {
+    const group = $("#collections-group");
+    const list = $("#collections-list");
+    const cols =
+      qmdStatus.state === "ready" ? (qmdStatus.collections ?? []) : [];
+    group.classList.toggle("hidden", !cols.length);
+    list.innerHTML = "";
+    for (const c of cols) {
+      const label = document.createElement("label");
+      label.className = "col-row";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = colPrefs[c] !== false;
+      cb.addEventListener("change", () => {
+        colPrefs[c] = cb.checked;
+        localStorage.setItem("akasha-collections", JSON.stringify(colPrefs));
+        if (selected && !selected.phantom) refreshRelated(selected);
+      });
+      label.append(cb, document.createTextNode(" " + c));
+      list.appendChild(label);
+    }
+  }
+
+  function renderQmdSettings() {
+    const btn = $("#qmd-enable") as HTMLButtonElement;
+    const show =
+      qmdStatus.state === "uncovered" || qmdStatus.state === "indexing";
+    btn.classList.toggle("hidden", !show);
+    btn.disabled = qmdStatus.state === "indexing";
+    btn.textContent =
+      qmdStatus.state === "indexing"
+        ? "semantic indexing…"
+        : "enable semantic search";
+  }
+
+  async function startQmdSetup() {
+    try {
+      const res = await fetch("/api/qmd/setup", {
+        method: "POST",
+        headers: { "x-solaris-token": await apiToken() },
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      qmdStatus = { state: "indexing" };
+      renderQmdSettings();
+      showModal(
+        "Semantic indexing started",
+        "<p>qmd is indexing this vault in the background. Related notes and semantic search will show an “indexing” state until embeddings are ready.</p>",
+      );
+    } catch {
+      showModal(
+        "Setup failed",
+        "<p>Could not start qmd setup. Check the server log.</p>",
+      );
+    }
+  }
+  $("#qmd-enable").addEventListener("click", startQmdSetup);
+
+  // One-time prompt (R6): qmd installed but nothing covers this vault.
+  function maybePromptSetup() {
+    if (
+      qmdStatus.state !== "uncovered" ||
+      localStorage.getItem("akasha-qmd-prompted")
+    )
+      return;
+    localStorage.setItem("akasha-qmd-prompted", "1");
+    showModal(
+      "Enable semantic search?",
+      `<p>qmd is installed, but no collection covers this vault yet. Solaris can create one and index it in the background to power related notes and semantic search.</p>
+       <p style="display:flex;gap:8px"><button id="qmd-setup-yes">Enable</button><button id="qmd-setup-no">Not now</button></p>
+       <p class="muted">You can enable it later in Settings → Integrations.</p>`,
+    );
+    $("#qmd-setup-yes").addEventListener("click", () => {
+      hideModal();
+      void startQmdSetup();
+    });
+    $("#qmd-setup-no").addEventListener("click", hideModal);
+  }
+
+  // "Related notes (semantic)" section at the end of every note (R4/R5).
+  // Loads async and never blocks reading; error is distinct from empty so a
+  // qmd failure does not read as "no related notes".
+  let relatedToken = 0;
+  function refreshRelated(n: GNode) {
+    $("#reader-body").querySelector("#related")?.remove();
+    void appendRelated(n, $("#reader-body"));
+  }
+
+  async function appendRelated(n: GNode, body: HTMLElement) {
+    if (integrations === null) await integrationsLoaded; // first open can beat the status fetch
+    if (!integrations?.tools.qmd.installed) return; // AE1: no dead chrome without qmd
+    const token = ++relatedToken;
+    const box = document.createElement("section");
+    box.id = "related";
+    box.innerHTML =
+      '<h3>Related notes <span class="rel-tag">semantic</span></h3><p class="rel-info muted">finding related notes…</p>';
+    body.appendChild(box);
+    try {
+      const r = await fetch(
+        `/api/related?id=${encodeURIComponent(n.id)}${collectionsParam()}`,
+      );
+      if (token !== relatedToken) return;
+      if (!r.ok) throw new Error(String(r.status));
+      const data: {
+        state: string;
+        results?: Array<{ id: string; title: string; snippet: string }>;
+      } = await r.json();
+      const info = box.querySelector(".rel-info") as HTMLElement;
+      if (data.state === "indexing") {
+        info.textContent = "index building — results will appear when ready";
+        return;
+      }
+      if (data.state === "uncovered") {
+        info.textContent =
+          "semantic search is not set up for this vault (Settings → Integrations)";
+        return;
+      }
+      const results = data.results ?? [];
+      if (!results.length) {
+        info.textContent = "no related notes found";
+        return;
+      }
+      info.remove();
+      for (const res of results) {
+        const node = byId.get(res.id);
+        if (!node) continue;
+        const row = document.createElement("div");
+        row.className = "rel-row";
+        const title = document.createElement("span");
+        title.className = "rel-title";
+        title.textContent = node.title;
+        const snip = document.createElement("span");
+        snip.className = "rel-snippet";
+        snip.textContent = res.snippet;
+        row.append(title, snip);
+        row.addEventListener("click", () => select(node));
+        box.appendChild(row);
+      }
+    } catch {
+      if (token !== relatedToken) return;
+      const info = box.querySelector(".rel-info") as HTMLElement | null;
+      if (info)
+        info.textContent = "related notes unavailable (semantic search error)";
+    }
+  }
 
   // ---- menubar (File / View / Tools / Help) ----
   const menus = [...document.querySelectorAll<HTMLElement>(".menu")];
