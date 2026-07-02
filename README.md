@@ -54,7 +54,7 @@ vault: concepts become nodes, the `[name](path.md)` links become edges, and the 
 bundle becomes a navigable 3D graph.
 
 ```bash
-npx akasha-graph "C:/path/to/okf-bundle"
+npx solaris "C:/path/to/okf-bundle"
 ```
 
 Solaris reads OKF frontmatter fully: each concept is labeled by its `title` (falling back
@@ -65,7 +65,7 @@ pillars.
 ## Quickstart
 
 ```bash
-npx akasha-graph "C:/path/to/YourVault"     # scan, serve, open in one command
+npx solaris "C:/path/to/YourVault"     # scan, serve, open in one command
 ```
 
 Or from a clone:
@@ -261,8 +261,7 @@ Everything runs on `localhost`. Data and files are never copied, indexed, or upl
 ## Stack
 
 TypeScript end to end · [3d-force-graph](https://github.com/vasturiano/3d-force-graph)
-(three.js/WebGL) · Express 5 · Vite 6 · marked · tsx · 
-Made with Claude Fable 5.
+(three.js/WebGL) · Express 5 · Vite 6 · marked · tsx.
 
 ## License
 

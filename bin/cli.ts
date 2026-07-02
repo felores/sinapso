@@ -2,7 +2,7 @@
 /**
  * Akasha CLI, the zero-install on-ramp:
  *
- *   npx akasha-graph "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open]
+ *   npx solaris "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open]
  *
  * Scans the vault (incrementally), serves the 3D map on localhost, and opens
  * the browser. Per-vault data (graph, scan cache, layout cache) lives under
@@ -42,7 +42,7 @@ for (let i = 0; i < argv.length; i++) {
 // Validate required vault argument
 if (!args.vault) {
   console.error(
-    'usage: akasha "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open]',
+    'usage: solaris "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open]',
   );
   process.exit(1);
 }

@@ -5,7 +5,7 @@
   "type": "module",
   "main": "desktop/dist/main.cjs",
   "bin": {
-    "akasha": "dist/cli.cjs"
+    "solaris": "dist/cli.cjs"
   },
   "files": [
     "dist/",
@@ -17,11 +17,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/chntnm/akasha.git"
+    "url": "git+https://github.com/felores/solaris.git"
   },
-  "homepage": "https://github.com/chntnm/akasha#readme",
+  "homepage": "https://github.com/felores/solaris#readme",
   "bugs": {
-    "url": "https://github.com/chntnm/akasha/issues"
+    "url": "https://github.com/felores/solaris/issues"
   },
   "keywords": [
     "obsidian",
