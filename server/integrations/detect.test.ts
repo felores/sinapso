@@ -29,18 +29,18 @@ describe("tool detection", () => {
   });
 
   it("finds a tool on the inherited PATH", async () => {
-    const bin = join("/usr/local/bin", "opencode");
+    const bin = join("/usr/local/bin", "markitdown");
     const st = await detectTool(
-      "opencode",
+      "markitdown",
       deps({
         env: { PATH: "/usr/local/bin", SHELL: "/bin/zsh" },
         fileExists: (p) => p === bin,
-        run: async (cmd) => (cmd === bin ? ok("opencode v1.2.3\n") : fail()),
+        run: async (cmd) => (cmd === bin ? ok("markitdown v1.2.3\n") : fail()),
       }),
     );
     expect(st).toEqual({
       installed: true,
-      version: "opencode v1.2.3",
+      version: "markitdown v1.2.3",
       path: bin,
     });
   });
@@ -61,16 +61,16 @@ describe("tool detection", () => {
 
   it("falls back to a login-shell command -v probe", async () => {
     const st = await detectTool(
-      "opencode",
+      "markitdown",
       deps({
         run: async (cmd, args) =>
           cmd === "/bin/zsh" && args[0] === "-lc"
-            ? ok("/opt/oc/bin/opencode\n")
+            ? ok("/opt/md/bin/markitdown\n")
             : ok("9.9.9"),
       }),
     );
     expect(st.installed).toBe(true);
-    expect(st.path).toBe("/opt/oc/bin/opencode");
+    expect(st.path).toBe("/opt/md/bin/markitdown");
   });
 
   it("tolerates a failing --version and still reports installed", async () => {
@@ -83,10 +83,9 @@ describe("tool detection", () => {
     expect(st.version).toBeNull();
   });
 
-  it("detectAll covers all three tools", async () => {
+  it("detectAll covers both tools", async () => {
     const all = await detectAll(deps({}));
     expect(all.qmd.installed).toBe(false);
-    expect(all.opencode.installed).toBe(false);
     expect(all.markitdown.installed).toBe(false);
   });
 });

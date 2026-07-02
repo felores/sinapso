@@ -9,11 +9,11 @@
  * ~/.solaris/<vault-hash>/ so repeat runs boot from cache.
  *
  * Two install flavors (R16): core (default, no external tools) and
- * --addons, which checks for qmd/OpenCode and installs only what is
+ * --addons, which checks for qmd/markitdown and installs only what is
  * missing, never touching an existing setup.
  *
- * Security: The core never uploads anything. The optional Web and Agent
- * modes send data off-machine only behind explicit consent gates.
+ * Security: The core never uploads anything. The optional Web mode sends
+ * data off-machine only behind an explicit consent gate.
  * Performance: Incremental scanning caches parse results by mtime+size.
  */
 

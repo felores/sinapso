@@ -40,9 +40,9 @@
     "dev:server": "tsx server/index.ts",
     "dev:web": "vite web",
     "build": "vite build web",
-    "build:cli": "esbuild bin/cli.ts --bundle --platform=node --format=cjs --external:express --external:node-pty --outfile=dist/cli.cjs",
+    "build:cli": "esbuild bin/cli.ts --bundle --platform=node --format=cjs --external:express --outfile=dist/cli.cjs",
     "start": "tsx server/index.ts",
-    "desktop:build": "vite build web && esbuild desktop/main.ts --bundle --platform=node --format=cjs --external:electron --external:express --external:node-pty --outfile=desktop/dist/main.cjs",
+    "desktop:build": "vite build web && esbuild desktop/main.ts --bundle --platform=node --format=cjs --external:electron --external:express --outfile=desktop/dist/main.cjs",
     "desktop": "npm run desktop:build && electron .",
     "dist:desktop": "npm run desktop:build && electron-builder --win",
     "test": "vitest run",
@@ -50,7 +50,6 @@
     "prepublishOnly": "npm run typecheck && npm run build && npm run build:cli"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "1.17.13",
     "dompurify": "3.3.1",
     "exa-js": "2.16.0",
     "express": "^5.1.0"
@@ -61,8 +60,6 @@
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",
     "@types/three": "^0.184.1",
-    "@xterm/addon-fit": "0.11.0",
-    "@xterm/xterm": "6.0.0",
     "concurrently": "^9.0.0",
     "electron": "^42.4.0",
     "electron-builder": "^26.0.0",
@@ -101,8 +98,5 @@
       "oneClick": true,
       "deleteAppDataOnUninstall": false
     }
-  },
-  "optionalDependencies": {
-    "node-pty": "1.1.0"
   }
 }

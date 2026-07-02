@@ -91,9 +91,7 @@ describe("GET /api/integrations", () => {
     const res = await request(app).get("/api/integrations");
     expect(res.status).toBe(200);
     expect(res.body.tools.qmd.installed).toBe(false);
-    expect(res.body.tools.opencode.installed).toBe(false);
     expect(res.body.tools.exa).toEqual({ configured: false });
-    expect(res.body.agentMode).toBe("approval");
   });
 
   it("never exposes the Exa key in the status payload", async () => {

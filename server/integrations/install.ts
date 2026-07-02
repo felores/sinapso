@@ -1,9 +1,9 @@
 /**
  * Addons installer (U12, KTD8): the "core + addons" flavor. Checks existing
  * installs FIRST and never reinstalls or touches their config (R16/AE7).
- * OpenCode installs via its official one-liner; qmd via Bun only when Bun
- * exists — otherwise the result carries guided instructions instead of
- * failing. Exa is a hosted API: nothing to install, configured by key.
+ * qmd installs via Bun only when Bun exists — otherwise the result carries
+ * guided instructions instead of failing. Exa is a hosted API: nothing to
+ * install, configured by key.
  */
 
 import { existsSync } from "node:fs";
@@ -18,13 +18,11 @@ import {
 
 const INSTALL_TIMEOUT_MS = 600_000;
 
-export const OPENCODE_INSTALL_CMD =
-  "curl -fsSL https://opencode.ai/install | bash";
 export const QMD_INSTALL_SPEC = "https://github.com/tobi/qmd";
 
 export const MARKITDOWN_SPEC = "markitdown[all]";
 
-export type InstallableTool = "qmd" | "opencode" | "markitdown";
+export type InstallableTool = "qmd" | "markitdown";
 
 export interface InstallResult {
   tool: InstallableTool;
@@ -69,7 +67,7 @@ const findPip = (d: DetectDeps) => findHelper(d, "pip3", []);
 
 export async function installAddons(
   overrides: Partial<DetectDeps>,
-  tools: InstallableTool[] = ["qmd", "opencode", "markitdown"],
+  tools: InstallableTool[] = ["qmd", "markitdown"],
 ): Promise<InstallResult[]> {
   const deps = fullDeps(overrides);
   const run = deps.run;
@@ -84,27 +82,6 @@ export async function installAddons(
         status: "already-installed",
         detail: `${existing.path}${existing.version ? ` (${existing.version})` : ""}`,
       });
-      continue;
-    }
-    if (tool === "opencode") {
-      const r = await run(
-        "/bin/sh",
-        ["-c", OPENCODE_INSTALL_CMD],
-        INSTALL_TIMEOUT_MS,
-      );
-      results.push(
-        r.ok
-          ? {
-              tool,
-              status: "installed",
-              detail: "installed via opencode.ai/install",
-            }
-          : {
-              tool,
-              status: "failed",
-              detail: (r.stderr || "install script failed").slice(0, 500),
-            },
-      );
       continue;
     }
     if (tool === "markitdown") {

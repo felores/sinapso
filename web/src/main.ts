@@ -1546,8 +1546,8 @@ async function boot() {
           `<a class="wiki" data-target="${target.trim().replace(/"/g, "&quot;")}">${alias ?? target}</a>`,
       );
       // KTD13: sanitize rendered note HTML. Notes saved from Exa results or
-      // agent proposals carry untrusted content; unsanitized script would run
-      // same-origin and could drive the token-authenticated endpoints.
+      // ingested documents carry untrusted content; unsanitized script would
+      // run same-origin and could drive the token-authenticated endpoints.
       body.innerHTML = DOMPurify.sanitize(await marked.parse(prepped));
       // Fixed-order footer: related notes (async) above research questions.
       const relatedSlot = document.createElement("div");
@@ -2145,37 +2145,28 @@ async function boot() {
     }
   });
 
-  // ---- integrations: mode buttons (Semantic / Web / Agent) + settings ----
+  // ---- integrations: mode buttons (Semantic / Web) + settings ----
   // At most one mode active at a time; buttons light up only when their tool
   // is detected (GET /api/integrations). Persisted as akasha-mode.
-  type ModeName = "semantic" | "web" | "agent";
+  type ModeName = "semantic" | "web";
   interface IntegrationsStatus {
     tools: {
       qmd: { installed: boolean; version: string | null };
-      opencode: {
-        installed: boolean;
-        version: string | null;
-        connected: boolean | null;
-      };
       markitdown: { installed: boolean; version: string | null };
       exa: { configured: boolean };
     };
-    consents: { web: boolean; agent: boolean };
-    agentMode: "approval" | "full";
+    consents: { web: boolean };
     defaultModel: string | null;
   }
-  const MODE_LIST = ["semantic", "web", "agent"] as const;
+  const MODE_LIST = ["semantic", "web"] as const;
   const MODE_NAMES: Record<ModeName, string> = {
     semantic: "Semantic (qmd)",
     web: "Web (Exa)",
-    agent: "Agent (OpenCode)",
   };
   const MODE_MISSING: Record<ModeName, string> = {
     semantic:
       "Semantic (qmd) — qmd not installed. Add it via the addons install (Tools → Integrations).",
     web: "Web (Exa) — no API key. Add your Exa key in Tools → Integrations.",
-    agent:
-      "Agent (OpenCode) — OpenCode not installed. Add it via the addons install (Tools → Integrations).",
   };
   let integrations: IntegrationsStatus | null = null;
   let activeMode = localStorage.getItem("akasha-mode") as ModeName | null;
@@ -2202,11 +2193,7 @@ async function boot() {
   const modeReady = (m: ModeName): boolean => {
     const t = integrations?.tools;
     if (!t) return false;
-    return m === "semantic"
-      ? t.qmd.installed
-      : m === "web"
-        ? t.exa.configured
-        : t.opencode.installed;
+    return m === "semantic" ? t.qmd.installed : t.exa.configured;
   };
 
   function renderModes() {
@@ -2224,7 +2211,6 @@ async function boot() {
     none: "Search notes…  (press /)",
     semantic: "Semantic search…  (Enter)",
     web: "Web research…  (Enter — uses Exa)",
-    agent: "Ask the agent about your vault…  (Enter)",
   };
   function updateSearchField() {
     searchBox.placeholder = SEARCH_PLACEHOLDERS[activeMode ?? "none"];
@@ -2232,13 +2218,9 @@ async function boot() {
   }
 
   function setMode(m: ModeName | null) {
-    // Web and Agent modes are gated behind one-time egress consent (R18/AE8).
+    // Web mode is gated behind one-time egress consent (R18/AE8).
     if (m === "web" && integrations && !integrations.consents.web) {
       promptWebConsent();
-      return;
-    }
-    if (m === "agent" && integrations && !integrations.consents.agent) {
-      promptAgentConsent();
       return;
     }
     activeMode = m && modeReady(m) ? m : null;
@@ -2247,8 +2229,6 @@ async function boot() {
     renderModes();
     updateSearchField();
     closeResearch(); // column content belongs to the previous mode
-    // The terminal needs no query: activating Agent opens it directly.
-    if (activeMode === "agent") void runAgentQuery("");
   }
   for (const m of MODE_LIST)
     $(`#mode-${m}`).addEventListener("click", () =>
@@ -2286,15 +2266,6 @@ async function boot() {
       !!t?.exa.configured,
     );
     st(
-      "opencode",
-      t
-        ? t.opencode.installed
-          ? `installed ${t.opencode.version ?? ""}`.trim()
-          : "not installed"
-        : "status unavailable",
-      !!t?.opencode.installed,
-    );
-    st(
       "markitdown",
       t
         ? t.markitdown.installed
@@ -2304,8 +2275,6 @@ async function boot() {
       !!t?.markitdown.installed,
     );
     if (integrations) {
-      ($("#agent-mode") as HTMLSelectElement).value = integrations.agentMode;
-      syncModelControls();
       // The key is stored server-side and never echoed back, so the field
       // is always empty — make the placeholder say a key IS configured.
       const keyInput = $("#exa-key") as HTMLInputElement;
@@ -2344,93 +2313,6 @@ async function boot() {
       exaKeyInput.placeholder = "save failed — retry";
     } finally {
       exaKeyInput.disabled = false;
-    }
-  });
-  $("#agent-mode").addEventListener("change", (e) => {
-    const sel = e.target as HTMLSelectElement;
-    // Full access is a standing consent (R17): confirm explicitly.
-    if (
-      sel.value === "full" &&
-      !window.confirm(
-        "Full access lets the agent create and edit notes in this vault directly, without a per-change review. Every change is still confined to the vault and journaled. Enable full access?",
-      )
-    ) {
-      sel.value = "approval";
-      return;
-    }
-    postConfig({ agentMode: sel.value }).catch(() => refreshIntegrations());
-  });
-  // Agent model combobox (F014): free Zen models from the running
-  // instance + a custom provider/model entry. Nothing hardcoded (R13).
-  const agentModelInput = $("#agent-model") as HTMLInputElement;
-  const agentModelSelect = $("#agent-model-select") as HTMLSelectElement;
-  let modelsLoaded = false;
-
-  function syncModelControls() {
-    const current = integrations?.defaultModel ?? "";
-    const options = [...agentModelSelect.options].map((o) => o.value);
-    if (current && options.includes(current)) {
-      agentModelSelect.value = current;
-      agentModelInput.classList.add("hidden");
-    } else if (current) {
-      agentModelSelect.value = "__custom";
-      agentModelInput.classList.remove("hidden");
-      agentModelInput.value = current;
-    } else {
-      agentModelSelect.value = "";
-      agentModelInput.classList.add("hidden");
-    }
-  }
-
-  async function loadFreeModels() {
-    if (modelsLoaded) return;
-    modelsLoaded = true;
-    try {
-      const data: { free: Array<{ id: string; name: string }> } = await fetch(
-        "/api/agent/models",
-      ).then((r) => r.json());
-      const customOpt = agentModelSelect.querySelector(
-        'option[value="__custom"]',
-      )!;
-      for (const m of data.free) {
-        const opt = document.createElement("option");
-        opt.value = m.id;
-        opt.textContent = `${m.name} (free)`;
-        agentModelSelect.insertBefore(opt, customOpt);
-      }
-      syncModelControls(); // the configured model may now match a listed one
-    } catch {
-      modelsLoaded = false; // retry on next open
-    }
-  }
-  // Listing spawns the local opencode child (~2s); do it lazily on first use.
-  agentModelSelect.addEventListener("focus", () => void loadFreeModels());
-
-  agentModelSelect.addEventListener("change", () => {
-    if (agentModelSelect.value === "__custom") {
-      agentModelInput.classList.remove("hidden");
-      agentModelInput.focus();
-      return;
-    }
-    agentModelInput.classList.add("hidden");
-    postConfig({ defaultModel: agentModelSelect.value || null }).catch(() =>
-      refreshIntegrations(),
-    );
-  });
-
-  agentModelInput.addEventListener("keydown", async (e) => {
-    if (e.key !== "Enter") return;
-    const v = agentModelInput.value.trim();
-    try {
-      await postConfig({ defaultModel: v || null });
-      // a typed value that matches a listed model selects it in the dropdown
-      if ([...agentModelSelect.options].some((o) => o.value === v)) {
-        agentModelSelect.value = v;
-        agentModelInput.classList.add("hidden");
-      }
-      agentModelInput.placeholder = "model saved ✓";
-    } catch {
-      agentModelInput.placeholder = "save failed — retry";
     }
   });
   $("#integ-recheck").addEventListener("click", () =>
@@ -2694,9 +2576,8 @@ async function boot() {
   }
 
   // ---- research column (F018): one shared right-side column for
-  // semantic/web results in the upper pane and the agent TERMINAL in the
-  // resizable lower pane (F022 split). The search field is the entry
-  // point; the column owns follow-ups via its own input.
+  // semantic/web results. The search field is the entry point; the
+  // column owns follow-ups via its own input.
   let researchMode: ModeName | null = null;
   const researchInput = $("#research-input") as HTMLInputElement;
 
@@ -2706,17 +2587,9 @@ async function boot() {
     $("#search-wrap").classList.add("hidden"); // the column owns the interaction
     $("#reader").classList.add("ctx-left"); // open note = working context
     $("#research-title").textContent =
-      mode === "semantic"
-        ? "Semantic results"
-        : mode === "web"
-          ? "Web research"
-          : "Agent";
-    const isAgent = mode === "agent";
-    // The upper pane + follow-up input serve semantic/web; the terminal
-    // (lower pane) has its own input and persists across mode switches.
-    $("#research-input-row").classList.toggle("hidden", isAgent);
+      mode === "semantic" ? "Semantic results" : "Web research";
+    $("#research-input-row").classList.remove("hidden");
     $("#research-deep-wrap").classList.toggle("hidden", mode !== "web");
-    if (!isAgent) $("#agent-connect").classList.add("hidden");
     researchError(null);
     researchInput.placeholder =
       mode === "web"
@@ -2745,8 +2618,6 @@ async function boot() {
         query,
         ($("#research-deep") as HTMLInputElement).checked,
       );
-    // consent re-checked
-    else void runAgentQuery(query);
   }
 
   // Follow-ups from inside the column route to the active mode.
@@ -3067,200 +2938,6 @@ async function boot() {
     return row;
   }
 
-  // ---- Agent mode: chat, Connect onboarding, proposal reviews (U11) ----
-  function promptAgentConsent() {
-    showModal(
-      "Enable the vault Agent?",
-      `<p>Agent mode holds a conversation about your vault through <b>OpenCode</b>. Note content the agent reads is sent to the model provider you have configured in OpenCode, so <b>content derived from your vault leaves this machine</b> during a conversation.</p>
-       <p><b>Free Zen models may use conversation data for training.</b></p>
-       <p>The agent cannot write files, run commands, or access the web. Changes it proposes are applied only through Solaris, per your permission mode (approval by default).</p>
-       <p style="display:flex;gap:8px"><button id="agent-consent-yes">Enable Agent mode</button><button id="agent-consent-no">Cancel</button></p>`,
-    );
-    $("#agent-consent-yes").addEventListener("click", async () => {
-      hideModal();
-      try {
-        await postConfig({ consents: { agent: true } });
-        await refreshIntegrations();
-        setMode("agent");
-      } catch {
-        showModal(
-          "Could not save consent",
-          "<p>The server rejected the consent update. Try again.</p>",
-        );
-      }
-    });
-    $("#agent-consent-no").addEventListener("click", hideModal);
-  }
-
-  interface AgentStatus {
-    state: "missing" | "not-connected" | "ready";
-    running: boolean;
-    agentMode: "approval" | "full";
-    model: string | null;
-  }
-  const agentBanner = (msg: string | null) => {
-    const el = $("#agent-banner");
-    el.classList.toggle("hidden", !msg);
-    el.textContent = msg ?? "";
-  };
-
-  // ---- embedded terminal (F022): the full opencode TUI in the lower
-  // pane of the research column, resizable via the divider. TRUST: runs
-  // with the user's own opencode config, outside the propose/journal
-  // guarantees — the consent gate and docs say so.
-  let term: import("@xterm/xterm").Terminal | null = null;
-  let termFit: { fit(): void } | null = null;
-  let termStream: EventSource | null = null;
-  let termStarted = false;
-
-  function showTerminalPane(show: boolean) {
-    $("#terminal-pane").classList.toggle("hidden", !show);
-    $("#terminal-divider").classList.toggle("hidden", !show);
-    if (show) {
-      const saved = Number(localStorage.getItem("akasha-terminal-split") ?? 45);
-      ($("#terminal-pane") as HTMLElement).style.height =
-        `${Math.min(80, Math.max(15, saved))}%`;
-    }
-  }
-
-  async function postTerminal(path: string, body: object): Promise<Response> {
-    return fetch(`/api/terminal/${path}`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-solaris-token": await apiToken(),
-      },
-      body: JSON.stringify(body),
-    });
-  }
-
-  async function ensureTerminal(): Promise<boolean> {
-    showTerminalPane(true);
-    if (!term) {
-      const [{ Terminal }, { FitAddon }] = await Promise.all([
-        import("@xterm/xterm"),
-        import("@xterm/addon-fit"),
-      ]);
-      term = new Terminal({
-        fontSize: 12,
-        fontFamily: "SF Mono, Menlo, Consolas, monospace",
-        theme: { background: "#0d1117" },
-        // TUIs (opentui) probe modes via DECRQM and expect replies; xterm
-        // only answers those with the proposed API enabled.
-        allowProposedApi: true,
-      });
-      const fit = new FitAddon();
-      termFit = fit;
-      term.loadAddon(fit);
-      term.open($("#terminal-pane"));
-      term.onData((d) => {
-        void postTerminal("input", { data: d });
-      });
-      window.addEventListener("resize", () => {
-        if (!$("#terminal-pane").classList.contains("hidden")) fitTerminal();
-      });
-    }
-    fitTerminal();
-    if (!termStarted) {
-      const res = await postTerminal("start", {
-        cols: term.cols,
-        rows: term.rows,
-      });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        agentBanner(d.message ?? "terminal unavailable");
-        showTerminalPane(false);
-        return false;
-      }
-      termStarted = true;
-      termStream?.close();
-      termStream = new EventSource(
-        `/api/terminal/stream?token=${sessionToken}`,
-      );
-      termStream.onmessage = (ev) => term?.write(JSON.parse(ev.data));
-    }
-    return true;
-  }
-
-  function fitTerminal() {
-    if (!term || !termFit) return;
-    try {
-      termFit.fit();
-      void postTerminal("resize", { cols: term.cols, rows: term.rows });
-    } catch {
-      // pane not laid out yet
-    }
-  }
-
-  // Divider drag resizes the split; ratio persists (akasha-terminal-split).
-  {
-    const divider = $("#terminal-divider");
-    const pane = $("#terminal-pane") as HTMLElement;
-    const column = $("#research") as HTMLElement;
-    let dragging = false;
-    divider.addEventListener("mousedown", (e) => {
-      dragging = true;
-      e.preventDefault();
-      document.body.style.userSelect = "none";
-    });
-    window.addEventListener("mousemove", (e) => {
-      if (!dragging) return;
-      const rect = column.getBoundingClientRect();
-      const pct = Math.min(
-        80,
-        Math.max(15, ((rect.bottom - e.clientY) / rect.height) * 100),
-      );
-      pane.style.height = `${pct}%`;
-    });
-    window.addEventListener("mouseup", () => {
-      if (!dragging) return;
-      dragging = false;
-      document.body.style.userSelect = "";
-      const pct = Math.round(
-        (pane.getBoundingClientRect().height /
-          column.getBoundingClientRect().height) *
-          100,
-      );
-      localStorage.setItem("akasha-terminal-split", String(pct));
-      fitTerminal();
-    });
-  }
-
-  // First agent query from the search field: walk Connect onboarding if
-  // needed, boot the TUI, then type the query into it (note-as-basis:
-  // the open note rides along as a context prefix).
-  async function runAgentQuery(query: string) {
-    openResearch("agent");
-    let status: AgentStatus;
-    try {
-      status = await fetch("/api/agent/status").then((r) => r.json());
-    } catch {
-      agentBanner("cannot reach the Solaris server");
-      return;
-    }
-    if (status.state !== "ready") {
-      $("#agent-connect").classList.remove("hidden");
-      return;
-    }
-    $("#agent-connect").classList.add("hidden");
-    agentBanner(null);
-    const fresh = !termStarted;
-    if (!(await ensureTerminal())) return;
-    if (query) {
-      let text = query;
-      if (selected && !selected.phantom)
-        text = `[Viewing note: ${selected.id}] ${query}`;
-      // A fresh TUI needs a moment before it accepts typed input.
-      setTimeout(
-        () => void postTerminal("input", { data: text }),
-        fresh ? 3000 : 300,
-      );
-    }
-  }
-  $("#agent-recheck").addEventListener("click", () => {
-    void refreshIntegrations(true).then(() => runAgentQuery(""));
-  });
-
   // Restore a persisted mode on boot (consent already recorded): the
   // search field reflects it; the column only opens on the first query.
   updateSearchField();
@@ -3520,7 +3197,7 @@ async function boot() {
   };
 
   window.addEventListener("keydown", (e) => {
-    // Typing in ANY text field (search, web query, agent chat, Exa key,
+    // Typing in ANY text field (search, web query, Exa key,
     // filters, model entry…) must never trigger app shortcuts.
     const el = document.activeElement as HTMLElement | null;
     const typing =

@@ -5,11 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../app";
 import { TOKEN_HEADER } from "./security";
-import {
-  installAddons,
-  OPENCODE_INSTALL_CMD,
-  QMD_INSTALL_SPEC,
-} from "./install";
+import { installAddons, QMD_INSTALL_SPEC } from "./install";
 import type { RunResult } from "./detect";
 
 const ok = (stdout = ""): RunResult => ({ ok: true, stdout, stderr: "" });
@@ -35,18 +31,16 @@ const HOME = "/home/tester";
 describe("installAddons", () => {
   it("skips existing installs and never runs an installer (R16/AE7)", async () => {
     const qmdBin = join(HOME, ".bun", "bin", "qmd");
-    const ocBin = join(HOME, ".opencode", "bin", "opencode");
     const { calls, run } = recordingRunner((cmd) =>
-      cmd === qmdBin || cmd === ocBin ? ok("1.0.0") : fail(),
+      cmd === qmdBin ? ok("1.0.0") : fail(),
     );
     const results = await installAddons({
       run,
       home: HOME,
       env: { PATH: "" },
-      fileExists: (p) => p === qmdBin || p === ocBin,
+      fileExists: (p) => p === qmdBin,
     });
     expect(results.map((r) => r.status)).toEqual([
-      "already-installed",
       "already-installed",
       "instructions", // markitdown missing, no uv/pip on the fake system
     ]);
@@ -55,43 +49,6 @@ describe("installAddons", () => {
       ([cmd, a1]) => (cmd === "/bin/sh" && a1 === "-c") || a1 === "install",
     );
     expect(installers).toEqual([]); // no reinstall, config untouched
-  });
-
-  it("installs opencode via the official one-liner when missing", async () => {
-    const { calls, run } = recordingRunner((cmd) =>
-      cmd === "/bin/sh" ? ok() : fail(),
-    );
-    const results = await installAddons(
-      {
-        run,
-        home: HOME,
-        env: { PATH: "", SHELL: "/bin/zsh" },
-        fileExists: () => false,
-      },
-      ["opencode"],
-    );
-    expect(results[0].status).toBe("installed");
-    expect(
-      calls.some(
-        ([cmd, , script]) =>
-          cmd === "/bin/sh" && script === OPENCODE_INSTALL_CMD,
-      ),
-    ).toBe(true);
-
-    const failing = recordingRunner(() =>
-      fail("curl: (6) could not resolve host"),
-    );
-    const failed = await installAddons(
-      {
-        run: failing.run,
-        home: HOME,
-        env: { PATH: "" },
-        fileExists: () => false,
-      },
-      ["opencode"],
-    );
-    expect(failed[0].status).toBe("failed");
-    expect(failed[0].detail).toContain("could not resolve host"); // stderr surfaced cleanly
   });
 
   it("returns guided instructions when qmd is missing and Bun is absent", async () => {

@@ -25,7 +25,7 @@ describe("integrations config", () => {
       p,
     );
     expect(cfg.exaKey).toBe("exa-secret-123");
-    expect(cfg.consents).toEqual({ web: true, agent: false });
+    expect(cfg.consents).toEqual({ web: true });
     expect(loadConfig(p).exaKey).toBe("exa-secret-123");
   });
 
@@ -33,7 +33,7 @@ describe("integrations config", () => {
     const p = join(DIR, "perms.json");
     updateConfig({ exaKey: "k" }, p);
     expect(statSync(p).mode & 0o777).toBe(0o600);
-    updateConfig({ consents: { agent: true } }, p);
+    updateConfig({ consents: { web: true } }, p);
     expect(statSync(p).mode & 0o777).toBe(0o600);
   });
 
@@ -42,22 +42,18 @@ describe("integrations config", () => {
     updateConfig({ exaKey: "keep-me" }, p);
     const cfg = updateConfig({ consents: { web: true } }, p);
     expect(cfg.exaKey).toBe("keep-me");
-    expect(cfg.consents.agent).toBe(false);
-    expect(cfg.agentMode).toBe("approval");
   });
 
   it("ignores mistyped or unknown patch fields", () => {
     const p = join(DIR, "sanitize.json");
     const cfg = updateConfig(
       {
-        agentMode: "yolo",
         exaKey: 42,
         consents: { web: "yes" },
         bogus: true,
       } as never,
       p,
     );
-    expect(cfg.agentMode).toBe("approval");
     expect(cfg.exaKey).toBeNull();
     expect(cfg.consents.web).toBe(false);
     expect((cfg as never as Record<string, unknown>).bogus).toBeUndefined();

@@ -47,29 +47,13 @@ import {
   createExaAdapter,
   type ExaAdapterOptions,
 } from "./integrations/exa.js";
-import {
-  createOpencodeBridge,
-  eventSessionId,
-  isNewerVersion,
-  zenFreeModels,
-  VALIDATED_OPENCODE_VERSION,
-  type OpencodeBridgeDeps,
-} from "./integrations/opencode.js";
 import { ingestDocument } from "./integrations/ingest.js";
 import { installAddons, type InstallableTool } from "./integrations/install.js";
-import {
-  createProposalStore,
-  writeProposePlugin,
-} from "./integrations/proposals.js";
 import {
   createSessionToken,
   localOnly,
   requireToken,
 } from "./integrations/security.js";
-import {
-  createTerminalManager,
-  type TerminalDeps,
-} from "./integrations/terminal.js";
 import { computeGaps, noteQuestions } from "./integrations/topology.js";
 import {
   guardedCreate,
@@ -110,12 +94,8 @@ export interface IntegrationsOptions {
   detectDeps?: Partial<DetectDeps>;
   /** Inject a fake Exa client / fast retry backoff (tests). */
   exa?: ExaAdapterOptions;
-  /** Inject fake spawn/client/auth-path for the OpenCode bridge (tests). */
-  opencode?: Partial<OpencodeBridgeDeps>;
   /** Inject a fake stdio child for the warm qmd client (tests). */
   qmdMcp?: Partial<QmdMcpDeps>;
-  /** Inject a fake PTY factory for the embedded terminal (tests). */
-  terminal?: Partial<TerminalDeps>;
 }
 
 export function createApp(
@@ -161,13 +141,10 @@ export function createApp(
       res.json({
         tools: {
           qmd: toolCache.qmd,
-          // connected: OpenCode account status, wired by the agent bridge (U9)
-          opencode: { ...toolCache.opencode, connected: null },
           markitdown: toolCache.markitdown,
           exa: { configured: !!cfg.exaKey },
         },
         consents: cfg.consents,
-        agentMode: cfg.agentMode,
         defaultModel: cfg.defaultModel,
         writeDestination: cfg.writeDestination,
       });
@@ -184,7 +161,6 @@ export function createApp(
       res.json({
         ok: true,
         consents: cfg.consents,
-        agentMode: cfg.agentMode,
         defaultModel: cfg.defaultModel,
         writeDestination: cfg.writeDestination,
         exaConfigured: !!cfg.exaKey,
@@ -207,7 +183,7 @@ export function createApp(
         const b = (req.body ?? {}) as { tools?: unknown };
         const tools = Array.isArray(b.tools)
           ? (b.tools.filter(
-              (t) => t === "qmd" || t === "opencode" || t === "markitdown",
+              (t) => t === "qmd" || t === "markitdown",
             ) as InstallableTool[])
           : undefined;
         const results = await installAddons(detectDeps ?? {}, tools);
@@ -572,521 +548,15 @@ export function createApp(
     }
   });
 
-  // ---- Agent proposals (U10): the trust core ----
-  // The propose plugin calls back into this server; it learns our port from
-  // the first request (the bridge only ever starts inside a request).
-  let ownPort = 0;
-  app.use((req, _res, next) => {
-    ownPort ||= req.socket.localPort ?? 0;
-    next();
-  });
-  const proposeSecret = createSessionToken();
-
-  const proposalStore = createProposalStore({
-    writeDeps: () => ({ vaultRoot, dataDir: dirname(graphPath) }),
-    agentMode: () => loadConfig(configPath).agentMode,
-    destination: () => loadConfig(configPath).writeDestination,
-    readNote: (id) => {
-      const full = resolve(vaultRoot, id);
-      if (
-        !full.startsWith(resolve(vaultRoot) + sep) ||
-        !full.toLowerCase().endsWith(".md") ||
-        !existsSync(full)
-      )
-        return null;
-      return readFileSync(full, "utf-8");
-    },
-  });
-
-  // ---- Agent mode: OpenCode bridge (U9) ----
-  const agentBridge = createOpencodeBridge({
-    binPath: async () => {
-      if (!toolCache) toolCache = await detectAll(detectDeps);
-      return toolCache.opencode.installed ? toolCache.opencode.path : null;
-    },
-    vaultRoot: () => vaultRoot,
-    extraConfig: () => {
-      const cfg = loadConfig(configPath);
-      const extra: Record<string, unknown> = {};
-      // R15: seed the agent with graph topology + qmd availability via an
-      // instructions file, so the context costs no extra model turn.
-      try {
-        const gaps = computeGaps(graph.nodes, graph.links ?? []);
-        const ctxPath = resolve(dirname(graphPath), "agent-context.md");
-        writeFileSync(
-          ctxPath,
-          [
-            "# Solaris vault context",
-            "",
-            `You are working inside the "${graph.meta.vaultName}" vault (${graph.meta.notes} notes).`,
-            `Graph topology: ${gaps.stats.phantoms} phantom (linked-but-unwritten) targets, ${gaps.stats.orphans} orphan notes, sparse groups: ${gaps.stats.sparsePillars.slice(0, 5).join(", ") || "none"}.`,
-            "Top gaps:",
-            ...gaps.suggestions.map(
-              (s) => `- [${s.kind}] ${s.title}: ${s.reason}`,
-            ),
-            "",
-            `Semantic search (qmd) on this machine: ${toolCache?.qmd.installed ? "available" : "not installed"}.`,
-            "You cannot write files, run commands, or access the web. To create or change a note, describe the exact content and the user will apply it through Solaris.",
-          ].join("\n"),
-        );
-        extra.instructions = [ctxPath];
-      } catch (e) {
-        console.warn("agent context seed failed:", e);
-      }
-      if (cfg.defaultModel) extra.model = cfg.defaultModel;
-      // U10: register the propose tools via a plugin in the data dir —
-      // the agent's only mutation path, no vault/user-config pollution.
-      try {
-        extra.plugin = [writeProposePlugin(dirname(graphPath))];
-      } catch (e) {
-        console.warn("propose plugin generation failed:", e);
-      }
-      return extra;
-    },
-    extraEnv: () => ({
-      SOLARIS_PROPOSE_URL: `http://127.0.0.1:${ownPort}/api/agent/proposals/submit`,
-      SOLARIS_PROPOSE_SECRET: proposeSecret,
-    }),
-    ...(integrations?.opencode ?? {}),
-  });
-
-  const agentConsent = (res: express.Response): boolean => {
-    const cfg = loadConfig(configPath);
-    if (!cfg.consents.agent) {
-      res.status(403).json({
-        error: "agent-consent-required",
-        message:
-          "Agent mode needs your one-time consent first (activate Agent mode to review it).",
-      });
-      return false;
-    }
-    return true;
-  };
-
-  // GET /api/agent/status: missing | not-connected | ready (+ running flag).
-  // Never exposes the server password or auth credentials.
-  app.get("/api/agent/status", async (_req, res) => {
-    try {
-      const cfg = loadConfig(configPath);
-      const version = toolCache?.opencode.version ?? null;
-      res.json({
-        state: await agentBridge.state(),
-        running: agentBridge.running(),
-        agentMode: cfg.agentMode,
-        model: cfg.defaultModel,
-        // F017: self-test result (null until first spawn) + version drift
-        sandbox: agentBridge.sandboxState(),
-        driftWarning: isNewerVersion(version, VALIDATED_OPENCODE_VERSION)
-          ? `opencode ${version} is newer than the last version Solaris validated the sandbox against (${VALIDATED_OPENCODE_VERSION}); the per-boot self-test still guards it`
-          : null,
-      });
-    } catch (e) {
-      console.error("agent status failed:", e);
-      res.status(500).json({ error: "agent status failed" });
-    }
-  });
-
-  // GET /api/agent/models: OpenCode Zen free models from the running
-  // instance + the configured model. Local-only read (no egress, no
-  // consent needed); opencode unavailable -> empty list, custom entry
-  // still works in the UI. Never hardcodes model names (R13).
-  app.get("/api/agent/models", async (_req, res) => {
-    try {
-      const cfg = loadConfig(configPath);
-      let free: ReturnType<typeof zenFreeModels> = [];
-      try {
-        const client = await agentBridge.ensureRunning();
-        const r = await client.config.providers();
-        free = zenFreeModels(r.data);
-      } catch {
-        // opencode missing or failed to boot; selector falls back to custom entry
-      }
-      res.json({ free, current: cfg.defaultModel });
-    } catch (e) {
-      console.error("agent models failed:", e);
-      res.status(500).json({ error: "agent models failed" });
-    }
-  });
-
-  // POST /api/agent/session: create a conversation (consent-gated, R18).
-  app.post("/api/agent/session", guarded, express.json(), async (_req, res) => {
-    try {
-      if (!agentConsent(res)) return;
-      const client = await agentBridge.ensureRunning();
-      const r = await client.session.create({
-        body: { title: "Solaris agent" },
-      });
-      const id = r.data?.id;
-      if (!id) throw new Error("no session id from opencode");
-      res.json({ ok: true, id });
-    } catch (e) {
-      console.error(
-        "agent session failed:",
-        e instanceof Error ? e.message : e,
-      );
-      res.status(503).json({
-        error: "agent-unavailable",
-        message:
-          "Could not start the agent. Is OpenCode installed and connected?",
-      });
-    }
-  });
-
-  // POST /api/agent/message: async prompt; the reply streams over SSE.
-  app.post(
-    "/api/agent/message",
-    guarded,
-    express.json({ limit: "1mb" }),
-    async (req, res) => {
-      try {
-        if (!agentConsent(res)) return;
-        const { sessionId, text } = (req.body ?? {}) as Record<string, unknown>;
-        if (
-          typeof sessionId !== "string" ||
-          typeof text !== "string" ||
-          !text.trim()
-        ) {
-          res.status(400).json({ error: "sessionId and text required" });
-          return;
-        }
-        const client = await agentBridge.ensureRunning();
-        await client.session.promptAsync({
-          path: { id: sessionId },
-          body: { parts: [{ type: "text", text }] },
-        });
-        res.json({ ok: true });
-      } catch (e) {
-        console.error(
-          "agent message failed:",
-          e instanceof Error ? e.message : e,
-        );
-        res.status(503).json({
-          error: "agent-unavailable",
-          message: "The agent is not reachable.",
-        });
-      }
-    },
-  );
-
-  // GET /api/agent/stream?session=&token=: SSE relay of the session's
-  // events. EventSource cannot set headers, so the session token rides in
-  // the query string (localhost-only traffic, not logged).
-  app.get("/api/agent/stream", async (req, res) => {
-    try {
-      if (String(req.query.token ?? "") !== sessionToken) {
-        res.status(403).json({ error: "missing or invalid session token" });
-        return;
-      }
-      if (!agentConsent(res)) return;
-      const sessionId = String(req.query.session ?? "");
-      if (!sessionId) {
-        res.status(400).json({ error: "session required" });
-        return;
-      }
-      const client = await agentBridge.ensureRunning();
-      const sub = await client.event.subscribe();
-      res.writeHead(200, {
-        "content-type": "text/event-stream",
-        "cache-control": "no-cache",
-        connection: "keep-alive",
-      });
-      let closed = false;
-      req.on("close", () => {
-        closed = true;
-      });
-      for await (const ev of sub.stream) {
-        if (closed) break;
-        const sid = eventSessionId(ev);
-        if (sid !== null && sid !== sessionId) continue;
-        res.write(`data: ${JSON.stringify(ev)}\n\n`);
-      }
-      res.end();
-    } catch (e) {
-      console.error("agent stream failed:", e instanceof Error ? e.message : e);
-      if (!res.headersSent)
-        res.status(503).json({ error: "agent-unavailable" });
-      else res.end();
-    }
-  });
-
-  // POST /api/agent/proposals/submit: called ONLY by the propose plugin
-  // inside the opencode child, authenticated with the per-boot secret.
-  // The browser session token does not work here, and the propose secret
-  // does not work on /api/notes: the two write paths stay separate.
-  app.post(
-    "/api/agent/proposals/submit",
-    express.json({ limit: "1mb" }),
-    (req, res) => {
-      try {
-        if (req.headers["x-solaris-propose-secret"] !== proposeSecret) {
-          res.status(403).json({ error: "invalid propose secret" });
-          return;
-        }
-        const b = (req.body ?? {}) as Record<string, unknown>;
-        if (
-          (b.kind !== "create" && b.kind !== "edit") ||
-          typeof b.content !== "string"
-        ) {
-          res.status(400).json({ error: "kind and content required" });
-          return;
-        }
-        const { message, proposal } = proposalStore.submit({
-          kind: b.kind,
-          sessionId: typeof b.sessionId === "string" ? b.sessionId : undefined,
-          path: typeof b.path === "string" ? b.path : undefined,
-          title: typeof b.title === "string" ? b.title : undefined,
-          content: b.content,
-          rationale: typeof b.rationale === "string" ? b.rationale : undefined,
-        });
-        res.json({
-          ok: true,
-          id: proposal.id,
-          status: proposal.status,
-          message,
-        });
-      } catch (e) {
-        writeFail(res, e, "proposal submit");
-      }
-    },
-  );
-
-  // GET /api/agent/proposals: pending + settled proposals for the UI.
-  app.get("/api/agent/proposals", (req, res) => {
-    try {
-      const session =
-        typeof req.query.session === "string" ? req.query.session : undefined;
-      res.json({ proposals: proposalStore.list(session) });
-    } catch (e) {
-      console.error("proposals list failed:", e);
-      res.status(500).json({ error: "proposals list failed" });
-    }
-  });
-
-  // POST /api/agent/proposals/:id/approve — supports edit-before-approve
-  // via an optional replacement content/path in the body (AE10).
-  app.post(
-    "/api/agent/proposals/:id/approve",
-    guarded,
-    express.json({ limit: "5mb" }),
-    (req, res) => {
-      try {
-        const b = (req.body ?? {}) as Record<string, unknown>;
-        const p = proposalStore.approve(String(req.params.id), {
-          content: typeof b.content === "string" ? b.content : undefined,
-          path: typeof b.path === "string" ? b.path : undefined,
-        });
-        res.json({ ok: true, id: p.id, appliedPath: p.appliedPath });
-      } catch (e) {
-        writeFail(res, e, "proposal approve");
-      }
-    },
-  );
-
-  // POST /api/agent/proposals/:id/reject — vault untouched (AE6).
-  app.post(
-    "/api/agent/proposals/:id/reject",
-    guarded,
-    express.json(),
-    (req, res) => {
-      try {
-        const p = proposalStore.reject(String(req.params.id));
-        res.json({ ok: true, id: p.id, status: p.status });
-      } catch (e) {
-        writeFail(res, e, "proposal reject");
-      }
-    },
-  );
-
-  // ---- Embedded terminal (F022): the full opencode TUI in the column ----
-  // TRUST: runs with the USER'S own opencode config (direct writes under
-  // opencode's own prompts) — outside the Solaris journal/propose
-  // guarantees, and the docs say so. Requires Agent consent (egress).
-  const terminal = createTerminalManager(integrations?.terminal);
-
-  // POST /api/terminal/start: spawn (or reuse) the TUI in the vault dir.
-  app.post("/api/terminal/start", guarded, express.json(), async (req, res) => {
-    try {
-      if (!agentConsent(res)) return;
-      if (!toolCache) toolCache = await detectAll(detectDeps);
-      if (!toolCache.opencode.installed || !toolCache.opencode.path) {
-        res.status(503).json({
-          error: "opencode-missing",
-          message: "OpenCode is not installed.",
-        });
-        return;
-      }
-      const b = (req.body ?? {}) as Record<string, unknown>;
-      const cols = typeof b.cols === "number" ? b.cols : 80;
-      const rows = typeof b.rows === "number" ? b.rows : 24;
-      try {
-        await terminal.start(toolCache.opencode.path, vaultRoot, cols, rows);
-      } catch (e) {
-        console.error(
-          "terminal start failed:",
-          e instanceof Error ? e.message : e,
-        );
-        res.status(503).json({
-          error: "pty-unavailable",
-          message:
-            "The embedded terminal needs the node-pty native module, which is not available in this install.",
-        });
-        return;
-      }
-      res.json({ ok: true });
-    } catch (e) {
-      console.error("terminal start failed:", e);
-      res.status(500).json({ error: "terminal start failed" });
-    }
-  });
-
-  // GET /api/terminal/stream?token=: SSE relay of PTY output (JSON-encoded
-  // chunks; EventSource cannot carry raw control bytes across newlines).
-  app.get("/api/terminal/stream", (req, res) => {
-    if (String(req.query.token ?? "") !== sessionToken) {
-      res.status(403).json({ error: "missing or invalid session token" });
-      return;
-    }
-    res.writeHead(200, {
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache",
-      connection: "keep-alive",
-    });
-    const unsubscribe = terminal.subscribe((d) => {
-      res.write(`data: ${JSON.stringify(d)}\n\n`);
-      if (!terminal.running()) res.end(); // pty exited; let the client reconnect on restart
-    });
-    req.on("close", unsubscribe);
-  });
-
-  // POST /api/terminal/input | /resize | /kill: token-guarded controls.
-  app.post(
-    "/api/terminal/input",
-    guarded,
-    express.json({ limit: "1mb" }),
-    (req, res) => {
-      const d = (req.body ?? ({} as Record<string, unknown>)).data;
-      if (typeof d === "string") terminal.write(d);
-      res.json({ ok: true });
-    },
-  );
-  app.post("/api/terminal/resize", guarded, express.json(), (req, res) => {
-    const b = (req.body ?? {}) as Record<string, unknown>;
-    if (typeof b.cols === "number" && typeof b.rows === "number")
-      terminal.resize(b.cols, b.rows);
-    res.json({ ok: true });
-  });
-  app.post("/api/terminal/kill", guarded, (_req, res) => {
-    terminal.kill();
-    res.json({ ok: true });
-  });
-
-  // POST /api/agent/cancel: abort the in-flight turn.
-  app.post("/api/agent/cancel", guarded, express.json(), async (req, res) => {
-    try {
-      if (!agentConsent(res)) return;
-      const sessionId = String(
-        (req.body ?? ({} as Record<string, unknown>)).sessionId ?? "",
-      );
-      if (!sessionId) {
-        res.status(400).json({ error: "sessionId required" });
-        return;
-      }
-      const client = await agentBridge.ensureRunning();
-      await client.session.abort({ path: { id: sessionId } });
-      res.json({ ok: true });
-    } catch (e) {
-      console.error("agent cancel failed:", e instanceof Error ? e.message : e);
-      res.status(503).json({ error: "agent-unavailable" });
-    }
-  });
-
-  // GET /api/note-questions?id=: 3-5 research questions derived from one
-  // note. LLM-generated via the LOCKED-DOWN bridge when opencode is ready
-  // and Agent consent is recorded (F021: gap-aware, note content leaves
-  // the machine only under that consent); anything else falls back to the
-  // local templates (F019). Executing a question is still the user's
-  // explicit choice through the consent-gated /api/research.
-  let questionsSession = ""; // one utility session per server run
-  app.get("/api/note-questions", async (req, res) => {
+  // GET /api/note-questions?id=: 3-5 template research questions derived
+  // from one note (F019). The LLM path returns (OpenRouter) in a later
+  // task; until then every request returns the local templates.
+  app.get("/api/note-questions", (req, res) => {
     const id = String(req.query.id ?? "");
-    const templates = () => noteQuestions(graph.nodes, graph.links ?? [], id);
-    try {
-      const cfg = loadConfig(configPath);
-      if (!cfg.consents.agent || (await agentBridge.state()) !== "ready") {
-        res.json({ questions: templates(), source: "templates" });
-        return;
-      }
-      const full = resolve(vaultRoot, id);
-      if (
-        !full.startsWith(resolve(vaultRoot) + sep) ||
-        !full.toLowerCase().endsWith(".md") ||
-        !existsSync(full)
-      ) {
-        res.json({ questions: templates(), source: "templates" });
-        return;
-      }
-      const note = graph.nodes.find((n) => n.id === id);
-      const excerpt = readFileSync(full, "utf-8")
-        .replace(/^---\n[\s\S]*?\n---\n?/, "")
-        .slice(0, 1500);
-      const phantoms = (graph.links ?? [])
-        .filter((l) => l.source === id)
-        .map((l) => graph.nodes.find((n) => n.id === l.target))
-        .filter((n) => n?.phantom)
-        .map((n) => n!.title)
-        .slice(0, 8);
-      const client = await agentBridge.ensureRunning();
-      if (!questionsSession) {
-        const s = await client.session.create({
-          body: { title: "Solaris research questions" },
-        });
-        questionsSession = s.data?.id ?? "";
-        if (!questionsSession) throw new Error("no utility session");
-      }
-      const prompt = [
-        "Generate 3-5 web-research questions that would close the knowledge gaps around this note from my knowledge vault.",
-        "Focus on what is missing, unresolved, or worth investigating further — not on summarizing what the note already covers.",
-        phantoms.length
-          ? `The note references these topics that have no note of their own yet: ${phantoms.join(", ")}.`
-          : "",
-        `Note title: ${note?.title ?? id}`,
-        `Note content (excerpt):\n${excerpt}`,
-        'Reply with ONLY a JSON array of question strings, e.g. ["question one?", "question two?"]. No other text.',
-      ]
-        .filter(Boolean)
-        .join("\n\n");
-      const turn = client.session.prompt({
-        path: { id: questionsSession },
-        body: { parts: [{ type: "text", text: prompt }] },
-      });
-      const r = await Promise.race([
-        turn,
-        new Promise<never>((_, rej) =>
-          setTimeout(() => rej(new Error("llm questions timed out")), 25_000),
-        ),
-      ]);
-      const text = (r.data?.parts ?? [])
-        .filter((p) => p.type === "text" && typeof p.text === "string")
-        .map((p) => p.text)
-        .join("\n");
-      const start = text.indexOf("[");
-      const end = text.lastIndexOf("]");
-      if (start < 0 || end <= start) throw new Error("no JSON array in reply");
-      const parsed: unknown = JSON.parse(text.slice(start, end + 1));
-      const questions = (Array.isArray(parsed) ? parsed : [])
-        .filter(
-          (q): q is string => typeof q === "string" && q.trim().length > 0,
-        )
-        .slice(0, 5);
-      if (!questions.length) throw new Error("empty question list");
-      res.json({ questions, source: "llm" });
-    } catch (e) {
-      console.warn(
-        "llm questions fell back to templates:",
-        e instanceof Error ? e.message : e,
-      );
-      res.json({ questions: templates(), source: "templates" });
-    }
+    res.json({
+      questions: noteQuestions(graph.nodes, graph.links ?? [], id),
+      source: "templates",
+    });
   });
 
   // GET /api/gaps/enrich?q=: qmd context for one gap suggestion (F016) —

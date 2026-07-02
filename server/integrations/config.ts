@@ -20,8 +20,7 @@ import { dirname, join } from "node:path";
 
 export interface SolarisConfig {
   exaKey: string | null;
-  consents: { web: boolean; agent: boolean };
-  agentMode: "approval" | "full";
+  consents: { web: boolean };
   defaultModel: string | null;
   /** Vault-relative destination folder for created notes (R12). */
   writeDestination: string;
@@ -32,7 +31,6 @@ export interface SolarisConfig {
 export interface ConfigPatch {
   exaKey?: string | null;
   consents?: Partial<SolarisConfig["consents"]>;
-  agentMode?: SolarisConfig["agentMode"];
   defaultModel?: string | null;
   writeDestination?: string;
   addons?: Record<string, string>;
@@ -41,8 +39,7 @@ export interface ConfigPatch {
 export function defaultConfig(): SolarisConfig {
   return {
     exaKey: null,
-    consents: { web: false, agent: false },
-    agentMode: "approval",
+    consents: { web: false },
     defaultModel: null,
     writeDestination: "inbox",
     addons: {},
@@ -66,10 +63,7 @@ function merge(base: SolarisConfig, patch: unknown): SolarisConfig {
   if (typeof p.consents === "object" && p.consents !== null) {
     const c = p.consents as Record<string, unknown>;
     if (typeof c.web === "boolean") out.consents.web = c.web;
-    if (typeof c.agent === "boolean") out.consents.agent = c.agent;
   }
-  if (p.agentMode === "approval" || p.agentMode === "full")
-    out.agentMode = p.agentMode;
   if (typeof p.defaultModel === "string" || p.defaultModel === null)
     out.defaultModel = p.defaultModel;
   if (typeof p.writeDestination === "string" && p.writeDestination)

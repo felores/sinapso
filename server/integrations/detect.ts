@@ -53,7 +53,7 @@ function realDeps(): DetectDeps {
   };
 }
 
-export type ToolName = "qmd" | "opencode" | "markitdown";
+export type ToolName = "qmd" | "markitdown";
 
 export interface ToolStatus {
   installed: boolean;
@@ -64,7 +64,6 @@ export interface ToolStatus {
 // Known install locations the launchd PATH misses.
 const CANDIDATES: Record<ToolName, (home: string) => string[]> = {
   qmd: (h) => [join(h, ".bun", "bin", "qmd")],
-  opencode: (h) => [join(h, ".opencode", "bin", "opencode")],
   // pip --user and `uv tool install` both land here
   markitdown: (h) => [join(h, ".local", "bin", "markitdown")],
 };
@@ -109,10 +108,9 @@ export async function detectTool(
 export async function detectAll(
   deps: Partial<DetectDeps> = {},
 ): Promise<Record<ToolName, ToolStatus>> {
-  const [qmd, opencode, markitdown] = await Promise.all([
+  const [qmd, markitdown] = await Promise.all([
     detectTool("qmd", deps),
-    detectTool("opencode", deps),
     detectTool("markitdown", deps),
   ]);
-  return { qmd, opencode, markitdown };
+  return { qmd, markitdown };
 }
