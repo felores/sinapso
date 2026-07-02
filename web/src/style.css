@@ -899,3 +899,16 @@ html, body {
   font-size: 12px;
 }
 #agent-model:focus { outline: none; border-color: var(--accent); }
+#integ-install {
+  margin-top: 4px;
+  width: 100%;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 5px;
+  font-size: 12px;
+  cursor: pointer;
+}
+#integ-install:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+#integ-install:disabled { opacity: 0.6; cursor: default; }

@@ -1,7 +1,7 @@
 {
   "project": "solaris-optional-integrations",
   "created": "2026-07-02T04:37:20Z",
-  "updated": "2026-07-02T04:37:20Z",
+  "updated": "2026-07-02T12:44:44Z",
   "features": [
     {
       "id": "F001",
@@ -321,7 +321,7 @@
         "command": "npm test && npm run typecheck",
         "expected": "server/integrations/install.test.ts passes with faked runners: existing qmd -> skip + config untouched (AE7), missing Bun -> guided instructions and no partial install, failure surfaces stderr, core behavior identical when addons declined. Docs updated consistently"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": [
         "F001"
       ],
@@ -336,11 +336,11 @@
       "confidence": "needs-review",
       "context_note": "KTD8/KTD11. Never run real installers in tests (faked runner). Fresh-machine dry-run of the prompt path is the deferred manual check.",
       "spec_ref": "docs/plans/2026-07-01-002-feat-optional-integrations-qmd-exa-opencode-plan.md#u12-two-flavor-installer-and-trust-model-docs",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "npm test 107/107 + typecheck + build + build:cli green. installAddons checks existing installs first and runs zero installer commands when present (AE7); missing Bun -> guided instructions, no partial install; install failure surfaces stderr; opencode via official one-liner. POST /api/integrations/install token-guarded, invalidates detection cache; CLI --addons flag; settings 'install missing addons' button. README + CLAUDE.md re-scoped: core uploads nothing, Web/Agent consent-gated, single guarded write path documented. DEFERRED: fresh-machine dry-run",
+      "implemented_by": "claude-fable-5",
+      "implemented_at": "2026-07-02T07:55:00Z",
+      "verified_by": "harness-progress verify (npm test && npm run typecheck, exit 0)",
+      "verified_at": "2026-07-02T07:56:00Z"
     }
   ]
 }

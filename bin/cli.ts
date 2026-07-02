@@ -2,13 +2,18 @@
 /**
  * Akasha CLI, the zero-install on-ramp:
  *
- *   npx solaris "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open]
+ *   npx solaris "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open] [--addons]
  *
  * Scans the vault (incrementally), serves the 3D map on localhost, and opens
  * the browser. Per-vault data (graph, scan cache, layout cache) lives under
  * ~/.solaris/<vault-hash>/ so repeat runs boot from cache.
  *
- * Security: All vault data remains local; nothing is uploaded.
+ * Two install flavors (R16): core (default, no external tools) and
+ * --addons, which checks for qmd/OpenCode and installs only what is
+ * missing, never touching an existing setup.
+ *
+ * Security: The core never uploads anything. The optional Web and Agent
+ * modes send data off-machine only behind explicit consent gates.
  * Performance: Incremental scanning caches parse results by mtime+size.
  */
 
@@ -20,6 +25,7 @@ import { exec } from "node:child_process";
 import type { AddressInfo } from "node:net";
 import { scanVault } from "../scanner/scan";
 import { createApp } from "../server/app";
+import { installAddons } from "../server/integrations/install";
 
 // Parse command-line arguments
 const argv = process.argv.slice(2);
@@ -29,6 +35,7 @@ const args = {
   port: 5175,
   full: false,
   open: true,
+  addons: false,
 };
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
@@ -36,15 +43,24 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === "--port") args.port = Number(argv[++i]);
   else if (a === "--full") args.full = true;
   else if (a === "--no-open") args.open = false;
+  else if (a === "--addons") args.addons = true;
   else if (!args.vault) args.vault = a;
 }
 
 // Validate required vault argument
 if (!args.vault) {
   console.error(
-    'usage: solaris "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open]',
+    'usage: solaris "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open] [--addons]',
   );
   process.exit(1);
+}
+
+// Addons flavor: install missing tools first (existing installs untouched).
+if (args.addons) {
+  void installAddons({}).then((results) => {
+    for (const r of results)
+      console.log(`addons: ${r.tool} — ${r.status}: ${r.detail}`);
+  });
 }
 
 // Normalize vault path and verify it exists

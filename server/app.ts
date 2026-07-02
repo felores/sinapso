@@ -50,6 +50,7 @@ import {
   eventSessionId,
   type OpencodeBridgeDeps,
 } from "./integrations/opencode.js";
+import { installAddons } from "./integrations/install.js";
 import {
   createProposalStore,
   writeProposePlugin,
@@ -178,6 +179,31 @@ export function createApp(
       res.status(500).json({ error: "config update failed" });
     }
   });
+
+  // POST /api/integrations/install: the addons flavor (U12). Checks
+  // existing installs first and never touches them (R16/AE7). Token-guarded
+  // (installs software). Detection cache is invalidated afterwards.
+  app.post(
+    "/api/integrations/install",
+    guarded,
+    express.json(),
+    async (req, res) => {
+      try {
+        const b = (req.body ?? {}) as { tools?: unknown };
+        const tools = Array.isArray(b.tools)
+          ? (b.tools.filter((t) => t === "qmd" || t === "opencode") as Array<
+              "qmd" | "opencode"
+            >)
+          : undefined;
+        const results = await installAddons(detectDeps ?? {}, tools);
+        toolCache = null; // re-probe on next status call
+        res.json({ results });
+      } catch (e) {
+        console.error("addons install failed:", e);
+        res.status(500).json({ error: "install failed" });
+      }
+    },
+  );
 
   // ---- Semantic mode: qmd bridge (U3) ----
   const qmdRun = integrations?.detectDeps?.run ?? realRunner;

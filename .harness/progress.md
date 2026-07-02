@@ -30,3 +30,17 @@ Initialized 2026-07-02 from docs/plans/2026-07-01-002-feat-optional-integrations
 - F008: passing (Web mode UI) — commit a055473. Playwright F3 end-to-end on scratch vault with mocked Exa; AE8 decline verified; global config restored after test
 
 **Passing:** 8/12 (67%) — M2 done. Next: F009 (OpenCode bridge, M3)
+
+## Session 2026-07-02 (9-12): Milestone 3 complete — ALL FEATURES PASSING
+
+**Features:**
+- F009: passing (OpenCode bridge) — commit 20608a1. Live-verified against opencode 1.17.13; lockdown adapted to current config schema (tools map + permission keys; no websearch/task/skill permission keys anymore)
+- F010: passing (proposals, audit, provenance) — commit 35f4b69. Open question resolved: propose tools via config.plugin in data dir (not ask-intercept)
+- F011: passing (agent chat UI) — commit c3e054b. Live smoke: consent -> real serve spawn -> session -> SSE. Deferred: live model turn (F4/F5)
+- F012: passing (installer + trust docs) — this commit
+
+**Passing: 12/12 (100%).** Definition of Done met except deferred human-review items (see features.json evidence fields):
+- Live Exa query with a real key (F006/F008)
+- Live agent conversation with a model turn: propose -> approve -> node+edge (F011)
+- Fresh-machine addons dry-run (F012)
+- M1 F1 flow on a vault without qmd coverage (F004)

@@ -2331,6 +2331,45 @@ async function boot() {
   $("#integ-recheck").addEventListener("click", () =>
     refreshIntegrations(true).then(refreshQmdStatus),
   );
+  // Addons flavor from the UI (KTD8): installs only what is missing.
+  $("#integ-install").addEventListener("click", async () => {
+    const btn = $("#integ-install") as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = "installing missing addons…";
+    try {
+      const res = await fetch("/api/integrations/install", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-solaris-token": await apiToken(),
+        },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      const lines = (
+        data.results as Array<{ tool: string; status: string; detail: string }>
+      )
+        .map(
+          (r) =>
+            `<tr><td><b>${r.tool}</b></td><td>${r.status}</td></tr><tr><td colspan="2" class="muted"></td></tr>`,
+        )
+        .join("");
+      showModal(
+        "Addons",
+        `<table>${lines}</table><p class="muted">Existing installs are never touched. Re-checking tools…</p>`,
+      );
+      await refreshIntegrations(true).then(refreshQmdStatus);
+    } catch {
+      showModal(
+        "Install failed",
+        "<p>Could not run the addons install. Check the server log.</p>",
+      );
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "install missing addons";
+    }
+  });
   const integrationsLoaded = refreshIntegrations().then(refreshQmdStatus);
 
   // ---- semantic surfaces: related notes, setup prompt, collection toggles (U4) ----

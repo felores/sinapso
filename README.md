@@ -254,9 +254,46 @@ Keyboard & Mouse Controls** lists every input. **Filters** sits bottom-left,
 **⚙ settings** bottom-right, with note/link counts centered between them. In
 the desktop build, `Ctrl/Cmd+Shift+O` opens a vault.
 
+## Optional integrations
+
+Three mode buttons sit next to the search bar; each lights up only when its
+tool is detected, and Solaris stays fully functional with none of them:
+
+| Mode | Tool | What it adds |
+|------|------|--------------|
+| **Semantic** ◈ | [qmd](https://github.com/tobi/qmd) (local) | A "Related notes (semantic)" section in the reader, semantic search, and per-collection toggles in Filters. All local. |
+| **Web** ◍ | [Exa](https://exa.ai) (API key) | Gap-closing suggested queries from your graph's phantoms and orphans, web results in a panel, save-as-note into `inbox/`. |
+| **Agent** ✦ | [OpenCode](https://opencode.ai) (local + account) | A conversation with your vault. The agent can only *propose* notes and edits; you approve each change (or opt into full access). |
+
+Two install flavors: **core** (default, nothing extra) and **addons** —
+`npx solaris "<vault>" --addons` or *Settings → install missing addons* —
+which installs only what is missing and never touches an existing setup.
+
+### Trust model
+
+- **The core uploads nothing.** Scanning, rendering, search, and reading are
+  fully local; the server binds to `127.0.0.1` only.
+- **Web and Agent modes send data off-machine only behind explicit,
+  one-time consent gates** shown before the first request: web queries go to
+  Exa with your own key; agent conversations go to the model provider you
+  configured in OpenCode (free Zen models may use conversation data for
+  training).
+- **The vault is written only through one guarded endpoint** (path-confined,
+  `.md`-only, never overwrites) and only on your action: saving a web result,
+  approving an agent proposal, or standing consent via full-access mode.
+  Every agent write is journaled in `data/changes.jsonl`, and agent-created
+  notes carry provenance frontmatter.
+- The agent itself cannot write files, run commands, or reach the network:
+  its OpenCode child runs with all write/egress tools denied, scoped to the
+  vault directory.
+- Secrets (the Exa key) live in `~/.solaris/config.json` (mode 600), outside
+  the vault and outside version control, and never appear in API responses.
+
 ## Privacy
 
-Everything runs on `localhost`. Data and files are never copied, indexed, or uploaded.
+Everything in the core runs on `localhost`; data and files are never copied,
+indexed, or uploaded. The optional Web and Agent modes are opt-in and
+consent-gated, as described in the trust model above.
 
 ## Stack
 
