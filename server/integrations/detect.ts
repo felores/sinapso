@@ -16,7 +16,11 @@ export interface RunResult {
   stderr: string;
 }
 
-export type Runner = (cmd: string, args: string[]) => Promise<RunResult>;
+export type Runner = (
+  cmd: string,
+  args: string[],
+  timeoutMs?: number,
+) => Promise<RunResult>;
 
 export interface DetectDeps {
   run: Runner;
@@ -25,14 +29,18 @@ export interface DetectDeps {
   env: Record<string, string | undefined>;
 }
 
-export const realRunner: Runner = (cmd, args) =>
+export const realRunner: Runner = (cmd, args, timeoutMs) =>
   new Promise((res) => {
-    execFile(cmd, args, { timeout: 10_000 }, (err, stdout, stderr) =>
-      res({
-        ok: !err,
-        stdout: String(stdout ?? ""),
-        stderr: String(stderr ?? ""),
-      }),
+    execFile(
+      cmd,
+      args,
+      { timeout: timeoutMs ?? 10_000 },
+      (err, stdout, stderr) =>
+        res({
+          ok: !err,
+          stdout: String(stdout ?? ""),
+          stderr: String(stderr ?? ""),
+        }),
     );
   });
 

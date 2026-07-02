@@ -28,10 +28,19 @@ import {
 } from "./integrations/config.js";
 import {
   detectAll,
+  realRunner,
   type DetectDeps,
   type ToolName,
   type ToolStatus,
 } from "./integrations/detect.js";
+import {
+  coveringCollections,
+  createQmdSetup,
+  hitsToNodes,
+  listCollections,
+  vsearch,
+  type QmdCollection,
+} from "./integrations/qmd.js";
 import {
   createSessionToken,
   localOnly,
@@ -135,6 +144,160 @@ export function createApp(
     } catch (e) {
       console.error("Config update failed:", e);
       res.status(500).json({ error: "config update failed" });
+    }
+  });
+
+  // ---- Semantic mode: qmd bridge (U3) ----
+  const qmdRun = integrations?.detectDeps?.run ?? realRunner;
+  const qmdSetup = createQmdSetup(qmdRun);
+
+  // qmd binary path via the detection cache (GUI launches lack ~/.bun/bin on PATH).
+  async function qmdBin(): Promise<string | null> {
+    if (!toolCache) toolCache = await detectAll(detectDeps);
+    return toolCache.qmd.installed ? toolCache.qmd.path : null;
+  }
+
+  // Collection list spawns one qmd process per collection; cache briefly.
+  let colCache: { at: number; cols: QmdCollection[] } | null = null;
+  async function collections(bin: string): Promise<QmdCollection[]> {
+    if (!colCache || Date.now() - colCache.at > 60_000) {
+      colCache = { at: Date.now(), cols: await listCollections(qmdRun, bin) };
+    }
+    return colCache.cols;
+  }
+
+  // Shared by /api/related and /api/semantic-search: run vsearch, keep only
+  // in-graph nodes (R5), honor the enabled-collections filter (R8).
+  async function semanticQuery(
+    queryText: string,
+    collectionsParam: unknown,
+  ): Promise<{ status: number; body: object }> {
+    const bin = await qmdBin();
+    if (!bin) return { status: 503, body: { error: "qmd not installed" } };
+    if (qmdSetup.state() === "indexing")
+      return { status: 200, body: { state: "indexing", results: [] } };
+    if (qmdSetup.state() === "ready") colCache = null; // pick up the new collection once
+    const covering = coveringCollections(await collections(bin), vaultRoot);
+    if (!covering.length)
+      return { status: 200, body: { state: "uncovered", results: [] } };
+    const enabled =
+      typeof collectionsParam === "string" && collectionsParam
+        ? new Set(collectionsParam.split(",").filter(Boolean))
+        : undefined;
+    const hits = await vsearch(qmdRun, bin, queryText, 20);
+    const nodeTitles = new Map(
+      graph.nodes.filter((n) => !n.phantom).map((n) => [n.id, n.title]),
+    );
+    const results = hitsToNodes(hits, covering, vaultRoot, nodeTitles, enabled);
+    return { status: 200, body: { state: "ready", results } };
+  }
+
+  // GET /api/qmd/status: missing | uncovered | indexing | error | ready(+collections)
+  app.get("/api/qmd/status", async (_req, res) => {
+    try {
+      const bin = await qmdBin();
+      if (!bin) {
+        res.json({ state: "missing" });
+        return;
+      }
+      if (qmdSetup.state() === "indexing") {
+        res.json({ state: "indexing" });
+        return;
+      }
+      if (qmdSetup.state() === "error") {
+        res.json({ state: "error", error: qmdSetup.error() });
+        return;
+      }
+      if (qmdSetup.state() === "ready") colCache = null;
+      const covering = coveringCollections(await collections(bin), vaultRoot);
+      res.json(
+        covering.length
+          ? { state: "ready", collections: covering.map((c) => c.name) }
+          : { state: "uncovered" },
+      );
+    } catch (e) {
+      console.error("qmd status failed:", e);
+      res.status(500).json({ error: "qmd status failed" });
+    }
+  });
+
+  // POST /api/qmd/setup: create + index a collection for this vault (R6),
+  // reusing existing coverage instead of duplicating (R7). Token-guarded.
+  app.post("/api/qmd/setup", guarded, async (_req, res) => {
+    try {
+      const bin = await qmdBin();
+      if (!bin) {
+        res.status(503).json({ error: "qmd not installed" });
+        return;
+      }
+      const covering = coveringCollections(await collections(bin), vaultRoot);
+      if (covering.length) {
+        res.json({
+          ok: true,
+          state: "ready",
+          reused: covering.map((c) => c.name),
+        });
+        return;
+      }
+      qmdSetup.start(bin, vaultRoot);
+      res.json({ ok: true, state: "indexing" });
+    } catch (e) {
+      console.error("qmd setup failed:", e);
+      res.status(500).json({ error: "qmd setup failed" });
+    }
+  });
+
+  // GET /api/related?id=...: notes semantically related to one note (R4/R5),
+  // queried with the note's title + an excerpt of its body.
+  app.get("/api/related", async (req, res) => {
+    try {
+      const id = String(req.query.id ?? "");
+      if (!id || id.startsWith("phantom:")) {
+        res.status(404).json({ error: "note not found" });
+        return;
+      }
+      const full = resolve(vaultRoot, id);
+      if (
+        !full.startsWith(resolve(vaultRoot) + sep) ||
+        !full.toLowerCase().endsWith(".md")
+      ) {
+        res.status(400).json({ error: "invalid note id" });
+        return;
+      }
+      if (!existsSync(full)) {
+        res.status(404).json({ error: "note not found" });
+        return;
+      }
+      const text = readFileSync(full, "utf-8");
+      const body = text.replace(/^---\n[\s\S]*?\n---\n?/, "");
+      const title = graph.nodes.find((n) => n.id === id)?.title ?? "";
+      const r = await semanticQuery(
+        `${title}\n${body.slice(0, 600)}`,
+        req.query.collections,
+      );
+      const b = r.body as { results?: Array<{ id: string }> };
+      if (b.results)
+        b.results = b.results.filter((n) => n.id !== id).slice(0, 8);
+      res.status(r.status).json(r.body);
+    } catch (e) {
+      console.error("related failed:", e);
+      res.status(500).json({ error: "related failed" });
+    }
+  });
+
+  // GET /api/semantic-search?q=...: qmd-powered search mapped to graph nodes (R9).
+  app.get("/api/semantic-search", async (req, res) => {
+    try {
+      const q = String(req.query.q ?? "").trim();
+      if (!q) {
+        res.json({ state: "ready", results: [] });
+        return;
+      }
+      const r = await semanticQuery(q, req.query.collections);
+      res.status(r.status).json(r.body);
+    } catch (e) {
+      console.error("semantic search failed:", e);
+      res.status(500).json({ error: "semantic search failed" });
     }
   });
 

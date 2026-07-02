@@ -54,17 +54,17 @@
         "command": "npm test && npm run typecheck",
         "expected": "server/integrations/qmd.test.ts passes with a faked qmd runner: path->node-id mapping drops out-of-graph files (AE3), coverage detected for exact and parent-path roots (AE2), setup skipped when covered, status stays indexing until embeddings done (AE4), vsearch invoked not query/search, collections filter narrows, missing binary -> 503, malformed JSON -> empty + warning"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": ["F001"],
       "files_touched": ["server/integrations/qmd.ts", "server/integrations/qmd.test.ts", "server/app.ts"],
       "confidence": "autonomous",
       "context_note": "Test-first with the injectable runner from F001; never invoke the real qmd binary in tests. vsearch chosen over query (too slow, LLM rerank) to meet the 1-2s target. Manual latency validation on a real vault happens at review.",
       "spec_ref": "docs/plans/2026-07-01-002-feat-optional-integrations-qmd-exa-opencode-plan.md#u3-qmd-bridge-setup-related-notes-semantic-search",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "npm test 46/46 + typecheck green. Real-vault check: /api/related on FeloVault (4049 notes) returns high-quality in-graph results reusing 9 existing collections. Latency: 7-9s/query (qmd per-spawn model+index load), NOT the 1-2s aspiration; vec:-typed queries avoid 30s+ LLM expansion; upgrade path = warm qmd mcp child (docs/solutions/qmd-vsearch-latency.md)",
+      "implemented_by": "claude-fable-5",
+      "implemented_at": "2026-07-02T05:20:00Z",
+      "verified_by": "harness-progress verify (npm test && npm run typecheck, exit 0) + real-vault probe",
+      "verified_at": "2026-07-02T05:22:00Z"
     },
     {
       "id": "F004",
