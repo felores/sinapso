@@ -51,6 +51,10 @@ import {
   type OpencodeBridgeDeps,
 } from "./integrations/opencode.js";
 import {
+  createProposalStore,
+  writeProposePlugin,
+} from "./integrations/proposals.js";
+import {
   createSessionToken,
   localOnly,
   requireToken,
@@ -450,6 +454,32 @@ export function createApp(
     }
   });
 
+  // ---- Agent proposals (U10): the trust core ----
+  // The propose plugin calls back into this server; it learns our port from
+  // the first request (the bridge only ever starts inside a request).
+  let ownPort = 0;
+  app.use((req, _res, next) => {
+    ownPort ||= req.socket.localPort ?? 0;
+    next();
+  });
+  const proposeSecret = createSessionToken();
+
+  const proposalStore = createProposalStore({
+    writeDeps: () => ({ vaultRoot, dataDir: dirname(graphPath) }),
+    agentMode: () => loadConfig(configPath).agentMode,
+    destination: () => loadConfig(configPath).writeDestination,
+    readNote: (id) => {
+      const full = resolve(vaultRoot, id);
+      if (
+        !full.startsWith(resolve(vaultRoot) + sep) ||
+        !full.toLowerCase().endsWith(".md") ||
+        !existsSync(full)
+      )
+        return null;
+      return readFileSync(full, "utf-8");
+    },
+  });
+
   // ---- Agent mode: OpenCode bridge (U9) ----
   const agentBridge = createOpencodeBridge({
     binPath: async () => {
@@ -486,8 +516,19 @@ export function createApp(
         console.warn("agent context seed failed:", e);
       }
       if (cfg.defaultModel) extra.model = cfg.defaultModel;
+      // U10: register the propose tools via a plugin in the data dir —
+      // the agent's only mutation path, no vault/user-config pollution.
+      try {
+        extra.plugin = [writeProposePlugin(dirname(graphPath))];
+      } catch (e) {
+        console.warn("propose plugin generation failed:", e);
+      }
       return extra;
     },
+    extraEnv: () => ({
+      SOLARIS_PROPOSE_URL: `http://127.0.0.1:${ownPort}/api/agent/proposals/submit`,
+      SOLARIS_PROPOSE_SECRET: proposeSecret,
+    }),
     ...(integrations?.opencode ?? {}),
   });
 
@@ -537,13 +578,11 @@ export function createApp(
         "agent session failed:",
         e instanceof Error ? e.message : e,
       );
-      res
-        .status(503)
-        .json({
-          error: "agent-unavailable",
-          message:
-            "Could not start the agent. Is OpenCode installed and connected?",
-        });
+      res.status(503).json({
+        error: "agent-unavailable",
+        message:
+          "Could not start the agent. Is OpenCode installed and connected?",
+      });
     }
   });
 
@@ -575,12 +614,10 @@ export function createApp(
           "agent message failed:",
           e instanceof Error ? e.message : e,
         );
-        res
-          .status(503)
-          .json({
-            error: "agent-unavailable",
-            message: "The agent is not reachable.",
-          });
+        res.status(503).json({
+          error: "agent-unavailable",
+          message: "The agent is not reachable.",
+        });
       }
     },
   );
@@ -625,6 +662,94 @@ export function createApp(
       else res.end();
     }
   });
+
+  // POST /api/agent/proposals/submit: called ONLY by the propose plugin
+  // inside the opencode child, authenticated with the per-boot secret.
+  // The browser session token does not work here, and the propose secret
+  // does not work on /api/notes: the two write paths stay separate.
+  app.post(
+    "/api/agent/proposals/submit",
+    express.json({ limit: "1mb" }),
+    (req, res) => {
+      try {
+        if (req.headers["x-solaris-propose-secret"] !== proposeSecret) {
+          res.status(403).json({ error: "invalid propose secret" });
+          return;
+        }
+        const b = (req.body ?? {}) as Record<string, unknown>;
+        if (
+          (b.kind !== "create" && b.kind !== "edit") ||
+          typeof b.content !== "string"
+        ) {
+          res.status(400).json({ error: "kind and content required" });
+          return;
+        }
+        const { message, proposal } = proposalStore.submit({
+          kind: b.kind,
+          sessionId: typeof b.sessionId === "string" ? b.sessionId : undefined,
+          path: typeof b.path === "string" ? b.path : undefined,
+          title: typeof b.title === "string" ? b.title : undefined,
+          content: b.content,
+          rationale: typeof b.rationale === "string" ? b.rationale : undefined,
+        });
+        res.json({
+          ok: true,
+          id: proposal.id,
+          status: proposal.status,
+          message,
+        });
+      } catch (e) {
+        writeFail(res, e, "proposal submit");
+      }
+    },
+  );
+
+  // GET /api/agent/proposals: pending + settled proposals for the UI.
+  app.get("/api/agent/proposals", (req, res) => {
+    try {
+      const session =
+        typeof req.query.session === "string" ? req.query.session : undefined;
+      res.json({ proposals: proposalStore.list(session) });
+    } catch (e) {
+      console.error("proposals list failed:", e);
+      res.status(500).json({ error: "proposals list failed" });
+    }
+  });
+
+  // POST /api/agent/proposals/:id/approve — supports edit-before-approve
+  // via an optional replacement content/path in the body (AE10).
+  app.post(
+    "/api/agent/proposals/:id/approve",
+    guarded,
+    express.json({ limit: "5mb" }),
+    (req, res) => {
+      try {
+        const b = (req.body ?? {}) as Record<string, unknown>;
+        const p = proposalStore.approve(String(req.params.id), {
+          content: typeof b.content === "string" ? b.content : undefined,
+          path: typeof b.path === "string" ? b.path : undefined,
+        });
+        res.json({ ok: true, id: p.id, appliedPath: p.appliedPath });
+      } catch (e) {
+        writeFail(res, e, "proposal approve");
+      }
+    },
+  );
+
+  // POST /api/agent/proposals/:id/reject — vault untouched (AE6).
+  app.post(
+    "/api/agent/proposals/:id/reject",
+    guarded,
+    express.json(),
+    (req, res) => {
+      try {
+        const p = proposalStore.reject(String(req.params.id));
+        res.json({ ok: true, id: p.id, status: p.status });
+      } catch (e) {
+        writeFail(res, e, "proposal reject");
+      }
+    },
+  );
 
   // POST /api/agent/cancel: abort the in-flight turn.
   app.post("/api/agent/cancel", guarded, express.json(), async (req, res) => {

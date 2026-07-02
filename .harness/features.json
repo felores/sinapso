@@ -264,7 +264,7 @@
         "command": "npm test && npm run typecheck",
         "expected": "server/integrations/proposals.test.ts passes: reject -> vault untouched (AE6), approve create -> file with provenance frontmatter + journal entry, approve edit -> diff applied + journal (AE10), edit-before-approve persists modified body, no write path without a proposal id in approval mode, full-access write journals (AE9), journal survives restart"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": [
         "F007",
         "F009"
@@ -277,11 +277,11 @@
       "confidence": "autonomous",
       "context_note": "Test-first: this unit proves the trust model. Resolve the plan's open question here: capture proposals via ask-permission intercept or a custom propose tool; both must route through F007's endpoint.",
       "spec_ref": "docs/plans/2026-07-01-002-feat-optional-integrations-qmd-exa-opencode-plan.md#u10-approval-gate-audit-log-and-provenance",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "npm test 101/101 + typecheck green. Open question resolved: proposals captured via a Solaris-generated OpenCode plugin (config.plugin path in data dir) registering propose_create/propose_edit; handlers POST back with a per-boot secret. Reject -> vault untouched (AE6); approve create -> provenance frontmatter + journal; edit -> diff preview + apply (AE10); edit-before-approve persists user body; full mode auto-applies through the SAME guarded write with mode:full journal (AE9); propose secret and browser token are non-interchangeable; journal is a plain file (survives restart)",
+      "implemented_by": "claude-fable-5",
+      "implemented_at": "2026-07-02T07:40:00Z",
+      "verified_by": "harness-progress verify (npm test && npm run typecheck, exit 0)",
+      "verified_at": "2026-07-02T07:41:00Z"
     },
     {
       "id": "F011",

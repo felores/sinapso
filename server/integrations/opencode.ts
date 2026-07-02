@@ -56,6 +56,8 @@ export interface OpencodeBridgeDeps {
   vaultRoot: () => string;
   /** Extra config merged into the lockdown profile (model, instructions). */
   extraConfig: () => Record<string, unknown>;
+  /** Extra env for the child (propose endpoint + secret, U10). */
+  extraEnv: () => Record<string, string>;
   spawn: (
     cmd: string,
     args: string[],
@@ -114,6 +116,7 @@ function realDeps(): OpencodeBridgeDeps {
     binPath: async () => null, // caller must supply detection
     vaultRoot: () => process.cwd(),
     extraConfig: () => ({}),
+    extraEnv: () => ({}),
     spawn: (cmd, args, opts) =>
       nodeSpawn(cmd, args, opts) as unknown as SpawnedProc,
     makeClient: realClient,
@@ -165,6 +168,7 @@ export function createOpencodeBridge(overrides: Partial<OpencodeBridgeDeps>) {
         cwd: deps.vaultRoot(),
         env: {
           ...process.env,
+          ...deps.extraEnv(),
           OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
           OPENCODE_SERVER_PASSWORD: password,
         },
