@@ -56,3 +56,14 @@ Initialized 2026-07-02 from docs/plans/2026-07-01-002-feat-optional-integrations
 - Live agent conversation with a model turn: propose -> approve -> node+edge (F011)
 - Fresh-machine addons dry-run (F012)
 - M1 F1 flow on a vault without qmd coverage (F004)
+
+## Session 2026-07-02 (18-23): design round 2 (deep research, LLM questions, markitdown, terminal)
+
+- F020 passing: Exa deep research (synthesized answer + cited citations, deep toggle, questions run deep) — 2a6b1b0
+- F021 passing: LLM note questions via sandboxed bridge, template fallback — 0d7cee8
+- F023 passing: markitdown ingestion (File -> Ingest Document, live verified) — 92d6015
+- F022 ACTIVE: terminal split pane — server+UI complete and tested; opentui paint under xterm.js pending (diagnosis in features.json) — aaf7972
+- Also: cursor affordances, matching close buttons, Lucide icons, question phrasing — e4cb4b6
+- Exa keyless: not possible (402 x402 crypto payments); Exa unchanged per user instruction
+
+**22/23 passing, 142 tests.**
