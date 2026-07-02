@@ -2124,9 +2124,10 @@ async function boot() {
       }
     }, 220);
   };
-  searchBox.addEventListener("input", () =>
-    renderResults(searchBox.value.trim()),
-  );
+  searchBox.addEventListener("input", () => {
+    if (activeMode === "ingest") return; // search box is the ingest input
+    renderResults(searchBox.value.trim());
+  });
   searchBox.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       const q = searchBox.value.trim();
@@ -2145,10 +2146,10 @@ async function boot() {
     }
   });
 
-  // ---- integrations: mode buttons (Semantic / Web) + settings ----
+  // ---- integrations: mode buttons (Semantic / Web / Ingest) + settings ----
   // At most one mode active at a time; buttons light up only when their tool
   // is detected (GET /api/integrations). Persisted as akasha-mode.
-  type ModeName = "semantic" | "web";
+  type ModeName = "semantic" | "web" | "ingest";
   interface IntegrationsStatus {
     tools: {
       qmd: { installed: boolean; version: string | null };
@@ -2158,15 +2159,18 @@ async function boot() {
     consents: { web: boolean };
     defaultModel: string | null;
   }
-  const MODE_LIST = ["semantic", "web"] as const;
+  const MODE_LIST = ["semantic", "web", "ingest"] as const;
   const MODE_NAMES: Record<ModeName, string> = {
     semantic: "Semantic (qmd)",
     web: "Web (Exa)",
+    ingest: "Ingest (markitdown)",
   };
   const MODE_MISSING: Record<ModeName, string> = {
     semantic:
       "Semantic (qmd) — qmd not installed. Add it via the addons install (Tools → Integrations).",
     web: "Web (Exa) — no API key. Add your Exa key in Tools → Integrations.",
+    ingest:
+      "Ingest (markitdown) — markitdown not installed. Add it via the addons install (Tools → Integrations).",
   };
   let integrations: IntegrationsStatus | null = null;
   let activeMode = localStorage.getItem("akasha-mode") as ModeName | null;
@@ -2193,7 +2197,11 @@ async function boot() {
   const modeReady = (m: ModeName): boolean => {
     const t = integrations?.tools;
     if (!t) return false;
-    return m === "semantic" ? t.qmd.installed : t.exa.configured;
+    return m === "semantic"
+      ? t.qmd.installed
+      : m === "web"
+        ? t.exa.configured
+        : t.markitdown.installed;
   };
 
   function renderModes() {
@@ -2211,6 +2219,7 @@ async function boot() {
     none: "Search notes…  (press /)",
     semantic: "Semantic search…  (Enter)",
     web: "Web research…  (Enter — uses Exa)",
+    ingest: "/path/to/file.pdf or https://…  (Enter to ingest)",
   };
   function updateSearchField() {
     searchBox.placeholder = SEARCH_PLACEHOLDERS[activeMode ?? "none"];
@@ -2587,13 +2596,19 @@ async function boot() {
     $("#search-wrap").classList.add("hidden"); // the column owns the interaction
     $("#reader").classList.add("ctx-left"); // open note = working context
     $("#research-title").textContent =
-      mode === "semantic" ? "Semantic results" : "Web research";
+      mode === "semantic"
+        ? "Semantic results"
+        : mode === "web"
+          ? "Web research"
+          : "Ingest document";
     $("#research-input-row").classList.remove("hidden");
     researchError(null);
     researchInput.placeholder =
       mode === "web"
         ? "another web query…  (Enter — uses Exa)"
-        : "another semantic query…  (Enter)";
+        : mode === "ingest"
+          ? "another path or URL…  (Enter to ingest)"
+          : "another semantic query…  (Enter)";
   }
 
   function closeResearch() {
@@ -2613,6 +2628,7 @@ async function boot() {
   function runModeQuery(mode: ModeName, query: string) {
     if (mode === "semantic") void runSemanticQuery(query);
     else if (mode === "web") void startWebResearch(query);
+    else if (mode === "ingest") void runIngest(query);
   }
 
   // Follow-ups from inside the column route to the active mode.
@@ -2718,6 +2734,38 @@ async function boot() {
     } catch {
       body.innerHTML = "";
       researchError("research failed — is the server running?");
+    }
+  }
+
+  // Ingest a document or URL as a vault note via markitdown (F023).
+  async function runIngest(source: string) {
+    openResearch("ingest");
+    const body = $("#research-body");
+    body.innerHTML = '<p class="muted">converting via markitdown…</p>';
+    try {
+      const res = await fetch("/api/ingest", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-solaris-token": await apiToken(),
+        },
+        body: JSON.stringify({ source }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message ?? data.error);
+      body.innerHTML = "";
+      const p = document.createElement("p");
+      p.className = "muted";
+      p.textContent = `saved ✓ ${data.id}`;
+      body.appendChild(p);
+      const rescanBtn = document.createElement("button");
+      rescanBtn.className = "web-save";
+      rescanBtn.textContent = "rescan to see it";
+      rescanBtn.addEventListener("click", () => rescan(false));
+      body.appendChild(rescanBtn);
+    } catch (e) {
+      body.innerHTML = "";
+      researchError(e instanceof Error ? e.message : "ingest failed");
     }
   }
 
@@ -3015,49 +3063,12 @@ async function boot() {
     a.click();
   });
 
-  // Ingest a document or URL as a Markdown note via markitdown (F023).
+  // Ingest a document or URL via markitdown (F023): switch to Ingest mode
+  // so the search field becomes the path/URL input.
   $("#mi-ingest").addEventListener("click", () => {
     closeMenus();
-    showModal(
-      "Ingest document",
-      `<p class="muted">Convert a document (PDF, Word, PowerPoint, Excel, HTML…) or a URL into a Markdown note in your vault, via markitdown.</p>
-       <input type="text" id="ingest-source" placeholder="/path/to/file.pdf  or  https://…" autocomplete="off" spellcheck="false" style="width:100%" />
-       <p style="display:flex;gap:8px;align-items:center"><button id="ingest-run">Ingest</button><span id="ingest-status" class="muted"></span></p>`,
-    );
-    const src = $("#ingest-source") as HTMLInputElement;
-    const status = $("#ingest-status");
-    src.focus();
-    const run = async () => {
-      const v = src.value.trim();
-      if (!v) return;
-      const btn = $("#ingest-run") as HTMLButtonElement;
-      btn.disabled = true;
-      status.textContent = "converting…";
-      try {
-        const res = await fetch("/api/ingest", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-solaris-token": await apiToken(),
-          },
-          body: JSON.stringify({ source: v }),
-        });
-        const dataR = await res.json();
-        if (!res.ok) throw new Error(dataR.message ?? dataR.error);
-        status.textContent = `saved ✓ ${dataR.id} `;
-        const rescanBtn = document.createElement("button");
-        rescanBtn.textContent = "rescan to see it";
-        rescanBtn.addEventListener("click", () => rescan(false));
-        status.appendChild(rescanBtn);
-      } catch (e) {
-        status.textContent = e instanceof Error ? e.message : "ingest failed";
-        btn.disabled = false;
-      }
-    };
-    $("#ingest-run").addEventListener("click", run);
-    src.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") void run();
-    });
+    setMode(activeMode === "ingest" ? null : "ingest");
+    searchBox.focus();
   });
 
   // ---- View ----
