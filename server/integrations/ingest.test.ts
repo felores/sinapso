@@ -1,0 +1,149 @@
+import { describe, it, expect, afterAll } from "vitest";
+import request from "supertest";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createApp } from "../app";
+import { TOKEN_HEADER } from "./security";
+import { ingestDocument } from "./ingest";
+import { readChangeLog } from "./write";
+import type { RunResult, Runner } from "./detect";
+
+const ROOT = mkdtempSync(join(tmpdir(), "solaris-ingest-test-"));
+const VAULT = join(ROOT, "vault");
+const DATA = join(ROOT, "data");
+mkdirSync(VAULT, { recursive: true });
+mkdirSync(DATA, { recursive: true });
+const DOC = join(ROOT, "report.pdf");
+writeFileSync(DOC, "fake pdf bytes");
+afterAll(() => rmSync(ROOT, { recursive: true, force: true }));
+
+const MD_BIN = "/fake/bin/markitdown";
+const ok = (stdout: string): RunResult => ({ ok: true, stdout, stderr: "" });
+const fail = (stderr: string): RunResult => ({ ok: false, stdout: "", stderr });
+
+function recorder(behavior: (cmd: string, args: string[]) => RunResult) {
+  const calls: string[][] = [];
+  const run: Runner = async (cmd, args) => {
+    calls.push([cmd, ...args]);
+    return behavior(cmd, args);
+  };
+  return { calls, run };
+}
+
+const writeDeps = { vaultRoot: VAULT, dataDir: DATA };
+
+describe("ingestDocument", () => {
+  it("converts a file and saves it through the guarded write with frontmatter", async () => {
+    const { calls, run } = recorder(() => ok("# Report\n\nConverted body.\n"));
+    const r = await ingestDocument(run, MD_BIN, writeDeps, { source: DOC });
+    expect(r.id).toBe(join("inbox", "report.md"));
+    const text = readFileSync(join(VAULT, r.id), "utf-8");
+    expect(text).toContain("via: markitdown");
+    expect(text).toContain(`source: ${DOC}`);
+    expect(text).toContain("Converted body.");
+    expect(calls[0]).toEqual([MD_BIN, DOC]);
+    expect(readChangeLog(DATA).at(-1)).toMatchObject({
+      actor: "user",
+      action: "create",
+      path: r.id,
+    });
+  });
+
+  it("ingests URLs with a derived title", async () => {
+    const { calls, run } = recorder(() => ok("# Page\n\nweb content"));
+    const r = await ingestDocument(run, MD_BIN, writeDeps, {
+      source: "https://example.com/articles/deep-work.html",
+    });
+    expect(r.id).toBe(join("inbox", "deep-work.md"));
+    expect(calls[0][1]).toBe("https://example.com/articles/deep-work.html");
+  });
+
+  it("404s on a missing file without running markitdown", async () => {
+    const { calls, run } = recorder(() => ok("x"));
+    await expect(
+      ingestDocument(run, MD_BIN, writeDeps, {
+        source: join(ROOT, "nope.docx"),
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("surfaces markitdown stderr cleanly and rejects empty output", async () => {
+    const { run } = recorder(() => fail("unsupported format: .xyz"));
+    await expect(
+      ingestDocument(run, MD_BIN, writeDeps, { source: DOC }),
+    ).rejects.toMatchObject({
+      status: 502,
+      message: expect.stringContaining("unsupported format"),
+    });
+    const empty = recorder(() => ok("   "));
+    await expect(
+      ingestDocument(empty.run, MD_BIN, writeDeps, { source: DOC }),
+    ).rejects.toMatchObject({ status: 422 });
+  });
+});
+
+describe("POST /api/ingest", () => {
+  const graphPath = join(DATA, "graph.json");
+  writeFileSync(
+    graphPath,
+    JSON.stringify({
+      meta: { vaultName: "t", vaultPath: VAULT, notes: 0, excludes: [] },
+      nodes: [],
+      links: [],
+    }),
+  );
+
+  function makeApp(markitdownInstalled: boolean) {
+    const { run } = recorder((cmd) =>
+      cmd === MD_BIN ? ok("# Converted\n\nbody") : fail(""),
+    );
+    return createApp(graphPath, undefined, {
+      configPath: join(DATA, `config-${markitdownInstalled}.json`),
+      detectDeps: {
+        home: "/h",
+        env: { PATH: "/fake/bin" },
+        fileExists: (p) => markitdownInstalled && p === MD_BIN,
+        run,
+      },
+    }).app;
+  }
+
+  it("requires the session token", async () => {
+    const app = makeApp(true);
+    expect(
+      (await request(app).post("/api/ingest").send({ source: DOC })).status,
+    ).toBe(403);
+  });
+
+  it("503s with guidance when markitdown is missing", async () => {
+    const app = makeApp(false);
+    const t = (await request(app).get("/api/session")).body.token;
+    const res = await request(app)
+      .post("/api/ingest")
+      .set(TOKEN_HEADER, t)
+      .send({ source: DOC });
+    expect(res.status).toBe(503);
+    expect(res.body.message).toContain("Tools");
+  });
+
+  it("ingests end to end and lands in inbox/", async () => {
+    const app = makeApp(true);
+    const t = (await request(app).get("/api/session")).body.token;
+    const res = await request(app)
+      .post("/api/ingest")
+      .set(TOKEN_HEADER, t)
+      .send({ source: DOC });
+    expect(res.status).toBe(200);
+    expect(res.body.id.startsWith("inbox/")).toBe(true);
+    expect(existsSync(join(VAULT, res.body.id))).toBe(true);
+  });
+});

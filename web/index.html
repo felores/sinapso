@@ -23,6 +23,8 @@
           <hr />
           <button id="mi-reload">Reload App <span class="mi-hint">F5</span></button>
           <button id="mi-export">Export Image (PNG)</button>
+          <hr />
+          <button id="mi-ingest">Ingest Document… <span class="mi-hint">PDF, Word, URL → note</span></button>
         </div>
       </div>
       <div class="menu">
@@ -99,6 +101,7 @@
             <button id="qmd-enable" class="hidden">enable semantic search</button>
             <div class="integ-row" id="integ-exa"><b>Web (Exa)</b><span class="integ-status"></span></div>
             <input type="password" id="exa-key" placeholder="Exa API key — paste + Enter" autocomplete="off" />
+            <div class="integ-row" id="integ-markitdown"><b>Ingest (markitdown)</b><span class="integ-status"></span><button class="integ-install hidden" data-tool="markitdown" title="Install markitdown; existing installs are never touched">install</button></div>
             <div class="integ-row" id="integ-opencode"><b>Agent (OpenCode)</b><span class="integ-status"></span><button class="integ-install hidden" data-tool="opencode" title="Install OpenCode; existing installs are never touched">install</button></div>
             <label class="integ-row">agent permissions
               <select id="agent-mode">

@@ -55,7 +55,8 @@ import {
   VALIDATED_OPENCODE_VERSION,
   type OpencodeBridgeDeps,
 } from "./integrations/opencode.js";
-import { installAddons } from "./integrations/install.js";
+import { ingestDocument } from "./integrations/ingest.js";
+import { installAddons, type InstallableTool } from "./integrations/install.js";
 import {
   createProposalStore,
   writeProposePlugin,
@@ -156,6 +157,7 @@ export function createApp(
           qmd: toolCache.qmd,
           // connected: OpenCode account status, wired by the agent bridge (U9)
           opencode: { ...toolCache.opencode, connected: null },
+          markitdown: toolCache.markitdown,
           exa: { configured: !!cfg.exaKey },
         },
         consents: cfg.consents,
@@ -198,9 +200,9 @@ export function createApp(
       try {
         const b = (req.body ?? {}) as { tools?: unknown };
         const tools = Array.isArray(b.tools)
-          ? (b.tools.filter((t) => t === "qmd" || t === "opencode") as Array<
-              "qmd" | "opencode"
-            >)
+          ? (b.tools.filter(
+              (t) => t === "qmd" || t === "opencode" || t === "markitdown",
+            ) as InstallableTool[])
           : undefined;
         const results = await installAddons(detectDeps ?? {}, tools);
         toolCache = null; // re-probe on next status call
@@ -211,6 +213,42 @@ export function createApp(
       }
     },
   );
+
+  // POST /api/ingest: convert a document or URL to a Markdown note via
+  // markitdown (F023). Reads may come from anywhere (importing is the
+  // point); the write goes through the guarded path into the vault.
+  app.post("/api/ingest", guarded, express.json(), async (req, res) => {
+    try {
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      if (typeof b.source !== "string" || !b.source.trim()) {
+        res.status(400).json({ error: "source (file path or URL) required" });
+        return;
+      }
+      if (!toolCache) toolCache = await detectAll(detectDeps);
+      if (!toolCache.markitdown.installed || !toolCache.markitdown.path) {
+        res.status(503).json({
+          error: "markitdown-missing",
+          message:
+            "markitdown is not installed — Tools → Integrations offers the install.",
+        });
+        return;
+      }
+      const cfg = loadConfig(configPath);
+      const r = await ingestDocument(
+        integrations?.detectDeps?.run ?? realRunner,
+        toolCache.markitdown.path,
+        { vaultRoot, dataDir: dirname(graphPath) },
+        {
+          source: b.source,
+          title: typeof b.title === "string" ? b.title : undefined,
+          destination: cfg.writeDestination,
+        },
+      );
+      res.json({ ok: true, id: r.id });
+    } catch (e) {
+      writeFail(res, e, "ingest");
+    }
+  });
 
   // ---- Semantic mode: qmd bridge (U3) ----
   const qmdRun = integrations?.detectDeps?.run ?? realRunner;

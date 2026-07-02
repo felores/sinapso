@@ -638,7 +638,7 @@
         "command": "npm test && npm run typecheck && npm run build",
         "expected": "install/ingest tests with faked runners: detection, install branches (uv/pip/instructions), URL and file ingest -> guarded create with frontmatter, failure surfaces stderr, token required. Manual: real PDF -> note in inbox/ -> rescan shows node"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": [
         "F013"
       ],
@@ -654,11 +654,11 @@
       "confidence": "needs-review",
       "context_note": "markitdown is a Python uv/pip tool; detect on PATH + ~/.local/bin. Reading files OUTSIDE the vault is intentional (import); writes stay guarded. URL ingest = user-initiated fetch, mention in docs.",
       "spec_ref": "user decisions 2026-07-02 (AskUserQuestion round 2)",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "136/136 tests + typecheck + build green. Detection covers ~/.local/bin; installer: uv preferred, pip3 --user fallback, guided instructions otherwise (AE7 respected); ingestDocument: file + URL, frontmatter source/via/ingested, guarded write, 404/502/422 paths tested; File -> Ingest Document… modal wired. LIVE: real markitdown converted https://example.com into inbox/example.com.md on the scratch vault",
+      "implemented_by": "claude-fable-5",
+      "implemented_at": "2026-07-02T13:35:00Z",
+      "verified_by": "gates exit 0 + live ingest",
+      "verified_at": "2026-07-02T13:38:00Z"
     }
   ]
 }

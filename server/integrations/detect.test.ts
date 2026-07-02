@@ -83,9 +83,10 @@ describe("tool detection", () => {
     expect(st.version).toBeNull();
   });
 
-  it("detectAll covers both tools", async () => {
+  it("detectAll covers all three tools", async () => {
     const all = await detectAll(deps({}));
     expect(all.qmd.installed).toBe(false);
     expect(all.opencode.installed).toBe(false);
+    expect(all.markitdown.installed).toBe(false);
   });
 });

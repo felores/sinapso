@@ -48,9 +48,11 @@ describe("installAddons", () => {
     expect(results.map((r) => r.status)).toEqual([
       "already-installed",
       "already-installed",
+      "instructions", // markitdown missing, no uv/pip on the fake system
     ]);
+    // detection may probe via a login shell (-lc); installers use -c or `install`
     const installers = calls.filter(
-      ([cmd, a1]) => cmd === "/bin/sh" || a1 === "install",
+      ([cmd, a1]) => (cmd === "/bin/sh" && a1 === "-c") || a1 === "install",
     );
     expect(installers).toEqual([]); // no reinstall, config untouched
   });

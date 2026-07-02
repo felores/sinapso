@@ -2157,6 +2157,7 @@ async function boot() {
         version: string | null;
         connected: boolean | null;
       };
+      markitdown: { installed: boolean; version: string | null };
       exa: { configured: boolean };
     };
     consents: { web: boolean; agent: boolean };
@@ -2290,6 +2291,15 @@ async function boot() {
           : "not installed"
         : "status unavailable",
       !!t?.opencode.installed,
+    );
+    st(
+      "markitdown",
+      t
+        ? t.markitdown.installed
+          ? `installed ${t.markitdown.version ?? ""}`.trim()
+          : "not installed"
+        : "status unavailable",
+      !!t?.markitdown.installed,
     );
     if (integrations) {
       ($("#agent-mode") as HTMLSelectElement).value = integrations.agentMode;
@@ -3458,6 +3468,51 @@ async function boot() {
     a.download = `solaris-${data.meta.vaultName ?? "vault"}-${new Date().toISOString().slice(0, 10)}.png`;
     a.href = graph.renderer().domElement.toDataURL("image/png");
     a.click();
+  });
+
+  // Ingest a document or URL as a Markdown note via markitdown (F023).
+  $("#mi-ingest").addEventListener("click", () => {
+    closeMenus();
+    showModal(
+      "Ingest document",
+      `<p class="muted">Convert a document (PDF, Word, PowerPoint, Excel, HTML…) or a URL into a Markdown note in your vault, via markitdown.</p>
+       <input type="text" id="ingest-source" placeholder="/path/to/file.pdf  or  https://…" autocomplete="off" spellcheck="false" style="width:100%" />
+       <p style="display:flex;gap:8px;align-items:center"><button id="ingest-run">Ingest</button><span id="ingest-status" class="muted"></span></p>`,
+    );
+    const src = $("#ingest-source") as HTMLInputElement;
+    const status = $("#ingest-status");
+    src.focus();
+    const run = async () => {
+      const v = src.value.trim();
+      if (!v) return;
+      const btn = $("#ingest-run") as HTMLButtonElement;
+      btn.disabled = true;
+      status.textContent = "converting…";
+      try {
+        const res = await fetch("/api/ingest", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-solaris-token": await apiToken(),
+          },
+          body: JSON.stringify({ source: v }),
+        });
+        const dataR = await res.json();
+        if (!res.ok) throw new Error(dataR.message ?? dataR.error);
+        status.textContent = `saved ✓ ${dataR.id} `;
+        const rescanBtn = document.createElement("button");
+        rescanBtn.textContent = "rescan to see it";
+        rescanBtn.addEventListener("click", () => rescan(false));
+        status.appendChild(rescanBtn);
+      } catch (e) {
+        status.textContent = e instanceof Error ? e.message : "ingest failed";
+        btn.disabled = false;
+      }
+    };
+    $("#ingest-run").addEventListener("click", run);
+    src.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") void run();
+    });
   });
 
   // ---- View ----

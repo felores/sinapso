@@ -22,8 +22,12 @@ export const OPENCODE_INSTALL_CMD =
   "curl -fsSL https://opencode.ai/install | bash";
 export const QMD_INSTALL_SPEC = "https://github.com/tobi/qmd";
 
+export const MARKITDOWN_SPEC = "markitdown[all]";
+
+export type InstallableTool = "qmd" | "opencode" | "markitdown";
+
 export interface InstallResult {
-  tool: "qmd" | "opencode";
+  tool: InstallableTool;
   status: "already-installed" | "installed" | "instructions" | "failed";
   detail: string;
 }
@@ -38,19 +42,34 @@ function fullDeps(deps: Partial<DetectDeps>): DetectDeps {
   };
 }
 
-async function findBun(d: DetectDeps): Promise<string | null> {
-  // Bun is not one of our detected tools; probe its known home + PATH.
-  const known = join(d.home, ".bun", "bin", "bun");
-  if (d.fileExists(known)) return known;
+function findHelper(
+  d: DetectDeps,
+  name: string,
+  knownDirs: string[],
+): string | null {
+  // Helper runtimes (bun, uv, pip3) are not detected tools; probe known
+  // homes + PATH.
+  for (const dir of knownDirs) {
+    if (d.fileExists(join(dir, name))) return join(dir, name);
+  }
   for (const dir of (d.env.PATH ?? "").split(":")) {
-    if (dir && d.fileExists(join(dir, "bun"))) return join(dir, "bun");
+    if (dir && d.fileExists(join(dir, name))) return join(dir, name);
   }
   return null;
 }
 
+const findBun = (d: DetectDeps) =>
+  findHelper(d, "bun", [join(d.home, ".bun", "bin")]);
+const findUv = (d: DetectDeps) =>
+  findHelper(d, "uv", [
+    join(d.home, ".local", "bin"),
+    join(d.home, ".cargo", "bin"),
+  ]);
+const findPip = (d: DetectDeps) => findHelper(d, "pip3", []);
+
 export async function installAddons(
   overrides: Partial<DetectDeps>,
-  tools: Array<"qmd" | "opencode"> = ["qmd", "opencode"],
+  tools: InstallableTool[] = ["qmd", "opencode", "markitdown"],
 ): Promise<InstallResult[]> {
   const deps = fullDeps(overrides);
   const run = deps.run;
@@ -88,8 +107,48 @@ export async function installAddons(
       );
       continue;
     }
+    if (tool === "markitdown") {
+      // uv preferred, pip3 --user fallback, guided instructions otherwise.
+      const uv = findUv(deps);
+      const pip = uv ? null : findPip(deps);
+      if (!uv && !pip) {
+        results.push({
+          tool,
+          status: "instructions",
+          detail:
+            "markitdown needs Python tooling. Install uv first (see docs.astral.sh/uv), " +
+            `then run: uv tool install "${MARKITDOWN_SPEC}"`,
+        });
+        continue;
+      }
+      const r = uv
+        ? await run(
+            uv,
+            ["tool", "install", MARKITDOWN_SPEC],
+            INSTALL_TIMEOUT_MS,
+          )
+        : await run(
+            pip!,
+            ["install", "--user", MARKITDOWN_SPEC],
+            INSTALL_TIMEOUT_MS,
+          );
+      results.push(
+        r.ok
+          ? {
+              tool,
+              status: "installed",
+              detail: uv ? "installed via uv" : "installed via pip3 --user",
+            }
+          : {
+              tool,
+              status: "failed",
+              detail: (r.stderr || "install failed").slice(0, 500),
+            },
+      );
+      continue;
+    }
     // qmd requires Bun; without it, guide instead of failing (KTD8).
-    const bun = await findBun(deps);
+    const bun = findBun(deps);
     if (!bun) {
       results.push({
         tool,
