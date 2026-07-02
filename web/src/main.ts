@@ -2754,15 +2754,21 @@ async function boot() {
       save.disabled = true;
       save.textContent = "saving…";
       try {
+        const origin =
+          selected && !selected.phantom
+            ? selected.title.replace(/[\r\n]/g, " ")
+            : null;
         const content = [
           "---",
           `saved: ${new Date().toISOString().slice(0, 10)}`,
           `query: "${query.replace(/"/g, "'")}"`,
+          ...(origin ? [`researched-from: "[[${origin}]]"`] : []),
           "via: solaris-deep-research",
           "---",
           "",
           `# ${query}`,
           "",
+          ...(origin ? [`> Researching from: [[${origin}]]`, ""] : []),
           a.content,
           "",
           "## Sources",
