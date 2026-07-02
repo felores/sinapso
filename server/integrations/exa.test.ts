@@ -145,7 +145,7 @@ describe("POST /api/research", () => {
       .set(TOKEN_HEADER, await token())
       .send({ query: "q" });
     expect(res.status).toBe(400);
-    expect(res.body.message).toContain("Settings");
+    expect(res.body.message).toContain("Tools");
     expect(state.calls).toBe(0);
   });
 

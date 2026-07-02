@@ -47,6 +47,44 @@ function conceptLike(title: string): boolean {
   );
 }
 
+/**
+ * Note-scoped research questions (F019): 3-5 template questions derived
+ * from ONE note — its unresolved phantom links first (explicit gaps in
+ * this note), then title-based templates. Local and free; no LLM.
+ * Short notes (< 200 words) get 3; richer notes up to 5.
+ */
+export function noteQuestions(
+  nodes: TopoNode[],
+  links: TopoLink[],
+  noteId: string,
+): string[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const note = byId.get(noteId);
+  if (!note || note.phantom) return [];
+  const target = (note.words ?? 0) < 200 ? 3 : 5;
+  const questions: string[] = [];
+  for (const l of links) {
+    if (questions.length >= target) break;
+    if (l.source !== noteId) continue;
+    const t = byId.get(l.target);
+    if (t?.phantom && conceptLike(t.title))
+      questions.push(`${t.title} overview key concepts`);
+  }
+  const topic = note.title.replace(/[-_]+/g, " ").trim(); // slug titles -> readable queries
+  const fillers = [
+    `${topic} recent developments and best practices`,
+    `${topic} practical examples and case studies`,
+    `${topic} common pitfalls and criticism`,
+    `${topic} tools and frameworks`,
+    `${topic} key people and further reading`,
+  ];
+  for (const f of fillers) {
+    if (questions.length >= target) break;
+    questions.push(f);
+  }
+  return questions;
+}
+
 export function computeGaps(
   nodes: TopoNode[],
   links: TopoLink[],

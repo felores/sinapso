@@ -1545,7 +1545,12 @@ async function boot() {
       // agent proposals carry untrusted content; unsanitized script would run
       // same-origin and could drive the token-authenticated endpoints.
       body.innerHTML = DOMPurify.sanitize(await marked.parse(prepped));
-      void appendRelated(n, body);
+      // Fixed-order footer: related notes (async) above research questions.
+      const relatedSlot = document.createElement("div");
+      const questionsSlot = document.createElement("div");
+      body.append(relatedSlot, questionsSlot);
+      void appendRelated(n, relatedSlot);
+      appendNoteQuestions(n, questionsSlot);
     } catch {
       body.innerHTML = '<p class="muted">could not load note</p>';
     }
@@ -2162,10 +2167,10 @@ async function boot() {
   };
   const MODE_MISSING: Record<ModeName, string> = {
     semantic:
-      "Semantic (qmd) — qmd not installed. Add it via the addons install (Settings → Integrations).",
-    web: "Web (Exa) — no API key. Add your Exa key in Settings → Integrations.",
+      "Semantic (qmd) — qmd not installed. Add it via the addons install (Tools → Integrations).",
+    web: "Web (Exa) — no API key. Add your Exa key in Tools → Integrations.",
     agent:
-      "Agent (OpenCode) — OpenCode not installed. Add it via the addons install (Settings → Integrations).",
+      "Agent (OpenCode) — OpenCode not installed. Add it via the addons install (Tools → Integrations).",
   };
   let integrations: IntegrationsStatus | null = null;
   let activeMode = localStorage.getItem("akasha-mode") as ModeName | null;
@@ -2561,7 +2566,7 @@ async function boot() {
       "Enable semantic search?",
       `<p>qmd is installed, but no collection covers this vault yet. Solaris can create one and index it in the background to power related notes and semantic search.</p>
        <p style="display:flex;gap:8px"><button id="qmd-setup-yes">Enable</button><button id="qmd-setup-no">Not now</button></p>
-       <p class="muted">You can enable it later in Settings → Integrations.</p>`,
+       <p class="muted">You can enable it later in Tools → Integrations.</p>`,
     );
     $("#qmd-setup-yes").addEventListener("click", () => {
       hideModal();
@@ -2575,8 +2580,11 @@ async function boot() {
   // qmd failure does not read as "no related notes".
   let relatedToken = 0;
   function refreshRelated(n: GNode) {
-    $("#reader-body").querySelector("#related")?.remove();
-    void appendRelated(n, $("#reader-body"));
+    const existing = $("#reader-body").querySelector("#related");
+    const slot =
+      (existing?.parentElement as HTMLElement | null) ?? $("#reader-body");
+    existing?.remove();
+    void appendRelated(n, slot);
   }
 
   async function appendRelated(n: GNode, body: HTMLElement) {
@@ -2605,7 +2613,7 @@ async function boot() {
       }
       if (data.state === "uncovered") {
         info.textContent =
-          "semantic search is not set up for this vault (Settings → Integrations)";
+          "semantic search is not set up for this vault (Tools → Integrations)";
         return;
       }
       const results = data.results ?? [];
@@ -2817,6 +2825,58 @@ async function boot() {
       return;
     }
     void runWebQuery(query);
+  }
+
+  // Per-note research questions (F019): a button at the end of each note
+  // generates 3-5 template questions from THAT note (its unresolved links
+  // first). Generation is local and free; executing one runs consent-gated
+  // web research in the column. Independent of which mode button is lit.
+  function appendNoteQuestions(n: GNode, slot: HTMLElement) {
+    if (n.phantom) return;
+    const box = document.createElement("section");
+    box.id = "note-questions";
+    const btn = document.createElement("button");
+    btn.id = "note-questions-btn";
+    btn.textContent = "✦ research questions";
+    btn.title = "Generate web-research questions from this note";
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        const data: { questions: string[] } = await fetch(
+          `/api/note-questions?id=${encodeURIComponent(n.id)}`,
+        ).then((r) => r.json());
+        btn.remove();
+        const h = document.createElement("h3");
+        h.textContent = "Research questions";
+        const tag = document.createElement("span");
+        tag.className = "rel-tag";
+        tag.textContent = "web";
+        h.append(" ", tag);
+        box.appendChild(h);
+        if (!data.questions.length) {
+          const p = document.createElement("p");
+          p.className = "muted";
+          p.textContent = "no questions for this note";
+          box.appendChild(p);
+          return;
+        }
+        for (const q of data.questions) {
+          const row = document.createElement("div");
+          row.className = "gap-row";
+          row.title = "Run as web research (Exa)";
+          const text = document.createElement("div");
+          text.className = "gap-query";
+          text.textContent = q;
+          row.appendChild(text);
+          row.addEventListener("click", () => startWebResearch(q));
+          box.appendChild(row);
+        }
+      } catch {
+        btn.disabled = false;
+      }
+    });
+    box.appendChild(btn);
+    slot.appendChild(box);
   }
 
   function renderWebResult(

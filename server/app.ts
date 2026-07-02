@@ -65,7 +65,7 @@ import {
   localOnly,
   requireToken,
 } from "./integrations/security.js";
-import { computeGaps } from "./integrations/topology.js";
+import { computeGaps, noteQuestions } from "./integrations/topology.js";
 import {
   guardedCreate,
   guardedEdit,
@@ -427,7 +427,7 @@ export function createApp(
       if (!cfg.exaKey) {
         res.status(400).json({
           error: "no-exa-key",
-          message: "Add your Exa API key in Settings → Integrations.",
+          message: "Add your Exa API key in Tools → Integrations.",
         });
         return;
       }
@@ -870,6 +870,21 @@ export function createApp(
     } catch (e) {
       console.error("agent cancel failed:", e instanceof Error ? e.message : e);
       res.status(503).json({ error: "agent-unavailable" });
+    }
+  });
+
+  // GET /api/note-questions?id=: 3-5 research questions derived from one
+  // note (F019). Template-based and local; executing one is the user's
+  // explicit choice and goes through the consent-gated /api/research.
+  app.get("/api/note-questions", (req, res) => {
+    try {
+      const id = String(req.query.id ?? "");
+      res.json({
+        questions: noteQuestions(graph.nodes, graph.links ?? [], id),
+      });
+    } catch (e) {
+      console.error("note questions failed:", e);
+      res.status(500).json({ error: "note questions failed" });
     }
   });
 

@@ -47,7 +47,7 @@ Data flow: `scanner` → `data/graph.json` → `server` → `web`. **The core up
 - **Reader pane** docks/undocks: drag its header to float, double-click the header (or the dock button) to re-dock. Geometry persists in `localStorage` (`akasha-reader`).
 - **Menubar** (`File / Layers / View / Tools / Help`) is click-to-open. The global click handler closes menus only when the click lands **outside** any `.menu`, so interacting with controls inside a dropdown (checkbox, `<select>`, layer toggle) keeps it open — preserve this when adding dropdown content.
 - **`localStorage` keys are `akasha-*`** (theme, filters, reader geometry, custom colors, mode, collections) — kept from upstream for continuity, not renamed.
-- **Integration modes are mutually exclusive** (`akasha-mode`): Semantic/Web/Agent buttons next to search; each enabled only when its tool is detected. Web and Agent activation walks a consent modal first (R18) — never bypass it.
+- **Integration modes are mutually exclusive** (`akasha-mode`) and **search-first**: the buttons change what the search field's Enter does; results open in the shared `#research` column (search bar hides, docked reader force-docks left via `ctx-left` — `!important` because the reader geometry engine sets inline `inset`). Web and Agent activation walks a consent modal first (R18) — never bypass it; web queries never auto-run while typing (they spend Exa credit).
 - **Fork remotes:** `upstream` = `chntnm/akasha`, `origin` = `felores/solaris`. Keep the fork rebasable on upstream.
 
 ## Env

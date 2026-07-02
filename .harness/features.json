@@ -517,7 +517,7 @@
         "command": "npm test && npm run typecheck && npm run build",
         "expected": "topology tests: note-scoped questions from a fixture (phantom-linked note -> phantom queries first; short note -> 3; rich note -> 5; no phantoms -> title templates). Playwright: button renders under a note, click shows questions, executing one opens the column via the web path"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": [
         "F018"
       ],
@@ -531,11 +531,11 @@
       "confidence": "needs-review",
       "context_note": "Questions are templates, no LLM. Execution path = the same consent-gated /api/research; no key -> actionable message pointing at Tools -> Integrations.",
       "spec_ref": "user follow-up 2026-07-02 (search-first column redesign)",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "124/124 tests + typecheck + build green. noteQuestions: note's own phantom links first (path noise filtered), slug titles humanized, 3 for short notes / 5 for rich. Playwright on real vault: button renders after related section, click generates 5 questions, executing one opens the research column via the consent-gated web path (no-key case shows the actionable Tools -> Integrations message, reader left-docked). Works with no mode button lit. Docs updated to the search-first model",
+      "implemented_by": "claude-fable-5",
+      "implemented_at": "2026-07-02T12:10:00Z",
+      "verified_by": "gates exit 0 + playwright end-to-end",
+      "verified_at": "2026-07-02T12:12:00Z"
     }
   ]
 }

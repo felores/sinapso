@@ -257,13 +257,18 @@ the desktop build, `Ctrl/Cmd+Shift+O` opens a vault.
 ## Optional integrations
 
 Three mode buttons sit next to the search bar; each lights up only when its
-tool is detected, and Solaris stays fully functional with none of them:
+tool is detected, and Solaris stays fully functional with none of them.
+**The search field is the single entry point**: the active mode changes what
+Enter does, and results open in a right-side research column (the reader
+docks left while it's open — the note you're reading is the working
+context). Every opened note also ends with a "research questions" action
+that turns that note into 3-5 web queries.
 
-| Mode | Tool | What it adds |
+| Mode | Tool | What Enter does |
 |------|------|--------------|
-| **Semantic** ◈ | [qmd](https://github.com/tobi/qmd) (local) | A "Related notes (semantic)" section in the reader, semantic search, and per-collection toggles in Filters. All local. |
-| **Web** ◍ | [Exa](https://exa.ai) (API key) | Gap-closing suggested queries from your graph's phantoms and orphans, web results in a panel, save-as-note into `inbox/`. |
-| **Agent** ✦ | [OpenCode](https://opencode.ai) (local + account) | A conversation with your vault. The agent can only *propose* notes and edits; you approve each change (or opt into full access). |
+| **Semantic** ◈ | [qmd](https://github.com/tobi/qmd) (local) | Semantic search over your notes in the column. Related notes at the end of every note work regardless of the mode button. All local. |
+| **Web** ◍ | [Exa](https://exa.ai) (API key) | Web research in the column, save-as-note into `inbox/`. Never auto-runs while typing. |
+| **Agent** ✦ | [OpenCode](https://opencode.ai) (local + account) | Starts a conversation with your vault (the open note rides along as context). The agent can only *propose* notes and edits; you approve each change (or opt into full access). |
 
 Two install flavors: **core** (default, nothing extra) and **addons** —
 `npx solaris "<vault>" --addons` or *Settings → install missing addons* —

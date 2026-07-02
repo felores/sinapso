@@ -4,7 +4,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../app";
-import { computeGaps, type TopoNode, type TopoLink } from "./topology";
+import {
+  computeGaps,
+  noteQuestions,
+  type TopoNode,
+  type TopoLink,
+} from "./topology";
 
 const node = (
   over: Partial<TopoNode> & { id: string; title: string },
@@ -116,6 +121,57 @@ describe("computeGaps", () => {
         (s) => s.kind === "cluster" && s.title === "sparse-area",
       ),
     ).toBe(true);
+  });
+});
+
+describe("noteQuestions (F019)", () => {
+  const nodes = [
+    node({ id: "rich.md", title: "Storytelling Craft", words: 900, out: 2 }),
+    node({ id: "short.md", title: "Quick Idea", words: 80 }),
+    node({
+      id: "phantom:heros-journey",
+      title: "Heros Journey",
+      in: 1,
+      phantom: true,
+    }),
+    node({
+      id: "phantom:three-acts",
+      title: "Three Act Structure",
+      in: 1,
+      phantom: true,
+    }),
+    node({
+      id: "phantom:.junk/path",
+      title: "node_modules/x",
+      in: 1,
+      phantom: true,
+    }),
+  ];
+  const links: TopoLink[] = [
+    { source: "rich.md", target: "phantom:heros-journey" },
+    { source: "rich.md", target: "phantom:three-acts" },
+    { source: "rich.md", target: "phantom:.junk/path" },
+  ];
+
+  it("puts the note's own phantom links first, filtering path noise", () => {
+    const qs = noteQuestions(nodes, links, "rich.md");
+    expect(qs).toHaveLength(5); // rich note -> 5
+    expect(qs[0]).toContain("Heros Journey");
+    expect(qs[1]).toContain("Three Act Structure");
+    expect(qs.join(" ")).not.toContain("node_modules");
+    // fillers derive from the note's title
+    expect(qs[2]).toContain("Storytelling Craft");
+  });
+
+  it("caps short notes at 3 questions", () => {
+    const qs = noteQuestions(nodes, links, "short.md");
+    expect(qs).toHaveLength(3);
+    for (const q of qs) expect(q).toContain("Quick Idea");
+  });
+
+  it("returns nothing for unknown or phantom ids", () => {
+    expect(noteQuestions(nodes, links, "nope.md")).toEqual([]);
+    expect(noteQuestions(nodes, links, "phantom:heros-journey")).toEqual([]);
   });
 });
 

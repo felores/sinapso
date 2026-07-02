@@ -926,3 +926,29 @@ html, body {
   border-right: 1px solid var(--border);
 }
 #reader.ctx-left:not(.floating).hidden { transform: translateX(-120%); }
+
+/* ---------- per-note research questions (F019) ---------- */
+#note-questions {
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+#note-questions h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+#note-questions-btn {
+  width: 100%;
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+#note-questions-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+#note-questions-btn:disabled { opacity: 0.6; cursor: default; }
