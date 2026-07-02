@@ -2942,6 +2942,7 @@ async function boot() {
     btn.title = "Generate web-research questions from this note";
     btn.addEventListener("click", async () => {
       btn.disabled = true;
+      btn.textContent = "✦ generating…"; // LLM path takes a few seconds (F021)
       try {
         const data: { questions: string[] } = await fetch(
           `/api/note-questions?id=${encodeURIComponent(n.id)}`,
@@ -2975,6 +2976,7 @@ async function boot() {
         }
       } catch {
         btn.disabled = false;
+        btn.textContent = "✦ research questions";
       }
     });
     box.appendChild(btn);

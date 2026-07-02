@@ -94,6 +94,7 @@ function fakeClient(
   const calls: Record<string, unknown[]> = {
     create: [],
     promptAsync: [],
+    prompt: [],
     abort: [],
     subscribe: [],
   };
@@ -107,6 +108,19 @@ function fakeClient(
       async promptAsync(o) {
         calls.promptAsync.push(o);
         return {};
+      },
+      async prompt(o) {
+        calls.prompt.push(o);
+        return {
+          data: {
+            parts: [
+              {
+                type: "text",
+                text: 'Here you go:\n["What is the origin of the hero\'s journey?", "How do three-act structures fail?"]',
+              },
+            ],
+          },
+        };
       },
       async abort(o) {
         calls.abort.push(o);
@@ -358,10 +372,24 @@ const graphPath = join(VAULT, "graph.json");
 writeFileSync(
   graphPath,
   JSON.stringify({
-    meta: { vaultName: "t", vaultPath: VAULT, notes: 0, excludes: [] },
-    nodes: [],
-    links: [],
+    meta: { vaultName: "t", vaultPath: VAULT, notes: 1, excludes: [] },
+    nodes: [
+      { id: "story.md", title: "Storytelling", words: 500, in: 0, out: 1 },
+      {
+        id: "phantom:heros-journey",
+        title: "Heros Journey",
+        words: 0,
+        in: 1,
+        out: 0,
+        phantom: true,
+      },
+    ],
+    links: [{ source: "story.md", target: "phantom:heros-journey", weight: 1 }],
   }),
+);
+writeFileSync(
+  join(VAULT, "story.md"),
+  "# Storytelling\n\nNotes about narrative structure and the heros journey.\n",
 );
 const authPath = join(VAULT, "auth.json");
 writeFileSync(authPath, JSON.stringify({ opencode: { type: "oauth" } }));
@@ -506,6 +534,45 @@ describe("agent routes", () => {
     // paid zen model and zero-cost models on OTHER providers excluded
     expect(JSON.stringify(res.body.free)).not.toContain("paid-b");
     expect(JSON.stringify(res.body.free)).not.toContain("groq");
+  });
+
+  it("generates LLM note questions via the sandboxed bridge (F021)", async () => {
+    const res = await request(app).get("/api/note-questions?id=story.md");
+    expect(res.status).toBe(200);
+    expect(res.body.source).toBe("llm");
+    expect(res.body.questions).toEqual([
+      "What is the origin of the hero's journey?",
+      "How do three-act structures fail?",
+    ]);
+    const call = oc.calls.prompt.at(-1) as {
+      body: { parts: Array<{ text: string }> };
+    };
+    const sent = call.body.parts[0].text;
+    expect(sent).toContain("narrative structure"); // note excerpt rides along
+    expect(sent).toContain("Heros Journey"); // the note's own phantom gap
+    expect(sent).toContain("JSON array");
+  });
+
+  it("falls back to templates without agent consent, calling the LLM zero times (F021)", async () => {
+    const t = await token();
+    await request(app)
+      .post("/api/integrations/config")
+      .set(TOKEN_HEADER, t)
+      .send({ consents: { agent: false } });
+    const before = oc.calls.prompt.length;
+    const res = await request(app).get("/api/note-questions?id=story.md");
+    expect(res.body.source).toBe("templates");
+    expect(res.body.questions.length).toBeGreaterThan(0);
+    expect(oc.calls.prompt.length).toBe(before);
+    await request(app)
+      .post("/api/integrations/config")
+      .set(TOKEN_HEADER, t)
+      .send({ consents: { agent: true } });
+  });
+
+  it("falls back to templates when the note cannot be read", async () => {
+    const res = await request(app).get("/api/note-questions?id=missing.md");
+    expect(res.body.source).toBe("templates");
   });
 
   it("cancel aborts the in-flight session turn", async () => {

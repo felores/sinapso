@@ -576,7 +576,7 @@
         "command": "npm test && npm run typecheck",
         "expected": "opencode/topology tests: fake client structured output -> llm questions; no consent -> templates with zero opencode calls; bridge error -> templates; prompt carries note excerpt + gap context"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": [
         "F009",
         "F019"
@@ -590,11 +590,11 @@
       "confidence": "autonomous",
       "context_note": "SDK: client.session.prompt({path:{id}, body:{parts, format:{type:'json_schema', schema}}}) -> result.data.info.structured_output (verify in sdk.gen types). Reuse one utility session per server run. Zen free models = zero cost.",
       "spec_ref": "user decisions 2026-07-02 (AskUserQuestion round 2)",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "129/129 tests + typecheck + build green. LLM path via the sandboxed bridge: utility session reused, prompt carries note excerpt + the note's own phantom gaps, reply parsed as a bare JSON array (pinned SDK/binary 1.17.x predates the format/structured-output API — grounded, not assumed), 25s timeout; consent-off -> templates with zero LLM calls; unreadable note -> templates; UI button shows generating state. DEFERRED: live model turn quality check (spends Zen-free tokens only)",
+      "implemented_by": "claude-fable-5",
+      "implemented_at": "2026-07-02T13:20:00Z",
+      "verified_by": "gates exit 0",
+      "verified_at": "2026-07-02T13:22:00Z"
     },
     {
       "id": "F022",

@@ -37,6 +37,11 @@ export interface OpencodeClientLike {
       path: { id: string };
       body: Record<string, unknown>;
     }): Promise<unknown>;
+    /** Synchronous turn; reply text lives in data.parts (type "text"). */
+    prompt(o: {
+      path: { id: string };
+      body: Record<string, unknown>;
+    }): Promise<{ data?: { parts?: Array<{ type?: string; text?: string }> } }>;
     abort(o: { path: { id: string } }): Promise<unknown>;
   };
   event: {

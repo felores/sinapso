@@ -874,17 +874,91 @@ export function createApp(
   });
 
   // GET /api/note-questions?id=: 3-5 research questions derived from one
-  // note (F019). Template-based and local; executing one is the user's
-  // explicit choice and goes through the consent-gated /api/research.
-  app.get("/api/note-questions", (req, res) => {
+  // note. LLM-generated via the LOCKED-DOWN bridge when opencode is ready
+  // and Agent consent is recorded (F021: gap-aware, note content leaves
+  // the machine only under that consent); anything else falls back to the
+  // local templates (F019). Executing a question is still the user's
+  // explicit choice through the consent-gated /api/research.
+  let questionsSession = ""; // one utility session per server run
+  app.get("/api/note-questions", async (req, res) => {
+    const id = String(req.query.id ?? "");
+    const templates = () => noteQuestions(graph.nodes, graph.links ?? [], id);
     try {
-      const id = String(req.query.id ?? "");
-      res.json({
-        questions: noteQuestions(graph.nodes, graph.links ?? [], id),
+      const cfg = loadConfig(configPath);
+      if (!cfg.consents.agent || (await agentBridge.state()) !== "ready") {
+        res.json({ questions: templates(), source: "templates" });
+        return;
+      }
+      const full = resolve(vaultRoot, id);
+      if (
+        !full.startsWith(resolve(vaultRoot) + sep) ||
+        !full.toLowerCase().endsWith(".md") ||
+        !existsSync(full)
+      ) {
+        res.json({ questions: templates(), source: "templates" });
+        return;
+      }
+      const note = graph.nodes.find((n) => n.id === id);
+      const excerpt = readFileSync(full, "utf-8")
+        .replace(/^---\n[\s\S]*?\n---\n?/, "")
+        .slice(0, 1500);
+      const phantoms = (graph.links ?? [])
+        .filter((l) => l.source === id)
+        .map((l) => graph.nodes.find((n) => n.id === l.target))
+        .filter((n) => n?.phantom)
+        .map((n) => n!.title)
+        .slice(0, 8);
+      const client = await agentBridge.ensureRunning();
+      if (!questionsSession) {
+        const s = await client.session.create({
+          body: { title: "Solaris research questions" },
+        });
+        questionsSession = s.data?.id ?? "";
+        if (!questionsSession) throw new Error("no utility session");
+      }
+      const prompt = [
+        "Generate 3-5 web-research questions that would close the knowledge gaps around this note from my knowledge vault.",
+        "Focus on what is missing, unresolved, or worth investigating further — not on summarizing what the note already covers.",
+        phantoms.length
+          ? `The note references these topics that have no note of their own yet: ${phantoms.join(", ")}.`
+          : "",
+        `Note title: ${note?.title ?? id}`,
+        `Note content (excerpt):\n${excerpt}`,
+        'Reply with ONLY a JSON array of question strings, e.g. ["question one?", "question two?"]. No other text.',
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      const turn = client.session.prompt({
+        path: { id: questionsSession },
+        body: { parts: [{ type: "text", text: prompt }] },
       });
+      const r = await Promise.race([
+        turn,
+        new Promise<never>((_, rej) =>
+          setTimeout(() => rej(new Error("llm questions timed out")), 25_000),
+        ),
+      ]);
+      const text = (r.data?.parts ?? [])
+        .filter((p) => p.type === "text" && typeof p.text === "string")
+        .map((p) => p.text)
+        .join("\n");
+      const start = text.indexOf("[");
+      const end = text.lastIndexOf("]");
+      if (start < 0 || end <= start) throw new Error("no JSON array in reply");
+      const parsed: unknown = JSON.parse(text.slice(start, end + 1));
+      const questions = (Array.isArray(parsed) ? parsed : [])
+        .filter(
+          (q): q is string => typeof q === "string" && q.trim().length > 0,
+        )
+        .slice(0, 5);
+      if (!questions.length) throw new Error("empty question list");
+      res.json({ questions, source: "llm" });
     } catch (e) {
-      console.error("note questions failed:", e);
-      res.status(500).json({ error: "note questions failed" });
+      console.warn(
+        "llm questions fell back to templates:",
+        e instanceof Error ? e.message : e,
+      );
+      res.json({ questions: templates(), source: "templates" });
     }
   });
 
