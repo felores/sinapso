@@ -2247,6 +2247,8 @@ async function boot() {
     renderModes();
     updateSearchField();
     closeResearch(); // column content belongs to the previous mode
+    // The terminal needs no query: activating Agent opens it directly.
+    if (activeMode === "agent") void runAgentQuery("");
   }
   for (const m of MODE_LIST)
     $(`#mode-${m}`).addEventListener("click", () =>
@@ -2692,8 +2694,9 @@ async function boot() {
   }
 
   // ---- research column (F018): one shared right-side column for
-  // semantic results, web results, and the agent chat. The search field
-  // is the entry point; the column owns follow-ups via its own input.
+  // semantic/web results in the upper pane and the agent TERMINAL in the
+  // resizable lower pane (F022 split). The search field is the entry
+  // point; the column owns follow-ups via its own input.
   let researchMode: ModeName | null = null;
   const researchInput = $("#research-input") as HTMLInputElement;
 
@@ -2709,14 +2712,14 @@ async function boot() {
           ? "Web research"
           : "Agent";
     const isAgent = mode === "agent";
-    $("#agent-messages").classList.toggle("hidden", !isAgent);
-    $("#research-body").classList.toggle("hidden", isAgent);
+    // The upper pane + follow-up input serve semantic/web; the terminal
+    // (lower pane) has its own input and persists across mode switches.
+    $("#research-input-row").classList.toggle("hidden", isAgent);
     $("#research-deep-wrap").classList.toggle("hidden", mode !== "web");
     if (!isAgent) $("#agent-connect").classList.add("hidden");
     researchError(null);
-    researchInput.placeholder = isAgent
-      ? "message the agent…"
-      : mode === "web"
+    researchInput.placeholder =
+      mode === "web"
         ? "another web query…  (Enter — uses Exa)"
         : "another semantic query…  (Enter)";
   }
@@ -3095,30 +3098,137 @@ async function boot() {
     agentMode: "approval" | "full";
     model: string | null;
   }
-  let agentSessionId = "";
-  let agentSource: EventSource | null = null;
-  let agentBusy = false;
-  const agentParts = new Map<string, HTMLElement>();
-
   const agentBanner = (msg: string | null) => {
     const el = $("#agent-banner");
     el.classList.toggle("hidden", !msg);
     el.textContent = msg ?? "";
   };
-  const agentNotice = (text: string) => {
-    const div = document.createElement("div");
-    div.className = "agent-msg notice";
-    div.textContent = text;
-    $("#agent-messages").appendChild(div);
-    div.scrollIntoView({ block: "end" });
-  };
 
-  // First agent query from the search field (or a follow-up from the
-  // column): walk Connect onboarding if needed, ensure a session, then
-  // send. With a note open, the first message of the session carries it
-  // as context (note-as-basis).
-  let agentContextSent = false;
+  // ---- embedded terminal (F022): the full opencode TUI in the lower
+  // pane of the research column, resizable via the divider. TRUST: runs
+  // with the user's own opencode config, outside the propose/journal
+  // guarantees — the consent gate and docs say so.
+  let term: import("@xterm/xterm").Terminal | null = null;
+  let termFit: { fit(): void } | null = null;
+  let termStream: EventSource | null = null;
+  let termStarted = false;
 
+  function showTerminalPane(show: boolean) {
+    $("#terminal-pane").classList.toggle("hidden", !show);
+    $("#terminal-divider").classList.toggle("hidden", !show);
+    if (show) {
+      const saved = Number(localStorage.getItem("akasha-terminal-split") ?? 45);
+      ($("#terminal-pane") as HTMLElement).style.height =
+        `${Math.min(80, Math.max(15, saved))}%`;
+    }
+  }
+
+  async function postTerminal(path: string, body: object): Promise<Response> {
+    return fetch(`/api/terminal/${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-solaris-token": await apiToken(),
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function ensureTerminal(): Promise<boolean> {
+    showTerminalPane(true);
+    if (!term) {
+      const [{ Terminal }, { FitAddon }] = await Promise.all([
+        import("@xterm/xterm"),
+        import("@xterm/addon-fit"),
+      ]);
+      term = new Terminal({
+        fontSize: 12,
+        fontFamily: "SF Mono, Menlo, Consolas, monospace",
+        theme: { background: "#0d1117" },
+        // TUIs (opentui) probe modes via DECRQM and expect replies; xterm
+        // only answers those with the proposed API enabled.
+        allowProposedApi: true,
+      });
+      const fit = new FitAddon();
+      termFit = fit;
+      term.loadAddon(fit);
+      term.open($("#terminal-pane"));
+      term.onData((d) => {
+        void postTerminal("input", { data: d });
+      });
+      window.addEventListener("resize", () => {
+        if (!$("#terminal-pane").classList.contains("hidden")) fitTerminal();
+      });
+    }
+    fitTerminal();
+    if (!termStarted) {
+      const res = await postTerminal("start", {
+        cols: term.cols,
+        rows: term.rows,
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        agentBanner(d.message ?? "terminal unavailable");
+        showTerminalPane(false);
+        return false;
+      }
+      termStarted = true;
+      termStream?.close();
+      termStream = new EventSource(
+        `/api/terminal/stream?token=${sessionToken}`,
+      );
+      termStream.onmessage = (ev) => term?.write(JSON.parse(ev.data));
+    }
+    return true;
+  }
+
+  function fitTerminal() {
+    if (!term || !termFit) return;
+    try {
+      termFit.fit();
+      void postTerminal("resize", { cols: term.cols, rows: term.rows });
+    } catch {
+      // pane not laid out yet
+    }
+  }
+
+  // Divider drag resizes the split; ratio persists (akasha-terminal-split).
+  {
+    const divider = $("#terminal-divider");
+    const pane = $("#terminal-pane") as HTMLElement;
+    const column = $("#research") as HTMLElement;
+    let dragging = false;
+    divider.addEventListener("mousedown", (e) => {
+      dragging = true;
+      e.preventDefault();
+      document.body.style.userSelect = "none";
+    });
+    window.addEventListener("mousemove", (e) => {
+      if (!dragging) return;
+      const rect = column.getBoundingClientRect();
+      const pct = Math.min(
+        80,
+        Math.max(15, ((rect.bottom - e.clientY) / rect.height) * 100),
+      );
+      pane.style.height = `${pct}%`;
+    });
+    window.addEventListener("mouseup", () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.style.userSelect = "";
+      const pct = Math.round(
+        (pane.getBoundingClientRect().height /
+          column.getBoundingClientRect().height) *
+          100,
+      );
+      localStorage.setItem("akasha-terminal-split", String(pct));
+      fitTerminal();
+    });
+  }
+
+  // First agent query from the search field: walk Connect onboarding if
+  // needed, boot the TUI, then type the query into it (note-as-basis:
+  // the open note rides along as a context prefix).
   async function runAgentQuery(query: string) {
     openResearch("agent");
     let status: AgentStatus;
@@ -3130,267 +3240,26 @@ async function boot() {
     }
     if (status.state !== "ready") {
       $("#agent-connect").classList.remove("hidden");
-      researchInput.value = query; // keep the typed query for after connect
       return;
     }
     $("#agent-connect").classList.add("hidden");
-    if (!agentSessionId) {
-      await startAgentSession();
-      if (!agentSessionId) return; // startAgentSession surfaced the error
+    agentBanner(null);
+    const fresh = !termStarted;
+    if (!(await ensureTerminal())) return;
+    if (query) {
+      let text = query;
+      if (selected && !selected.phantom)
+        text = `[Viewing note: ${selected.id}] ${query}`;
+      // A fresh TUI needs a moment before it accepts typed input.
+      setTimeout(
+        () => void postTerminal("input", { data: text }),
+        fresh ? 3000 : 300,
+      );
     }
-    let text = query;
-    if (!agentContextSent && selected && !selected.phantom) {
-      text = `[Context: the user is currently viewing the note "${selected.title}" (${selected.id}) in Solaris. Treat it as the basis of this conversation unless they say otherwise.]\n\n${query}`;
-      agentContextSent = true;
-      agentNotice(`context: ${selected.title}`);
-    }
-    await sendAgentMessage(query, text);
   }
   $("#agent-recheck").addEventListener("click", () => {
-    void refreshIntegrations(true).then(() => {
-      const pending = researchInput.value.trim();
-      if (researchMode === "agent" && pending) void runAgentQuery(pending);
-    });
+    void refreshIntegrations(true).then(() => runAgentQuery(""));
   });
-
-  async function startAgentSession() {
-    try {
-      const res = await fetch("/api/agent/session", {
-        method: "POST",
-        headers: { "x-solaris-token": await apiToken() },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message ?? data.error);
-      agentSessionId = data.id;
-      openAgentStream();
-      agentNotice(
-        "connected — this conversation can read your vault but only proposes changes",
-      );
-    } catch (e) {
-      agentBanner(e instanceof Error ? e.message : "could not start the agent");
-    }
-  }
-
-  function openAgentStream() {
-    agentSource?.close();
-    const url = `/api/agent/stream?session=${encodeURIComponent(agentSessionId)}&token=${sessionToken}`;
-    agentSource = new EventSource(url);
-    // EventSource auto-reconnects; the banner covers the crash-restart
-    // backoff window so the panel never looks frozen (U11).
-    agentSource.onopen = () => agentBanner(null);
-    agentSource.onerror = () =>
-      agentBanner("agent connection lost — reconnecting…");
-    agentSource.onmessage = (ev) => {
-      try {
-        handleAgentEvent(JSON.parse(ev.data));
-      } catch {
-        // malformed event; skip
-      }
-    };
-  }
-
-  function handleAgentEvent(e: {
-    type: string;
-    properties?: Record<string, unknown>;
-  }) {
-    const p = (e.properties ?? {}) as Record<string, any>;
-    if (e.type === "message.part.updated" && p.part) {
-      const part = p.part as {
-        id: string;
-        type: string;
-        text?: string;
-        tool?: string;
-        state?: { status?: string };
-      };
-      if (part.type === "text" && typeof part.text === "string") {
-        let el = agentParts.get(part.id);
-        if (!el) {
-          el = document.createElement("div");
-          el.className = "agent-msg assistant";
-          agentParts.set(part.id, el);
-          $("#agent-messages").appendChild(el);
-        }
-        el.textContent = part.text;
-        el.scrollIntoView({ block: "end" });
-      } else if (part.type === "tool" && part.tool) {
-        const key = `tool-${part.id}`;
-        if (!agentParts.has(key)) {
-          const el = document.createElement("div");
-          el.className = "agent-msg notice";
-          el.textContent = `⚙ ${part.tool}…`;
-          agentParts.set(key, el);
-          $("#agent-messages").appendChild(el);
-        }
-      }
-    } else if (e.type === "session.status" && p.status?.type === "idle") {
-      setAgentBusy(false);
-      void refreshProposals();
-    } else if (e.type === "session.error") {
-      setAgentBusy(false);
-      agentNotice(`error: ${JSON.stringify(p.error ?? p).slice(0, 200)}`);
-    }
-  }
-
-  // Busy state drives the column's send/stop pair while in agent mode.
-  function setAgentBusy(b: boolean) {
-    agentBusy = b;
-    if (researchMode !== "agent") return;
-    $("#research-send").classList.toggle("hidden", b);
-    $("#research-stop").classList.toggle("hidden", !b);
-  }
-
-  /** `shown` is what the user typed; `wire` may carry the note context. */
-  async function sendAgentMessage(shown: string, wire = shown) {
-    if (!shown || agentBusy || !agentSessionId) return;
-    const bubble = document.createElement("div");
-    bubble.className = "agent-msg user";
-    bubble.textContent = shown;
-    $("#agent-messages").appendChild(bubble);
-    bubble.scrollIntoView({ block: "end" });
-    setAgentBusy(true);
-    try {
-      const res = await fetch("/api/agent/message", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-solaris-token": await apiToken(),
-        },
-        body: JSON.stringify({ sessionId: agentSessionId, text: wire }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message ?? data.error);
-      }
-    } catch (e) {
-      setAgentBusy(false);
-      agentNotice(
-        `send failed: ${e instanceof Error ? e.message : "unknown error"}`,
-      );
-    }
-  }
-  $("#research-stop").addEventListener("click", async () => {
-    try {
-      await fetch("/api/agent/cancel", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-solaris-token": await apiToken(),
-        },
-        body: JSON.stringify({ sessionId: agentSessionId }),
-      });
-    } finally {
-      setAgentBusy(false);
-    }
-  });
-
-  // Proposal reviews (R14): rendered inline after each idle turn.
-  interface ProposalLite {
-    id: string;
-    kind: "create" | "edit";
-    path?: string;
-    title?: string;
-    content: string;
-    rationale?: string;
-    status: string;
-    appliedPath?: string;
-    diff?: string;
-  }
-  const renderedProposals = new Set<string>();
-
-  async function refreshProposals() {
-    if (!agentSessionId) return;
-    try {
-      const data: { proposals: ProposalLite[] } = await fetch(
-        `/api/agent/proposals?session=${encodeURIComponent(agentSessionId)}`,
-      ).then((r) => r.json());
-      for (const p of data.proposals) {
-        if (renderedProposals.has(p.id)) continue;
-        renderedProposals.add(p.id);
-        if (p.status === "applied") {
-          // full-access lands emit an inline write notice (R19 visibility)
-          agentNotice(
-            `✎ applied (full access): ${p.kind} ${p.appliedPath ?? p.path}`,
-          );
-        } else if (p.status === "pending") {
-          $("#agent-messages").appendChild(renderProposal(p));
-        }
-      }
-    } catch {
-      // proposals list unavailable; next idle turn retries
-    }
-  }
-
-  function renderProposal(p: ProposalLite): HTMLElement {
-    const box = document.createElement("div");
-    box.className = "proposal";
-    const head = document.createElement("div");
-    head.className = "prop-head";
-    head.textContent =
-      p.kind === "create"
-        ? `proposes new note: ${p.title ?? p.path}`
-        : `proposes edit: ${p.path}`;
-    const pre = document.createElement("pre");
-    pre.textContent = p.kind === "edit" ? (p.diff ?? "") : p.content;
-    const actions = document.createElement("div");
-    actions.className = "prop-actions";
-    box.append(head, pre);
-    if (p.rationale) {
-      const why = document.createElement("div");
-      why.className = "agent-msg notice";
-      why.textContent = `why: ${p.rationale}`;
-      box.appendChild(why);
-    }
-    box.appendChild(actions);
-
-    let editArea: HTMLTextAreaElement | null = null;
-    const act = async (verb: "approve" | "reject") => {
-      try {
-        const body: Record<string, string> = {};
-        if (verb === "approve" && editArea) body.content = editArea.value;
-        const res = await fetch(`/api/agent/proposals/${p.id}/${verb}`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-solaris-token": await apiToken(),
-          },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        box.remove();
-        if (verb === "approve") {
-          agentNotice(
-            `✓ applied: ${data.appliedPath} — rescan to see it in the galaxy`,
-          );
-        } else {
-          agentNotice(`✕ rejected ${p.id} — nothing was written`);
-        }
-      } catch (e) {
-        agentNotice(
-          `${verb} failed: ${e instanceof Error ? e.message : "unknown error"}`,
-        );
-      }
-    };
-
-    const approve = document.createElement("button");
-    approve.className = "prop-approve";
-    approve.textContent = "approve";
-    approve.addEventListener("click", () => act("approve"));
-    const edit = document.createElement("button");
-    edit.textContent = "edit";
-    edit.addEventListener("click", () => {
-      if (editArea) return;
-      editArea = document.createElement("textarea");
-      editArea.value = p.content;
-      box.insertBefore(editArea, actions);
-      pre.remove();
-    });
-    const reject = document.createElement("button");
-    reject.textContent = "reject";
-    reject.addEventListener("click", () => act("reject"));
-    actions.append(approve, edit, reject);
-    return box;
-  }
 
   // Restore a persisted mode on boot (consent already recorded): the
   // search field reflects it; the column only opens on the first query.

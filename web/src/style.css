@@ -1008,3 +1008,24 @@ html, body {
 }
 .answer-source:hover { text-decoration: underline; }
 .answer .web-save { margin-top: 8px; }
+
+/* ---------- embedded terminal split (F022) ---------- */
+#terminal-divider {
+  flex: 0 0 6px;
+  margin: 4px -14px 0;
+  cursor: row-resize;
+  border-top: 1px solid var(--border);
+  background: transparent;
+}
+#terminal-divider:hover { border-top-color: var(--accent); }
+#terminal-divider.hidden { display: none; }
+#terminal-pane {
+  flex: 0 0 auto;
+  height: 45%;
+  min-height: 100px;
+  overflow: hidden;
+  background: #0d1117;
+  border-radius: 6px;
+}
+#terminal-pane.hidden { display: none; }
+#research-input-row.hidden { display: none; }

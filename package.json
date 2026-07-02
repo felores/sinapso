@@ -1,7 +1,7 @@
 {
   "name": "solaris",
   "version": "1.0.1",
-  "description": "Solaris — your Obsidian vault or Open Knowledge Format bundle as a navigable 3D universe.",
+  "description": "Solaris \u2014 your Obsidian vault or Open Knowledge Format bundle as a navigable 3D universe.",
   "type": "module",
   "main": "desktop/dist/main.cjs",
   "bin": {
@@ -40,9 +40,9 @@
     "dev:server": "tsx server/index.ts",
     "dev:web": "vite web",
     "build": "vite build web",
-    "build:cli": "esbuild bin/cli.ts --bundle --platform=node --format=cjs --external:express --outfile=dist/cli.cjs",
+    "build:cli": "esbuild bin/cli.ts --bundle --platform=node --format=cjs --external:express --external:node-pty --outfile=dist/cli.cjs",
     "start": "tsx server/index.ts",
-    "desktop:build": "vite build web && esbuild desktop/main.ts --bundle --platform=node --format=cjs --external:electron --external:express --outfile=desktop/dist/main.cjs",
+    "desktop:build": "vite build web && esbuild desktop/main.ts --bundle --platform=node --format=cjs --external:electron --external:express --external:node-pty --outfile=desktop/dist/main.cjs",
     "desktop": "npm run desktop:build && electron .",
     "dist:desktop": "npm run desktop:build && electron-builder --win",
     "test": "vitest run",
@@ -56,11 +56,13 @@
     "express": "^5.1.0"
   },
   "devDependencies": {
+    "3d-force-graph": "^1.77.0",
     "@types/express": "^5.0.0",
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",
     "@types/three": "^0.184.1",
-    "3d-force-graph": "^1.77.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
     "concurrently": "^9.0.0",
     "electron": "^42.4.0",
     "electron-builder": "^26.0.0",
@@ -99,5 +101,8 @@
       "oneClick": true,
       "deleteAppDataOnUninstall": false
     }
+  },
+  "optionalDependencies": {
+    "node-pty": "1.1.0"
   }
 }

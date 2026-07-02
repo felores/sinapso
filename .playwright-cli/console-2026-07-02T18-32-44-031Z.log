@@ -1,0 +1,25 @@
+[     233ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5199/favicon.ico:0
+[    6037ms] ReferenceError: i is not defined
+    at Aa.requestMode (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:103435)
+    at Array.<anonymous> (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:77659)
+    at Ra.parse (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:67833)
+    at Aa.parse (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:83140)
+    at Na._action (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:121511)
+    at Na._innerWrite (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:116857)
+    at http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:116613
+[  306740ms] ReferenceError: i is not defined
+    at Aa.requestMode (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:103435)
+    at Array.<anonymous> (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:77659)
+    at Ra.parse (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:67833)
+    at Aa.parse (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:83140)
+    at Na._action (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:121511)
+    at Na._innerWrite (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:116857)
+    at http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:116613
+[  407220ms] ReferenceError: i is not defined
+    at Aa.requestMode (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:103435)
+    at Array.<anonymous> (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:77659)
+    at Ra.parse (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:67833)
+    at Aa.parse (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:83140)
+    at Na._action (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:121511)
+    at Na._innerWrite (http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:116857)
+    at http://127.0.0.1:5199/assets/xterm-BqvuqXEL.js:24:116613

@@ -66,6 +66,10 @@ import {
   localOnly,
   requireToken,
 } from "./integrations/security.js";
+import {
+  createTerminalManager,
+  type TerminalDeps,
+} from "./integrations/terminal.js";
 import { computeGaps, noteQuestions } from "./integrations/topology.js";
 import {
   guardedCreate,
@@ -110,6 +114,8 @@ export interface IntegrationsOptions {
   opencode?: Partial<OpencodeBridgeDeps>;
   /** Inject a fake stdio child for the warm qmd client (tests). */
   qmdMcp?: Partial<QmdMcpDeps>;
+  /** Inject a fake PTY factory for the embedded terminal (tests). */
+  terminal?: Partial<TerminalDeps>;
 }
 
 export function createApp(
@@ -890,6 +896,89 @@ export function createApp(
       }
     },
   );
+
+  // ---- Embedded terminal (F022): the full opencode TUI in the column ----
+  // TRUST: runs with the USER'S own opencode config (direct writes under
+  // opencode's own prompts) — outside the Solaris journal/propose
+  // guarantees, and the docs say so. Requires Agent consent (egress).
+  const terminal = createTerminalManager(integrations?.terminal);
+
+  // POST /api/terminal/start: spawn (or reuse) the TUI in the vault dir.
+  app.post("/api/terminal/start", guarded, express.json(), async (req, res) => {
+    try {
+      if (!agentConsent(res)) return;
+      if (!toolCache) toolCache = await detectAll(detectDeps);
+      if (!toolCache.opencode.installed || !toolCache.opencode.path) {
+        res.status(503).json({
+          error: "opencode-missing",
+          message: "OpenCode is not installed.",
+        });
+        return;
+      }
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const cols = typeof b.cols === "number" ? b.cols : 80;
+      const rows = typeof b.rows === "number" ? b.rows : 24;
+      try {
+        await terminal.start(toolCache.opencode.path, vaultRoot, cols, rows);
+      } catch (e) {
+        console.error(
+          "terminal start failed:",
+          e instanceof Error ? e.message : e,
+        );
+        res.status(503).json({
+          error: "pty-unavailable",
+          message:
+            "The embedded terminal needs the node-pty native module, which is not available in this install.",
+        });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("terminal start failed:", e);
+      res.status(500).json({ error: "terminal start failed" });
+    }
+  });
+
+  // GET /api/terminal/stream?token=: SSE relay of PTY output (JSON-encoded
+  // chunks; EventSource cannot carry raw control bytes across newlines).
+  app.get("/api/terminal/stream", (req, res) => {
+    if (String(req.query.token ?? "") !== sessionToken) {
+      res.status(403).json({ error: "missing or invalid session token" });
+      return;
+    }
+    res.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    });
+    const unsubscribe = terminal.subscribe((d) => {
+      res.write(`data: ${JSON.stringify(d)}\n\n`);
+      if (!terminal.running()) res.end(); // pty exited; let the client reconnect on restart
+    });
+    req.on("close", unsubscribe);
+  });
+
+  // POST /api/terminal/input | /resize | /kill: token-guarded controls.
+  app.post(
+    "/api/terminal/input",
+    guarded,
+    express.json({ limit: "1mb" }),
+    (req, res) => {
+      const d = (req.body ?? ({} as Record<string, unknown>)).data;
+      if (typeof d === "string") terminal.write(d);
+      res.json({ ok: true });
+    },
+  );
+  app.post("/api/terminal/resize", guarded, express.json(), (req, res) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof b.cols === "number" && typeof b.rows === "number")
+      terminal.resize(b.cols, b.rows);
+    res.json({ ok: true });
+  });
+  app.post("/api/terminal/kill", guarded, (_req, res) => {
+    terminal.kill();
+    res.json({ ok: true });
+  });
 
   // POST /api/agent/cancel: abort the in-flight turn.
   app.post("/api/agent/cancel", guarded, express.json(), async (req, res) => {

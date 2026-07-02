@@ -605,7 +605,7 @@
         "command": "npm test && npm run typecheck && npm run build",
         "expected": "terminal route tests with a faked pty factory: spawn cwd=vault, input requires token, SSE relays output, close kills pty; UI gates green; manual: real TUI session in the column"
       },
-      "state": "not_started",
+      "state": "active",
       "depends_on": [
         "F018"
       ],
@@ -623,9 +623,9 @@
       "confidence": "needs-review",
       "context_note": "REVISED: split pane, not full-column takeover — divider drag like the reader resize handles; persist ratio in localStorage akasha-terminal-split. node-pty is a native dep (optionalDependency; degrade cleanly). xterm = @xterm/xterm + @xterm/addon-fit. Chat UI/proposal review UI retired from the column; proposal server routes stay (headless bridge uses them).",
       "spec_ref": "user decisions 2026-07-02 (AskUserQuestion round 2)",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
+      "evidence": "IN PROGRESS. Server side complete + tested (142/142): terminal manager (spawn-once, backlog replay, exit notes, kill), routes (start consent+token gated, SSE stream, input/resize/kill), node-pty as optionalDependency with darwin spawn-helper exec-bit self-heal, pty-unavailable -> clean 503. UI complete: split column with draggable divider (akasha-terminal-split), xterm lazy-loaded (84KB gzip chunk), agent button opens terminal, first query typed after boot. KNOWN ISSUE: opencode's opentui renderer does not complete its visible paint under xterm.js 6 (capability probes leak literal 'p' chars = DECRQM requests unconsumed even with allowProposedApi; raw PTY backlog shows the full alt-screen paint being emitted correctly). Next: answer DECRQM/XTVERSION/OSC10-11 probes via a server-side shim on the pty stream, or isolate with a plain shell TUI to split xterm-vs-opentui responsibility",
+      "implemented_by": "claude-fable-5",
+      "implemented_at": "2026-07-02T14:00:00Z",
       "verified_by": null,
       "verified_at": null
     },
