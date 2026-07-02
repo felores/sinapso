@@ -116,7 +116,7 @@ describe("hitsToNodes", () => {
         {
           file: "qmd://c/a.md",
           score: 0.9,
-          snippet: "@@ -1,3 @@\nhello  world",
+          snippet: "10: @@ -1,3 @@ (0 before, 2 after)\n11: hello  world",
         },
         { file: "qmd://c/excluded.md", score: 0.8 },
         { file: "qmd://c/sub/b.md", score: 0.7 },

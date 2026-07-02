@@ -2076,7 +2076,9 @@ async function boot() {
     const token = ++searchToken;
     results.innerHTML = "";
     clearTimeout(searchTimer);
-    if (!q) return;
+    // With a mode active the field is a query box (Enter-driven, F018):
+    // no live dropdown, and web queries must never auto-run while typing.
+    if (!q || activeMode) return;
 
     // 1) Title matches: local, instant.
     const ql = q.toLowerCase();
@@ -2094,44 +2096,38 @@ async function boot() {
       shown.add(n.id);
     }
 
-    // 2) Content matches: debounced. Semantic mode swaps the source to the
-    // qmd-powered endpoint (R9); default is the server's full-text index.
-    // Semantic gets a longer debounce: each query spawns a qmd process.
-    const semantic = activeMode === "semantic";
-    searchTimer = setTimeout(
-      async () => {
-        try {
-          let hits: Array<{ id: string; snippet: string }>;
-          if (semantic) {
-            const resp = await fetch(
-              `/api/semantic-search?q=${encodeURIComponent(q)}${collectionsParam()}`,
-            ).then((r) => r.json());
-            hits = resp.results ?? [];
-          } else {
-            hits = await fetch(`/api/search?q=${encodeURIComponent(q)}`).then(
-              (r) => r.json(),
-            );
-          }
-          if (token !== searchToken) return; // stale response
-          for (const h of hits) {
-            if (shown.has(h.id) || shown.size >= 16) continue;
-            const n = byId.get(h.id);
-            if (!n) continue;
-            addResult(n, h.snippet);
-            shown.add(h.id);
-          }
-        } catch {
-          // index unavailable; title results already shown
+    // 2) Content matches: debounced hit on the server's full-text index.
+    searchTimer = setTimeout(async () => {
+      try {
+        const hits: Array<{ id: string; snippet: string }> = await fetch(
+          `/api/search?q=${encodeURIComponent(q)}`,
+        ).then((r) => r.json());
+        if (token !== searchToken) return; // stale response
+        for (const h of hits) {
+          if (shown.has(h.id) || shown.size >= 16) continue;
+          const n = byId.get(h.id);
+          if (!n) continue;
+          addResult(n, h.snippet);
+          shown.add(h.id);
         }
-      },
-      semantic ? 600 : 220,
-    );
+      } catch {
+        // index unavailable; title results already shown
+      }
+    }, 220);
   };
   searchBox.addEventListener("input", () =>
     renderResults(searchBox.value.trim()),
   );
   searchBox.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
+      const q = searchBox.value.trim();
+      if (activeMode && q) {
+        // Mode query: results open in the research column (F018).
+        searchBox.value = "";
+        searchBox.blur();
+        runModeQuery(activeMode, q);
+        return;
+      }
       (results.firstElementChild as HTMLElement | null)?.click();
     } else if (e.key === "Escape") {
       searchBox.value = "";
@@ -2212,6 +2208,19 @@ async function boot() {
     }
   }
 
+  // The mode changes what the SEARCH FIELD does (F018) — visible via
+  // placeholder + accent. Results open in the research column on Enter.
+  const SEARCH_PLACEHOLDERS: Record<ModeName | "none", string> = {
+    none: "Search notes…  (press /)",
+    semantic: "Semantic search…  (Enter)",
+    web: "Web research…  (Enter — uses Exa)",
+    agent: "Ask the agent about your vault…  (Enter)",
+  };
+  function updateSearchField() {
+    searchBox.placeholder = SEARCH_PLACEHOLDERS[activeMode ?? "none"];
+    searchBox.classList.toggle("mode-active", !!activeMode);
+  }
+
   function setMode(m: ModeName | null) {
     // Web and Agent modes are gated behind one-time egress consent (R18/AE8).
     if (m === "web" && integrations && !integrations.consents.web) {
@@ -2226,8 +2235,8 @@ async function boot() {
     if (activeMode) localStorage.setItem("akasha-mode", activeMode);
     else localStorage.removeItem("akasha-mode");
     renderModes();
-    syncWebPanel();
-    syncAgentPanel();
+    updateSearchField();
+    closeResearch(); // column content belongs to the previous mode
   }
   for (const m of MODE_LIST)
     $(`#mode-${m}`).addEventListener("click", () =>
@@ -2652,88 +2661,120 @@ async function boot() {
     $("#web-consent-no").addEventListener("click", hideModal); // declining sends nothing (AE8)
   }
 
-  interface GapSuggestion {
-    kind: string;
-    title: string;
-    query: string;
-    reason: string;
-  }
-  let gapsLoaded = false;
+  // ---- research column (F018): one shared right-side column for
+  // semantic results, web results, and the agent chat. The search field
+  // is the entry point; the column owns follow-ups via its own input.
+  let researchMode: ModeName | null = null;
+  const researchInput = $("#research-input") as HTMLInputElement;
 
-  function syncWebPanel() {
-    const panel = $("#web-panel");
-    const on = activeMode === "web";
-    panel.classList.toggle("hidden", !on);
-    if (on && !gapsLoaded) void loadGaps();
-  }
-
-  async function loadGaps() {
-    gapsLoaded = true;
-    const box = $("#web-suggestions");
-    const info = $("#web-suggestions-info");
-    info.textContent = "finding gaps in your galaxy…";
-    try {
-      const data: { suggestions: GapSuggestion[] } = await fetch(
-        "/api/gaps",
-      ).then((r) => r.json());
-      if (!data.suggestions.length) {
-        info.textContent = "no gaps found — your galaxy is well connected";
-        return;
-      }
-      info.remove();
-      for (const s of data.suggestions) {
-        const row = document.createElement("div");
-        row.className = "gap-row";
-        const q = document.createElement("div");
-        q.className = "gap-query";
-        q.textContent = s.query;
-        const why = document.createElement("div");
-        why.className = "gap-reason";
-        why.textContent = s.reason;
-        row.append(q, why);
-        // Populate-then-confirm: clicking never auto-spends Exa credit.
-        row.addEventListener("click", () => {
-          ($("#web-query") as HTMLInputElement).value = s.query;
-          ($("#web-query") as HTMLInputElement).focus();
-        });
-        box.appendChild(row);
-        void enrichGapRow(row, s.query); // progressive, never blocks (F016)
-      }
-    } catch {
-      info.textContent = "could not load gap suggestions";
-    }
+  function openResearch(mode: ModeName) {
+    researchMode = mode;
+    $("#research").classList.remove("hidden");
+    $("#search-wrap").classList.add("hidden"); // the column owns the interaction
+    $("#reader").classList.add("ctx-left"); // open note = working context
+    $("#research-title").textContent =
+      mode === "semantic"
+        ? "Semantic results"
+        : mode === "web"
+          ? "Web research"
+          : "Agent";
+    const isAgent = mode === "agent";
+    $("#agent-messages").classList.toggle("hidden", !isAgent);
+    $("#research-body").classList.toggle("hidden", isAgent);
+    if (!isAgent) $("#agent-connect").classList.add("hidden");
+    researchError(null);
+    researchInput.placeholder = isAgent
+      ? "message the agent…"
+      : mode === "web"
+        ? "another web query…  (Enter — uses Exa)"
+        : "another semantic query…  (Enter)";
   }
 
-  // Fill each suggestion with the nearest existing vault note as context,
-  // as results arrive. Best-effort: templates stand alone without qmd.
-  async function enrichGapRow(row: HTMLElement, query: string) {
-    try {
-      const data: { snippet: string | null; from?: string } = await fetch(
-        `/api/gaps/enrich?q=${encodeURIComponent(query)}`,
-      ).then((r) => r.json());
-      if (!data.snippet) return;
-      const ctx = document.createElement("div");
-      ctx.className = "gap-context";
-      ctx.textContent = `closest in vault: ${data.from} — ${data.snippet}`;
-      row.appendChild(ctx);
-    } catch {
-      // enrichment is optional
-    }
+  function closeResearch() {
+    researchMode = null;
+    $("#research").classList.add("hidden");
+    $("#search-wrap").classList.remove("hidden");
+    $("#reader").classList.remove("ctx-left"); // reader returns to the right
   }
+  $("#research-close").addEventListener("click", closeResearch);
 
-  function webError(msg: string | null) {
-    const el = $("#web-error");
+  function researchError(msg: string | null) {
+    const el = $("#research-error");
     el.classList.toggle("hidden", !msg);
     el.textContent = msg ?? "";
   }
 
-  async function runResearch() {
-    const input = $("#web-query") as HTMLInputElement;
-    const query = input.value.trim();
-    if (!query) return;
-    const results = $("#web-results");
-    webError(null);
-    results.innerHTML = '<p class="muted">searching the web…</p>';
+  function runModeQuery(mode: ModeName, query: string) {
+    if (mode === "semantic") void runSemanticQuery(query);
+    else if (mode === "web")
+      startWebResearch(query); // consent re-checked
+    else void runAgentQuery(query);
+  }
+
+  // Follow-ups from inside the column route to the active mode.
+  const submitResearchInput = () => {
+    const q = researchInput.value.trim();
+    if (!q || !researchMode) return;
+    researchInput.value = "";
+    runModeQuery(researchMode, q);
+  };
+  $("#research-send").addEventListener("click", submitResearchInput);
+  researchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitResearchInput();
+  });
+
+  async function runSemanticQuery(query: string) {
+    openResearch("semantic");
+    const body = $("#research-body");
+    body.innerHTML = '<p class="muted">searching semantically…</p>';
+    try {
+      const data: {
+        state: string;
+        results?: Array<{ id: string; title: string; snippet: string }>;
+      } = await fetch(
+        `/api/semantic-search?q=${encodeURIComponent(query)}${collectionsParam()}`,
+      ).then((r) => r.json());
+      body.innerHTML = "";
+      if (data.state === "indexing") {
+        body.innerHTML =
+          '<p class="muted">semantic index building — try again shortly</p>';
+        return;
+      }
+      if (data.state === "uncovered") {
+        body.innerHTML =
+          '<p class="muted">semantic search is not set up for this vault (Tools → Integrations)</p>';
+        return;
+      }
+      const results = data.results ?? [];
+      if (!results.length) {
+        body.innerHTML = '<p class="muted">no matching notes</p>';
+        return;
+      }
+      for (const r of results) {
+        const node = byId.get(r.id);
+        if (!node) continue;
+        const row = document.createElement("div");
+        row.className = "rel-row";
+        const title = document.createElement("span");
+        title.className = "rel-title";
+        title.textContent = node.title;
+        const snip = document.createElement("span");
+        snip.className = "rel-snippet";
+        snip.textContent = r.snippet;
+        row.append(title, snip);
+        row.addEventListener("click", () => select(node)); // column stays open
+        body.appendChild(row);
+      }
+    } catch {
+      body.innerHTML = "";
+      researchError("semantic search failed — is the server running?");
+    }
+  }
+
+  async function runWebQuery(query: string) {
+    openResearch("web");
+    const body = $("#research-body");
+    body.innerHTML = '<p class="muted">searching the web…</p>';
     try {
       const res = await fetch("/api/research", {
         method: "POST",
@@ -2745,13 +2786,13 @@ async function boot() {
       });
       const data = await res.json();
       if (!res.ok) {
-        results.innerHTML = "";
-        webError(data.message ?? "research failed");
+        body.innerHTML = "";
+        researchError(data.message ?? "research failed");
         return;
       }
-      results.innerHTML = "";
+      body.innerHTML = "";
       if (!data.results.length) {
-        results.innerHTML = '<p class="muted">no results</p>';
+        body.innerHTML = '<p class="muted">no results</p>';
         return;
       }
       for (const r of data.results as Array<{
@@ -2760,12 +2801,22 @@ async function boot() {
         snippet: string;
         publishedDate: string | null;
       }>) {
-        results.appendChild(renderWebResult(r, query));
+        body.appendChild(renderWebResult(r, query));
       }
     } catch {
-      results.innerHTML = "";
-      webError("research failed — is the server running?");
+      body.innerHTML = "";
+      researchError("research failed — is the server running?");
     }
+  }
+
+  // Web research entry shared by the search field and the per-note
+  // research questions (F019): consent-gated before any egress.
+  function startWebResearch(query: string) {
+    if (integrations && !integrations.consents.web) {
+      promptWebConsent();
+      return;
+    }
+    void runWebQuery(query);
   }
 
   function renderWebResult(
@@ -2839,10 +2890,6 @@ async function boot() {
     return row;
   }
 
-  $("#web-run").addEventListener("click", runResearch);
-  ($("#web-query") as HTMLInputElement).addEventListener("keydown", (e) => {
-    if (e.key === "Enter") void runResearch();
-  });
   // ---- Agent mode: chat, Connect onboarding, proposal reviews (U11) ----
   function promptAgentConsent() {
     showModal(
@@ -2892,15 +2939,14 @@ async function boot() {
     div.scrollIntoView({ block: "end" });
   };
 
-  async function syncAgentPanel() {
-    const panel = $("#agent-panel");
-    const on = activeMode === "agent";
-    panel.classList.toggle("hidden", !on);
-    if (!on) {
-      agentSource?.close();
-      agentSource = null;
-      return;
-    }
+  // First agent query from the search field (or a follow-up from the
+  // column): walk Connect onboarding if needed, ensure a session, then
+  // send. With a note open, the first message of the session carries it
+  // as context (note-as-basis).
+  let agentContextSent = false;
+
+  async function runAgentQuery(query: string) {
+    openResearch("agent");
     let status: AgentStatus;
     try {
       status = await fetch("/api/agent/status").then((r) => r.json());
@@ -2908,19 +2954,29 @@ async function boot() {
       agentBanner("cannot reach the Solaris server");
       return;
     }
-    const connect = $("#agent-connect");
-    const inputRow = $("#agent-input-row");
     if (status.state !== "ready") {
-      connect.classList.remove("hidden");
-      inputRow.classList.add("hidden");
+      $("#agent-connect").classList.remove("hidden");
+      researchInput.value = query; // keep the typed query for after connect
       return;
     }
-    connect.classList.add("hidden");
-    inputRow.classList.remove("hidden");
-    if (!agentSessionId) await startAgentSession();
+    $("#agent-connect").classList.add("hidden");
+    if (!agentSessionId) {
+      await startAgentSession();
+      if (!agentSessionId) return; // startAgentSession surfaced the error
+    }
+    let text = query;
+    if (!agentContextSent && selected && !selected.phantom) {
+      text = `[Context: the user is currently viewing the note "${selected.title}" (${selected.id}) in Solaris. Treat it as the basis of this conversation unless they say otherwise.]\n\n${query}`;
+      agentContextSent = true;
+      agentNotice(`context: ${selected.title}`);
+    }
+    await sendAgentMessage(query, text);
   }
   $("#agent-recheck").addEventListener("click", () => {
-    void refreshIntegrations(true).then(syncAgentPanel);
+    void refreshIntegrations(true).then(() => {
+      const pending = researchInput.value.trim();
+      if (researchMode === "agent" && pending) void runAgentQuery(pending);
+    });
   });
 
   async function startAgentSession() {
@@ -3001,20 +3057,20 @@ async function boot() {
     }
   }
 
+  // Busy state drives the column's send/stop pair while in agent mode.
   function setAgentBusy(b: boolean) {
     agentBusy = b;
-    $("#agent-send").classList.toggle("hidden", b);
-    $("#agent-stop").classList.toggle("hidden", !b);
+    if (researchMode !== "agent") return;
+    $("#research-send").classList.toggle("hidden", b);
+    $("#research-stop").classList.toggle("hidden", !b);
   }
 
-  async function sendAgentMessage() {
-    const input = $("#agent-input") as HTMLInputElement;
-    const text = input.value.trim();
-    if (!text || agentBusy || !agentSessionId) return;
-    input.value = "";
+  /** `shown` is what the user typed; `wire` may carry the note context. */
+  async function sendAgentMessage(shown: string, wire = shown) {
+    if (!shown || agentBusy || !agentSessionId) return;
     const bubble = document.createElement("div");
     bubble.className = "agent-msg user";
-    bubble.textContent = text;
+    bubble.textContent = shown;
     $("#agent-messages").appendChild(bubble);
     bubble.scrollIntoView({ block: "end" });
     setAgentBusy(true);
@@ -3025,7 +3081,7 @@ async function boot() {
           "content-type": "application/json",
           "x-solaris-token": await apiToken(),
         },
-        body: JSON.stringify({ sessionId: agentSessionId, text }),
+        body: JSON.stringify({ sessionId: agentSessionId, text: wire }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -3038,11 +3094,7 @@ async function boot() {
       );
     }
   }
-  $("#agent-send").addEventListener("click", sendAgentMessage);
-  ($("#agent-input") as HTMLInputElement).addEventListener("keydown", (e) => {
-    if (e.key === "Enter") void sendAgentMessage();
-  });
-  $("#agent-stop").addEventListener("click", async () => {
+  $("#research-stop").addEventListener("click", async () => {
     try {
       await fetch("/api/agent/cancel", {
         method: "POST",
@@ -3166,11 +3218,10 @@ async function boot() {
     return box;
   }
 
-  // Restore a persisted mode on boot (consent already recorded).
-  void integrationsLoaded.then(() => {
-    syncWebPanel();
-    void syncAgentPanel();
-  });
+  // Restore a persisted mode on boot (consent already recorded): the
+  // search field reflects it; the column only opens on the first query.
+  updateSearchField();
+  void integrationsLoaded.then(updateSearchField);
 
   // ---- menubar (File / View / Tools / Help) ----
   const menus = [...document.querySelectorAll<HTMLElement>(".menu")];
@@ -3392,7 +3443,10 @@ async function boot() {
         el.isContentEditable);
     if (e.key === "/" && !typing) {
       e.preventDefault();
-      searchBox.focus();
+      // While the research column is open it owns the interaction.
+      if (!$("#research").classList.contains("hidden"))
+        ($("#research-input") as HTMLInputElement).focus();
+      else searchBox.focus();
       return;
     }
     if (e.key === "Escape" && typing && el !== searchBox) {
@@ -3400,9 +3454,10 @@ async function boot() {
       return;
     }
     if (e.key === "Escape" && !typing) {
-      // standard escape order: modal, then menus, then selection
+      // standard escape order: modal, menus, research column, selection
       if (!$("#modal-backdrop").classList.contains("hidden")) hideModal();
       else if (menus.some((m) => m.classList.contains("open"))) closeMenus();
+      else if (!$("#research").classList.contains("hidden")) closeResearch();
       else clearSelection();
       return;
     }

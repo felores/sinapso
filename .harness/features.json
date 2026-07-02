@@ -1,7 +1,7 @@
 {
   "project": "solaris-optional-integrations",
   "created": "2026-07-02T04:37:20Z",
-  "updated": "2026-07-02T13:28:11Z",
+  "updated": "2026-07-02T14:19:29Z",
   "features": [
     {
       "id": "F001",
@@ -480,6 +480,62 @@
       "implemented_at": "2026-07-02T09:40:00Z",
       "verified_by": "gates exit 0 + live self-test against real binary",
       "verified_at": "2026-07-02T09:42:00Z"
+    },
+    {
+      "id": "F018",
+      "priority": 18,
+      "category": "UI Chrome",
+      "behavior": "Search-first modes + shared research column. The search field is the single entry point: mode buttons only change its behavior (placeholder + accent make the active mode visible). No mode = live note search (today). Semantic/Web/Agent = Enter runs the query; results open in one shared right-side research column (semantic result rows; Exa results with save-as-note; agent chat with connect/banner/proposals migrated in). The column has its own follow-up input (paper-plane send; stop button for agent turns) and a close button. While open: the top search bar + mode buttons hide and a docked reader is forced to the LEFT edge (note = working context); closing restores both. Web mode no longer opens any panel on activation; consent gates unchanged; web queries never auto-run while typing. Agent first message carries the open note as context when one is open; '/' focuses the column input while the column is open.",
+      "verification": {
+        "command": "npm run typecheck && npm run build && npm test",
+        "expected": "Gates green. Playwright: mode changes placeholder; semantic Enter -> column rows -> click opens note; web Enter (mocked) -> results + save; agent Enter -> chat in column; column open hides search bar + left-docks reader; close restores; no-mode search unchanged"
+      },
+      "state": "passing",
+      "depends_on": [
+        "F013"
+      ],
+      "files_touched": [
+        "web/index.html",
+        "web/src/main.ts",
+        "web/src/style.css"
+      ],
+      "confidence": "needs-review",
+      "context_note": "Reader geometry engine (applyGeom/localStorage akasha-reader) must not fight the forced-left state: use a CSS class override on the docked state only, never mutate saved geometry. Menubar click-outside gotcha unchanged.",
+      "spec_ref": "user follow-up 2026-07-02 (search-first column redesign)",
+      "evidence": "typecheck+build+121 tests green. Playwright on real vault: mode changes placeholder+accent; no dropdown while a mode is active; semantic Enter -> column with 11 results, click swaps note, column persists; search bar hides and reader force-docks LEFT (needed !important over the geometry engine's inline inset); close restores search bar + right reader; web Enter (mocked) -> column results with save button; agent Enter -> real session, note context notice, user bubble, stop button; '/' targets column input; Escape order includes the column; shortcut suppression verified while focused. Fixed en route: MCP snippet line-number/@@ decoration stripped. NOTE: test overwrote the stored Exa key with a fake; cleared to null — Felo must re-enter his key if he had one",
+      "implemented_by": "claude-fable-5",
+      "implemented_at": "2026-07-02T11:55:00Z",
+      "verified_by": "gates exit 0 + playwright full-flow verification",
+      "verified_at": "2026-07-02T12:00:00Z"
+    },
+    {
+      "id": "F019",
+      "priority": 19,
+      "category": "Web (Exa)",
+      "behavior": "Per-note research questions: every opened note ends with a 'research questions' action (near the related-notes section) that generates 3-5 template questions from THAT note (its unresolved phantom links first, then title/topic templates; 3 for short notes, up to 5). Generation is local and free. Clicking a question (or the user's own follow-up) runs it as a web research query through the existing consent+key gates and opens the results in the research column with the query in its follow-up input. The old global gap-suggestions UI is gone (server /api/gaps stays for agent context).",
+      "verification": {
+        "command": "npm test && npm run typecheck && npm run build",
+        "expected": "topology tests: note-scoped questions from a fixture (phantom-linked note -> phantom queries first; short note -> 3; rich note -> 5; no phantoms -> title templates). Playwright: button renders under a note, click shows questions, executing one opens the column via the web path"
+      },
+      "state": "not_started",
+      "depends_on": [
+        "F018"
+      ],
+      "files_touched": [
+        "server/integrations/topology.ts",
+        "server/integrations/topology.test.ts",
+        "server/app.ts",
+        "web/src/main.ts",
+        "web/src/style.css"
+      ],
+      "confidence": "needs-review",
+      "context_note": "Questions are templates, no LLM. Execution path = the same consent-gated /api/research; no key -> actionable message pointing at Tools -> Integrations.",
+      "spec_ref": "user follow-up 2026-07-02 (search-first column redesign)",
+      "evidence": null,
+      "implemented_by": null,
+      "implemented_at": null,
+      "verified_by": null,
+      "verified_at": null
     }
   ]
 }

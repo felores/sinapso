@@ -693,30 +693,7 @@ html, body {
 }
 #qmd-enable:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
 
-/* ---------- web research panel (Exa) ---------- */
-#web-panel {
-  position: fixed;
-  top: 54px;
-  right: 18px;
-  width: 380px;
-  max-height: calc(100vh - 80px);
-  overflow-y: auto;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px 14px;
-  z-index: 14;
-  backdrop-filter: blur(6px);
-  font-size: 13px;
-}
-#web-panel.hidden { display: none; }
-#web-panel h3 {
-  margin: 0 0 8px;
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--muted);
-}
+/* ---------- research column: shared web/semantic result styles ---------- */
 .gap-row {
   padding: 7px 8px;
   border-radius: 6px;
@@ -726,26 +703,6 @@ html, body {
 .gap-row:hover { border-color: var(--accent); }
 .gap-query { font-size: 13px; color: var(--fg); }
 .gap-reason { font-size: 11.5px; color: var(--muted); }
-#web-query {
-  flex: 1;
-  min-width: 0;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--fg);
-  padding: 5px 8px;
-  font-size: 12.5px;
-}
-#web-query:focus { outline: none; border-color: var(--accent); }
-#web-error {
-  margin: 8px 0;
-  padding: 7px 9px;
-  border: 1px solid #b3585f;
-  border-radius: 6px;
-  color: #e0a0a5;
-  font-size: 12px;
-}
-#web-error.hidden { display: none; }
 .web-result {
   padding: 8px;
   border-top: 1px solid var(--border);
@@ -770,31 +727,7 @@ html, body {
 .web-save:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
 .web-save:disabled { opacity: 0.6; cursor: default; }
 
-/* ---------- agent chat panel (OpenCode) ---------- */
-#agent-panel {
-  position: fixed;
-  top: 54px;
-  right: 18px;
-  width: 400px;
-  max-height: calc(100vh - 80px);
-  display: flex;
-  flex-direction: column;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px 14px;
-  z-index: 14;
-  backdrop-filter: blur(6px);
-  font-size: 13px;
-}
-#agent-panel.hidden { display: none; }
-#agent-panel h3 {
-  margin: 0 0 8px;
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--muted);
-}
+/* ---------- agent chat styles (inside the research column) ---------- */
 #agent-banner {
   margin-bottom: 8px;
   padding: 6px 9px;
@@ -836,18 +769,6 @@ html, body {
 .agent-msg.user { background: rgba(88, 166, 255, 0.14); align-self: flex-end; max-width: 90%; }
 .agent-msg.assistant { background: rgba(128, 128, 128, 0.10); align-self: stretch; }
 .agent-msg.notice { color: var(--muted); font-size: 12px; padding: 2px 4px; }
-#agent-input { 
-  flex: 1;
-  min-width: 0;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--fg);
-  padding: 5px 8px;
-  font-size: 12.5px;
-}
-#agent-input:focus { outline: none; border-color: var(--accent); }
-#agent-send.hidden, #agent-stop.hidden { display: none; }
 
 .proposal {
   border: 1px solid var(--accent);
@@ -933,3 +854,75 @@ html, body {
   padding: 0;
 }
 .send-btn svg { display: block; }
+
+/* ---------- research column (semantic / web / agent results) ---------- */
+#research {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(400px, 38vw);
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+  z-index: 19;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+#research.hidden { display: none; }
+#research-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+#research-head h3 {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+#research-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+#research-body.hidden { display: none; }
+#research-error {
+  margin: 8px 0;
+  padding: 7px 9px;
+  border: 1px solid #b3585f;
+  border-radius: 6px;
+  color: #e0a0a5;
+  font-size: 12px;
+}
+#research-error.hidden { display: none; }
+#research-input-row { margin-top: 8px; }
+#research-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  padding: 5px 8px;
+  font-size: 12.5px;
+}
+#research-input:focus { outline: none; border-color: var(--accent); }
+#research-send.hidden, #research-stop.hidden { display: none; }
+#search-wrap.hidden { display: none; }
+#search.mode-active { border-color: var(--accent); }
+
+/* while the research column is open, a docked reader moves to the left
+   edge: the open note is the working context for the column */
+#reader.ctx-left:not(.floating) {
+  /* !important: the geometry engine sets inline inset styles when docked */
+  right: auto !important;
+  left: 0 !important;
+  border-left: none;
+  border-right: 1px solid var(--border);
+}
+#reader.ctx-left:not(.floating).hidden { transform: translateX(-120%); }

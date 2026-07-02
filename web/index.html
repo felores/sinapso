@@ -217,32 +217,24 @@
     </div>
   </aside>
 
-  <aside id="web-panel" class="hidden">
-    <h3>Web research <span class="rel-tag">exa</span></h3>
-    <div id="web-suggestions">
-      <p class="muted" id="web-suggestions-info">finding gaps in your galaxy…</p>
+  <aside id="research" class="hidden">
+    <div id="research-head">
+      <h3 id="research-title">Research</h3>
+      <button id="research-close" class="reader-icon" title="Close (Esc)">✕</button>
     </div>
-    <div class="filter-row filter-new">
-      <input id="web-query" type="text" placeholder="pick a suggestion or type a query…" autocomplete="off" spellcheck="false" />
-      <button class="filter-pm send-btn" id="web-run" title="Run web research"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
-    </div>
-    <div id="web-error" class="hidden"></div>
-    <div id="web-results"></div>
-  </aside>
-
-  <aside id="agent-panel" class="hidden">
-    <h3>Agent <span class="rel-tag">opencode</span></h3>
     <div id="agent-banner" class="hidden"></div>
     <div id="agent-connect" class="hidden">
       <p>OpenCode is installed but not connected to an account.</p>
       <p class="muted">Run <code>opencode auth login</code> in a terminal (browser sign-in; free Zen models available), then re-check.</p>
       <button id="agent-recheck">re-check connection</button>
     </div>
-    <div id="agent-messages"></div>
-    <div class="filter-row filter-new" id="agent-input-row">
-      <input id="agent-input" type="text" placeholder="ask your vault…" autocomplete="off" spellcheck="false" />
-      <button class="filter-pm send-btn" id="agent-send" title="Send"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
-      <button class="filter-pm hidden" id="agent-stop" title="Stop the current turn">■</button>
+    <div id="research-error" class="hidden"></div>
+    <div id="research-body"></div>
+    <div id="agent-messages" class="hidden"></div>
+    <div class="filter-row filter-new" id="research-input-row">
+      <input id="research-input" type="text" placeholder="follow up…" autocomplete="off" spellcheck="false" />
+      <button class="filter-pm send-btn" id="research-send" title="Send"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
+      <button class="filter-pm hidden" id="research-stop" title="Stop the current turn">■</button>
     </div>
   </aside>
 

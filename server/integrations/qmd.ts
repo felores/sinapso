@@ -114,12 +114,17 @@ export async function vsearch(
   }
 }
 
-/** Strip qmd's diff-style snippet header and squash whitespace. */
+/**
+ * Strip qmd's diff-style snippet decoration and squash whitespace.
+ * CLI snippets start lines with "@@ -n,n @@"; MCP snippets additionally
+ * prefix every line with its line number ("12: text").
+ */
 function cleanSnippet(s: string | undefined): string {
   if (!s) return "";
   return s
     .split("\n")
-    .filter((l) => !l.startsWith("@@"))
+    .map((l) => l.replace(/^\s*\d+:\s?/, ""))
+    .filter((l) => !l.trimStart().startsWith("@@"))
     .join(" ")
     .replace(/\s+/g, " ")
     .trim()
