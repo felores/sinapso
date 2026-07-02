@@ -47,7 +47,7 @@ import {
   createExaAdapter,
   type ExaAdapterOptions,
 } from "./integrations/exa.js";
-import { ingestDocument } from "./integrations/ingest.js";
+import { ingestBytes, ingestDocument } from "./integrations/ingest.js";
 import { installAddons, type InstallableTool } from "./integrations/install.js";
 import {
   chatCompletion,
@@ -240,6 +240,44 @@ export function createApp(
       writeFail(res, e, "ingest");
     }
   });
+
+  // POST /api/ingest-upload: convert an uploaded file to a Markdown note via
+  // markitdown (F023). Browsers can't expose real file paths, so the bytes
+  // ride in the body and the filename comes from ?name=. Token-guarded.
+  app.post(
+    "/api/ingest-upload",
+    guarded,
+    express.raw({ type: "*/*", limit: "50mb" }),
+    async (req, res) => {
+      try {
+        if (!Buffer.isBuffer(req.body) || !req.body.length) {
+          res.status(400).json({ error: "file body required" });
+          return;
+        }
+        if (!toolCache) toolCache = await detectAll(detectDeps);
+        if (!toolCache.markitdown.installed || !toolCache.markitdown.path) {
+          res.status(503).json({
+            error: "markitdown-missing",
+            message:
+              "markitdown is not installed — Tools → Integrations offers the install.",
+          });
+          return;
+        }
+        const name =
+          typeof req.query.name === "string" ? req.query.name : "upload";
+        const cfg = loadConfig(configPath);
+        const r = await ingestBytes(
+          integrations?.detectDeps?.run ?? realRunner,
+          toolCache.markitdown.path,
+          { vaultRoot, dataDir: dirname(graphPath) },
+          { name, bytes: req.body },
+        );
+        res.json({ ok: true, id: r.id });
+      } catch (e) {
+        writeFail(res, e, "ingest-upload");
+      }
+    },
+  );
 
   // ---- Semantic mode: qmd bridge (U3) ----
   const qmdRun = integrations?.detectDeps?.run ?? realRunner;

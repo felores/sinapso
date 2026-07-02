@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../app";
 import { TOKEN_HEADER } from "./security";
-import { ingestDocument } from "./ingest";
+import { ingestBytes, ingestDocument } from "./ingest";
 import { readChangeLog } from "./write";
 import type { RunResult, Runner } from "./detect";
 
@@ -91,6 +91,23 @@ describe("ingestDocument", () => {
   });
 });
 
+describe("ingestBytes", () => {
+  it("converts uploaded bytes and labels the note with the original name", async () => {
+    const { calls, run } = recorder(() => ok("# Bytes\n\nconverted body"));
+    const r = await ingestBytes(run, MD_BIN, writeDeps, {
+      name: "Report.pdf",
+      bytes: Buffer.from("raw pdf bytes"),
+    });
+    expect(r.id.startsWith("inbox/")).toBe(true);
+    const text = readFileSync(join(VAULT, r.id), "utf-8");
+    expect(text).toContain("source: Report.pdf");
+    expect(text).toContain("converted body");
+    expect(calls[0][0]).toBe(MD_BIN);
+    expect(calls[0][1]).toContain("Report.pdf"); // sanitized temp filename
+    expect(existsSync(calls[0][1])).toBe(false); // temp cleaned up
+  });
+});
+
 describe("POST /api/ingest", () => {
   const graphPath = join(DATA, "graph.json");
   writeFileSync(
@@ -145,5 +162,21 @@ describe("POST /api/ingest", () => {
     expect(res.status).toBe(200);
     expect(res.body.id.startsWith("inbox/")).toBe(true);
     expect(existsSync(join(VAULT, res.body.id))).toBe(true);
+  });
+
+  it("POST /api/ingest-upload ingests uploaded bytes end to end", async () => {
+    const app = makeApp(true);
+    const t = (await request(app).get("/api/session")).body.token;
+    const res = await request(app)
+      .post("/api/ingest-upload?name=notes.docx")
+      .set(TOKEN_HEADER, t)
+      .set("content-type", "application/octet-stream")
+      .send("raw bytes here");
+    expect(res.status).toBe(200);
+    expect(res.body.id.startsWith("inbox/")).toBe(true);
+    expect(existsSync(join(VAULT, res.body.id))).toBe(true);
+    expect(readFileSync(join(VAULT, res.body.id), "utf-8")).toContain(
+      "source: notes.docx",
+    );
   });
 });

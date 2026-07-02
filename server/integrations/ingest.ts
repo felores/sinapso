@@ -7,8 +7,8 @@
  * like a browser.
  */
 
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import type { Runner } from "./detect.js";
 import { guardedCreate, WriteError, type WriteDeps } from "./write.js";
@@ -18,6 +18,8 @@ const INGEST_TIMEOUT_MS = 180_000;
 export interface IngestOptions {
   /** http(s) URL or file path (~ expands to the home dir). */
   source: string;
+  /** Display value for the `source:` frontmatter (defaults to source). */
+  sourceLabel?: string;
   title?: string;
   destination?: string;
 }
@@ -62,7 +64,7 @@ export async function ingestDocument(
   const title = opts.title?.trim() || deriveTitle(source, isUrl);
   const content = [
     "---",
-    `source: ${source.replace(/\n/g, " ")}`,
+    `source: ${(opts.sourceLabel ?? source).replace(/\n/g, " ")}`,
     `ingested: ${new Date().toISOString().slice(0, 10)}`,
     "via: markitdown",
     "---",
@@ -76,4 +78,31 @@ export async function ingestDocument(
     destination: opts.destination,
     actor: "user",
   });
+}
+
+/**
+ * Ingest an uploaded file's bytes (browser path — browsers can't expose real
+ * filesystem paths). Writes to a temp file, converts via markitdown, then
+ * removes the temp. The original filename is used for the title + source.
+ */
+export async function ingestBytes(
+  run: Runner,
+  markitdownBin: string,
+  writeDeps: WriteDeps,
+  opts: { name: string; bytes: Uint8Array },
+): Promise<{ id: string }> {
+  const dir = mkdtempSync(join(tmpdir(), "solaris-ingest-"));
+  const safe =
+    opts.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 64) || "upload";
+  const tmp = join(dir, safe);
+  writeFileSync(tmp, opts.bytes);
+  try {
+    return await ingestDocument(run, markitdownBin, writeDeps, {
+      source: tmp,
+      sourceLabel: opts.name,
+      title: opts.name,
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }

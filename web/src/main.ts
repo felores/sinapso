@@ -2225,6 +2225,10 @@ async function boot() {
   function updateSearchField() {
     searchBox.placeholder = SEARCH_PLACEHOLDERS[activeMode ?? "none"];
     searchBox.classList.toggle("mode-active", !!activeMode);
+    ($("#ingest-browse") as HTMLElement).classList.toggle(
+      "hidden",
+      activeMode !== "ingest",
+    );
   }
 
   function setMode(m: ModeName | null) {
@@ -2844,6 +2848,54 @@ async function boot() {
       researchError(e instanceof Error ? e.message : "ingest failed");
     }
   }
+
+  // Browse button (shown in ingest mode): click the hidden file input, then
+  // upload the picked file's bytes — works in both Electron and the browser
+  // (the File API gives bytes in both; neither exposes real paths).
+  $("#ingest-browse").addEventListener("click", () =>
+    ($("#ingest-file") as HTMLInputElement).click(),
+  );
+  ($("#ingest-file") as HTMLInputElement).addEventListener(
+    "change",
+    async () => {
+      const input = $("#ingest-file") as HTMLInputElement;
+      const file = input.files?.[0];
+      if (!file) return;
+      input.value = ""; // allow re-picking the same file
+      openResearch("ingest");
+      const body = $("#research-body");
+      body.innerHTML = `<p class="muted">converting ${file.name} via markitdown…</p>`;
+      try {
+        const buf = await file.arrayBuffer();
+        const res = await fetch(
+          `/api/ingest-upload?name=${encodeURIComponent(file.name)}`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/octet-stream",
+              "x-solaris-token": await apiToken(),
+            },
+            body: buf,
+          },
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message ?? data.error);
+        body.innerHTML = "";
+        const p = document.createElement("p");
+        p.className = "muted";
+        p.textContent = `saved ✓ ${data.id}`;
+        body.appendChild(p);
+        const rescanBtn = document.createElement("button");
+        rescanBtn.className = "web-save";
+        rescanBtn.textContent = "rescan to see it";
+        rescanBtn.addEventListener("click", () => rescan(false));
+        body.appendChild(rescanBtn);
+      } catch (e) {
+        body.innerHTML = "";
+        researchError(e instanceof Error ? e.message : "ingest failed");
+      }
+    },
+  );
 
   // Synthesized deep-research answer with cited sources (F020).
   function renderAnswer(

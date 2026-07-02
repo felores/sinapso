@@ -566,9 +566,20 @@ html, body {
 ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 
-/* ---------- integration modes (Semantic / Web / Agent) ---------- */
+/* ---------- integration modes (Semantic / Web / Ingest) ---------- */
 #search-wrap { display: flex; align-items: center; gap: 6px; }
 #search-results { left: auto; right: 0; }
+#ingest-browse {
+  pointer-events: auto;
+  height: 34px;
+  padding: 0 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
 #modes { display: flex; gap: 4px; }
 .mode-btn {
   pointer-events: auto;
