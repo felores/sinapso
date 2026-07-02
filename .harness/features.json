@@ -292,7 +292,7 @@
         "command": "npm run typecheck && npm run build",
         "expected": "Typecheck and build pass. Manual checklist (deferred review): F4 end-to-end (propose -> approve -> node + edge after rescan), F5 with full-access enabled, AE9/AE10"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": [
         "F002",
         "F009",
@@ -306,11 +306,11 @@
       "confidence": "needs-review",
       "context_note": "Follow existing panel patterns, reader-pane loading states, menubar click-outside gotcha for popovers. Diff rendering for edit proposals must be readable in the chat panel.",
       "spec_ref": "docs/plans/2026-07-01-002-feat-optional-integrations-qmd-exa-opencode-plan.md#u11-agent-chat-ui-connect-onboarding-and-permission-modes",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "typecheck+build+101 tests green. Live browser smoke on scratch vault with REAL opencode: agent consent modal (egress + Zen training caveat), accept -> real locked-down serve spawn -> session created -> SSE stream open (reconnect banner wired to EventSource open/error). Full-access select guarded by standing-consent confirm; model input round-trips config. Proposal render/approve/edit/reject UI wired to the F010 routes (store paths fully unit-tested). DEFERRED HUMAN REVIEW: live F4/F5 with a real model turn (spends credits) — propose -> approve -> node+edge after rescan",
+      "implemented_by": "claude-fable-5",
+      "implemented_at": "2026-07-02T07:45:00Z",
+      "verified_by": "harness-progress verify (typecheck+build+test) + live browser smoke (no model spend)",
+      "verified_at": "2026-07-02T07:48:00Z"
     },
     {
       "id": "F012",

@@ -190,6 +190,7 @@
         <option value="full">full access</option>
       </select>
     </label>
+    <input type="text" id="agent-model" placeholder="agent model (e.g. opencode/…) + Enter" autocomplete="off" spellcheck="false" />
     <button id="integ-recheck" title="Re-probe installed tools">re-check installed tools</button>
   </aside>
 
@@ -219,6 +220,22 @@
     </div>
     <div id="web-error" class="hidden"></div>
     <div id="web-results"></div>
+  </aside>
+
+  <aside id="agent-panel" class="hidden">
+    <h3>Agent <span class="rel-tag">opencode</span></h3>
+    <div id="agent-banner" class="hidden"></div>
+    <div id="agent-connect" class="hidden">
+      <p>OpenCode is installed but not connected to an account.</p>
+      <p class="muted">Run <code>opencode auth login</code> in a terminal (browser sign-in; free Zen models available), then re-check.</p>
+      <button id="agent-recheck">re-check connection</button>
+    </div>
+    <div id="agent-messages"></div>
+    <div class="filter-row filter-new" id="agent-input-row">
+      <input id="agent-input" type="text" placeholder="ask your vault…" autocomplete="off" spellcheck="false" />
+      <button class="filter-pm" id="agent-send" title="Send">→</button>
+      <button class="filter-pm hidden" id="agent-stop" title="Stop the current turn">■</button>
+    </div>
   </aside>
 
   <aside id="reader" class="hidden">
