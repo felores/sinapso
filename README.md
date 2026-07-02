@@ -6,12 +6,12 @@
 ╚════██║██║   ██║██║     ██╔══██║██╔══██╗██║╚════██║
 ███████║╚██████╔╝███████╗██║  ██║██║  ██║██║███████║
 ╚══════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚══════╝
-
-           knowledge vault hyper-visualizer
 </pre>
-</div>
 
-**Your Vault as a navigable 3D universe.**
+**knowledge vault hyper-visualizer**
+
+*Your Vault as a navigable 3D universe.*
+</div>
 
 <p align="center">
   <img src="assets/hero.png" alt="A vault of ~2,000 notes rendered as a 3D particle galaxy, clusters colored by domain" width="100%">
