@@ -36,7 +36,7 @@ The galaxy only shows relations that were typed as links. Notes that are semanti
 
 - **Optional, detection-based integrations with a two-flavor install.** Solaris stays fully functional with no tool installed, and each mode button lights up only when its tool is detected. Installation offers two flavors: core-only, and core plus addons; the addons flavor verifies what is already on the system and auto-installs only the missing tools (qmd, OpenCode). Exa is a hosted API with nothing to install; it is configured by key in settings.
 - **Write contract: no writes without consent.** The scanner never writes to the vault. Vault writes happen only through the guarded write endpoint, triggered by user consent: per-change consent in the default approval mode (save an Exa result, approve an agent proposal), or standing consent when the user enables the agent's full-access mode. No automatic or background writes outside those consents. A rescan materializes each change in the galaxy.
-- **Agent permission modes, constrained by construction.** In approval mode the agent cannot write or run shell commands at all; its only mutation path is proposing a create or edit that Solaris applies after approval with a full preview. In full-access mode, which the user enables explicitly, the agent edits and creates notes directly within the vault. Both modes are audited.
+- **Agent permission modes over one guarded write path.** The agent never touches the vault filesystem directly in either mode: its only mutation path is proposing a create or edit that Solaris applies through the guarded write endpoint. Approval mode previews each proposal for the user; full-access mode, which the user enables explicitly, auto-approves proposals so edits feel direct while still passing the same path-confinement guard. OpenCode's own write, shell, and web tools are denied, so no second path exists. Both modes are audited.
 - **Note editing is a first-class agent capability.** Closing a gap includes weaving relations: the agent can edit the note that originated an investigation to reference the new gap note, so the new wikilink becomes a graph edge at rescan.
 - **Related notes limited to graph nodes.** Every related-notes result is actionable: click opens the note and flies the camera. Content qmd has indexed but that is not in the current graph does not appear.
 - **qmd setup via one-time prompt, reusing existing collections.** When qmd is installed but no collection covers the scanned folder, a single UI prompt offers to enable semantic features; accepting creates the collection and indexes in the background. When existing collections already cover the folder, Solaris reuses them and never duplicates indexing.
@@ -75,7 +75,7 @@ flowchart TB
 
 - R4. Every note opened in the reader ends with a visibly labeled section, "Related notes (semantic)", listing semantically related notes. It loads asynchronously and never blocks reading the note.
 - R5. Related results contain only notes that exist as nodes in the current graph. Clicking a result opens it in the reader and flies the camera to its node.
-- R6. First activation: with qmd installed and no collection covering the scanned folder, a one-time prompt offers to enable semantic features; accepting creates the collection and indexes in the background. While the index builds, semantic surfaces show an "indexing" state instead of results.
+- R6. First activation: with qmd installed and no collection covering the scanned folder, a one-time prompt offers to enable semantic features; accepting creates the collection and indexes in the background. Declining leaves an "Enable semantic search" action in the Integrations settings so it is not a dead end. While the index builds, semantic surfaces show an "indexing" state instead of results.
 - R7. When existing qmd collections cover the scanned folder, Solaris reuses them instead of creating a new one.
 - R8. The Filters panel gains a "Collections" group with per-collection on and off toggles that scope every qmd-powered surface (related notes and semantic search).
 - R9. With Semantic mode active, the search box returns qmd-powered results mapped to graph nodes, using the existing search-results UI.
@@ -123,7 +123,7 @@ flowchart TB
 
 ### Acceptance Examples
 
-- AE1. **Covers R2.** Given qmd is not installed, when Solaris starts, then no Semantic button, related-notes section, or collection toggles appear anywhere, and settings offer to install the addons.
+- AE1. **Covers R2.** Given qmd is not installed, when Solaris starts, then the Semantic button renders disabled with a tooltip pointing to the addon install, no related-notes section or collection toggles appear, and settings offer to install the addons.
 - AE2. **Covers R7, R8.** Given existing qmd collections cover the scanned folder, when semantic features activate, then no new collection is created and the Filters panel lists those collections as toggles.
 - AE3. **Covers R5.** Given a note whose qmd-related documents include files excluded from the scan, when the related section loads, then those files do not appear.
 - AE4. **Covers R6.** Given the first indexing run is still generating embeddings, when the user opens notes, then the related section shows an "indexing" state and no errors.
@@ -163,7 +163,7 @@ flowchart TB
 - OpenCode Zen free models exist but require a one-time account connect (browser sign-in with billing details on file, no charge) and are offered "for a limited time"; free models may use conversation data for training (verified against opencode.ai/docs/zen, 2026-07).
 - OpenCode exposes a headless HTTP server (`opencode serve`) and a typed SDK (`@opencode-ai/sdk`); per-tool permissions are configurable (allow/ask/deny). The project moved to the `anomalyco` GitHub org; the docs domain and npm scope are unchanged.
 - Scanner excludes are a fixed named list (`scanner/scan.ts` `DEFAULT_EXCLUDES`), not a general dotfolder rule; what enters the graph, and therefore related results, depends on the user's exclude configuration (verified).
-- qmd has no "similar to this document" command; relatedness is computed by querying with the note's own text (verified against `qmd --help`).
+- qmd has no "similar to this document" command; relatedness is computed by running `qmd vsearch` with the note's own text (vector similarity, no LLM rerank, to meet the latency target), and vectors require a `qmd embed` pass at setup (verified against `qmd --help`).
 - qmd exposes collection root paths (`qmd collection show`), enough to detect whether existing collections cover a scanned folder (verified).
 
 ### Outstanding Questions
@@ -173,6 +173,9 @@ flowchart TB
 - Whether `opencode serve` takes an explicit directory flag or inherits its launch cwd; verify against `opencode serve --help` before wiring the vault workspace.
 - Exact template wording for topology-derived suggested queries; tune against a real vault.
 - Whether qmd semantic search needs pagination or richer result rows than the existing dropdown; ship capped results first.
+- Exact mechanism for capturing agent proposals so no OpenCode-direct write path exists (custom propose tool vs `ask`-permission intercept); both must route through the guarded write endpoint.
+- Whether integration config and consents stay global to the user or are scoped per vault; a global consent authorizes vault-content egress for every vault, per-vault scoping is the alternative.
+- Whether clicking a suggested query auto-runs the Exa search (spends credit) or populates an editable field first; default to populate-then-confirm unless changed.
 
 ### Sources / Research
 
@@ -195,16 +198,17 @@ flowchart TB
 
 - **KTD1. All integration traffic goes through the Solaris server.** The browser never calls Exa or OpenCode directly; the Exa key and the OpenCode server password never reach the frontend. New Express routes follow the existing `createApp()` inline-closure pattern.
 - **KTD2. OpenCode embeds as a managed child process.** The Solaris server spawns `opencode serve` bound to 127.0.0.1 with `OPENCODE_SERVER_PASSWORD` set, scoped to the vault directory, and talks to it via `@opencode-ai/sdk` (`createOpencodeClient`), pinned to an exact version (near-daily releases). Chat uses the async prompt + event stream, surfaced to the browser over SSE with a cancel control.
-- **KTD3. Permission modes compile to OpenCode permission config.** Approval mode: `edit` and `bash` denied; the agent returns structured proposals that Solaris renders for approval and applies through the guarded write endpoint. Full-access mode: `edit` allowed and scoped to the vault root, `bash` stays denied. Every applied change, either path, is journaled (R19). All Solaris-side writes reuse the `/api/note` confinement guard (resolve under vault root, `.md` only).
+- **KTD3. Locked-down OpenCode permission profile; one guarded write path.** In both modes the generated permission config denies `edit`, `bash`, `webfetch`, `websearch`, `task`, and `skill`, and allows `read` glob-scoped to the vault root, so the agent has no direct filesystem-write or off-box-egress path. The agent's proposed creates and edits are captured (via an `ask`-permission intercept on the proposal or a custom propose tool; mechanism deferred to implementation) and applied by Solaris through the guarded write endpoint, which reuses the `/api/note` confinement guard (resolve under vault root, `.md` only). Approval mode previews each proposal; full-access mode auto-approves the same guarded path. Every applied change is journaled (R19).
 - **KTD4. Exa sits behind a thin server-side adapter** isolating its unstable request shape (two param-rename rounds in 12 months). Defaults: `type: auto`, highlights-only contents for cost; deep modes opt-in with a progress indicator; defensive retry/backoff since rate limits are undocumented.
-- **KTD5. Config and secrets live in `~/.solaris/config.json`** (mode 600), following the existing per-vault local data-dir convention: Exa key, per-mode consents, agent permission mode, default model, addons state. The status endpoint reports booleans (configured or not), never key material.
+- **KTD5. Config and secrets live in `~/.solaris/config.json`** (mode 600 on POSIX; on Windows, where Node cannot enforce 600, confidentiality relies on the per-user `%USERPROFILE%\.solaris` directory ACL): Exa key, per-mode consents, agent permission mode, default model, addons state. This file is global to the user, not per-vault like the graph data dir, so a Web- or Agent-mode consent granted in one vault currently applies to all (see Outstanding Questions on vault-scoping consent). The status endpoint reports booleans (configured or not), never key material.
 - **KTD6. Topology is one shared server module.** Phantoms (`phantom:` nodes), orphans (`in + out === 0`), and sparse clusters are computed from the in-memory graph in one module consumed by both the Web-mode suggestion endpoint and the agent's read context (R15). Suggested queries are template-based from phantom and orphan titles, enriched with qmd snippets when available; no LLM.
-- **KTD7. Detection is a PATH probe plus health checks**, run at server start and re-runnable from settings: binary presence and version for qmd and OpenCode, key presence for Exa, connect status for OpenCode via its own server. Results cached in memory.
+- **KTD7. Detection probes known install locations plus a login-shell PATH**, not just the inherited process PATH: GUI/desktop launches inherit macOS's minimal launchd PATH that excludes `~/.bun/bin` (qmd) and OpenCode's installer bin dir, so detection also checks those locations (or spawns through a login shell) to avoid false negatives on the Electron build that CLI testing would miss. Health checks: version for qmd and OpenCode, key presence for Exa, connect status for OpenCode via its own server. Re-runnable from settings; results cached in memory.
 - **KTD8. Two-flavor install is a first-run choice, not two packages.** The core npx flow is unchanged; the addons flavor is offered by a first-run UI prompt (and a CLI flag) that runs installs server-side: OpenCode via its official one-liner, qmd via Bun only when Bun exists, otherwise guided instructions. Existing installs are never touched (R16).
 - **KTD9. Frontend stays framework-free and imperative**, matching the single-file style: mode state in `localStorage["akasha-mode"]`, collection toggles in `localStorage["akasha-collections"]`, related section appended inside `openReader()` after the note renders, semantic search reusing the existing results dropdown and `addResult()` rows, collections group as a new section inside the Filters panel.
 - **KTD10. Fix the typecheck blind spot first.** Add `bin` and `desktop` to `tsconfig.json` `include` so installer and CLI changes are covered by `npm run typecheck`.
 - **KTD11. Re-scope the trust promise in docs.** README and `CLAUDE.md` currently promise "nothing is uploaded"; that stays true for the core and becomes "opt-in egress with consent gates" for Web and Agent modes.
-- **KTD12. Local-origin enforcement on the expanded server surface.** The localhost server has no auth by design; adding write, research (credit-spending), agent, setup, and install endpoints creates a CSRF/DNS-rebinding surface any local webpage could hit. Mitigation: a Host/Origin validation middleware on all routes, plus a per-session token issued with the app page and required on every mutating or spending endpoint.
+- **KTD12. Local-origin enforcement on the expanded server surface.** The localhost server has no auth by design; adding write, research (credit-spending), agent, setup, and install endpoints creates a CSRF/DNS-rebinding surface any local webpage could hit. Mitigation: a Host/Origin validation middleware on all routes, plus a per-session token delivered to the app page (via a templated response or a token endpoint, since the page is served statically) and sent on every mutating or spending endpoint as a custom request header, never a cookie, so browsers do not attach it automatically on cross-origin requests.
+- **KTD13. Sanitize rendered note HTML.** The reader renders note markdown via `marked.parse` into `innerHTML` with no sanitizer today. Notes created from Exa results (R12) or agent proposals (R14) carry untrusted content; unsanitized, embedded script would execute same-origin and could drive the authenticated endpoints, defeating KTD12. Add HTML sanitization (e.g. DOMPurify) to the reader's render pipeline so all note content, existing and integration-created, is sanitized before insertion.
 
 ### High-Level Technical Design
 
@@ -286,7 +290,7 @@ Unit Index:
 | U6 | Exa adapter + research endpoint | `server/integrations/exa.ts`, `server/app.ts` | U1 |
 | U7 | Guarded note-write endpoint | `server/integrations/write.ts`, `server/app.ts` | U1 |
 | U8 | Web mode UI | `web/src/main.ts`, `web/index.html` | U2, U5, U6, U7 |
-| U9 | OpenCode bridge | `server/integrations/opencode.ts`, `server/app.ts` | U1 |
+| U9 | OpenCode bridge | `server/integrations/opencode.ts`, `server/app.ts` | U1, U5 |
 | U10 | Approval gate, audit log, provenance | `server/integrations/proposals.ts`, `server/app.ts` | U7, U9 |
 | U11 | Agent chat UI + Connect onboarding | `web/src/main.ts`, `web/index.html` | U2, U9, U10 |
 | U12 | Two-flavor installer + trust-model docs | `bin/cli.ts`, `server/integrations/install.ts`, `README.md`, `CLAUDE.md` | U1 |
@@ -321,10 +325,10 @@ Unit Index:
 - **Requirements:** R4 (data), R5 (filtering), R6, R7, R8 (collection param), R9 (data).
 - **Dependencies:** U1.
 - **Files:** `server/integrations/qmd.ts`, `server/integrations/qmd.test.ts`, `server/app.ts` (routes `GET /api/related?id=`, `GET /api/semantic-search?q=`, `POST /api/qmd/setup`, `GET /api/qmd/status`).
-- **Approach:** Spawn `qmd` with `--format json`; map result `file` paths to graph node ids and drop non-nodes (R5); accept a collections filter (R8). Coverage check via `qmd collection list`/`show` against the vault root (R7). Setup creates the collection and runs indexing in the background; status reports indexing/ready. Related queries use the note's title plus an excerpt as query text.
+- **Approach:** Spawn `qmd vsearch` (vector similarity, no LLM rerank) with `--format json` for related notes and semantic search, chosen over `qmd query` (LLM expansion + rerank, tens of seconds) to meet the 1-2s target and over `qmd search` (keyword-only) to stay semantic; map result `file` paths to graph node ids and drop non-nodes (R5); accept a collections filter (R8). Coverage check via `qmd collection list`/`show` against the vault root (R7). Setup creates the collection, runs `qmd update` (indexing) then `qmd embed` (vectors), and only reports ready once embeddings exist since `vsearch` needs them; status reports indexing/ready. Related queries use the note's title plus an excerpt as query text.
 - **Execution note:** Test-first with a faked qmd runner; never invoke the real binary in tests.
-- **Test scenarios:** qmd path → node id mapping (including files outside the graph dropped, AE3); collection coverage detected for exact root and parent-path collections (AE2); setup skipped when coverage exists; status returns "indexing" while the background job runs (AE4); collections filter narrows results; qmd binary missing yields a clean 503, not a crash; malformed qmd JSON yields empty results plus a logged warning.
-- **Verification:** `npm test` green; manual: `/api/related?id=` returns in-graph notes for a real vault note.
+- **Test scenarios:** qmd path → node id mapping (including files outside the graph dropped, AE3); collection coverage detected for exact root and parent-path collections (AE2); setup skipped when coverage exists; status stays "indexing" until embeddings complete and only then "ready" (AE4); related and semantic surfaces invoke `vsearch`, not `query` or `search`; collections filter narrows results; qmd binary missing yields a clean 503, not a crash; malformed qmd JSON yields empty results plus a logged warning.
+- **Verification:** `npm test` green; manual: `/api/related?id=` returns in-graph notes for a real vault note, and observed per-note `vsearch` latency meets the 1-2s success criterion on a real vault (validate before locking the criterion).
 
 ### U4. Semantic surfaces in the UI
 
@@ -332,7 +336,7 @@ Unit Index:
 - **Requirements:** R4, R5, R6 (prompt UX), R8, R9.
 - **Dependencies:** U2, U3.
 - **Files:** `web/src/main.ts`, `web/index.html`, `web/src/style.css`.
-- **Approach:** Append the labeled section inside `openReader()` after the note body renders, loading async with loading/indexing/empty states; result clicks call `select(n)` (KTD9). Collections group renders inside `#filters` with state in `localStorage["akasha-collections"]`. With Semantic mode active, the search box swaps its content-search source to `/api/semantic-search`, reusing `addResult()` rows. Setup prompt fires once when status says qmd-present-without-coverage.
+- **Approach:** Append the labeled section inside `openReader()` after the note body renders, loading async with loading/indexing/empty/error states (error distinct from empty so a transient qmd failure or 503 does not read as "no related notes"); result clicks call `select(n)` (KTD9). Sanitize rendered note HTML per KTD13 while touching this pipeline. Collections group renders inside `#filters` with state in `localStorage["akasha-collections"]`. With Semantic mode active, the search box swaps its content-search source to `/api/semantic-search`, reusing `addResult()` rows. Setup prompt fires once when status says qmd-present-without-coverage; declining leaves an "Enable semantic search" action in the Integrations settings (R6).
 - **Patterns to follow:** `openReader()` loading-then-replace; `renderFilters()` imperative rows; search debounce + dedup pattern.
 - **Test scenarios:** Test expectation: none — frontend has no test framework; covered by the manual checklist (AE1-AE4 behaviors).
 - **Verification:** Manual: F1 and F2 flows end-to-end on a real vault; toggling a collection changes related results; section header always visible with qmd active.
@@ -374,7 +378,7 @@ Unit Index:
 - **Requirements:** R10, R11, R12, R18 (UX).
 - **Dependencies:** U2, U5, U6, U7.
 - **Files:** `web/src/main.ts`, `web/index.html`, `web/src/style.css`.
-- **Approach:** First activation renders the consent modal; accept persists via the server, decline leaves the mode off (AE8). Active mode shows suggestions from `/api/gaps` above the search box, results in a panel, and a save action per result that posts to `/api/notes`, then triggers the existing rescan flow so the new node appears.
+- **Approach:** First activation renders the consent modal; accept persists via the server, decline leaves the mode off (AE8). Active mode shows suggestions from `/api/gaps` above the search box, results in a panel, and a save action per result that posts to `/api/notes`, then triggers the existing rescan flow so the new node appears. Named UI states: a loading indicator while `/api/gaps` and `/api/research` are in flight, an inline error surfacing U6's missing-key and retry-exhausted failures, and an empty-suggestions message when `/api/gaps` returns zero for a well-connected vault.
 - **Patterns to follow:** existing modal/panel toggling; `mi-rescan` rescan-then-reload flow.
 - **Test scenarios:** Test expectation: none — frontend has no test framework; covered by the manual checklist (F3 flow, AE8).
 - **Verification:** Manual: full F3 flow on a real vault ending with the new node visible.
@@ -382,11 +386,11 @@ Unit Index:
 ### U9. OpenCode bridge
 
 - **Goal:** Managed `opencode serve` lifecycle and a streaming chat API for the frontend.
-- **Requirements:** R13, R15, R17 (profile generation).
-- **Dependencies:** U1.
+- **Requirements:** R13, R15, R17 (profile generation), R18 (server-side consent enforcement).
+- **Dependencies:** U1, U5.
 - **Files:** `server/integrations/opencode.ts`, `server/integrations/opencode.test.ts`, `server/app.ts` (routes `POST /api/agent/session`, `POST /api/agent/message`, `GET /api/agent/stream` SSE, `POST /api/agent/cancel`, `GET /api/agent/status`), `package.json` (add `@opencode-ai/sdk`, pinned exact).
-- **Approach:** Per KTD2/KTD3: spawn `serve` on 127.0.0.1 with a generated `OPENCODE_SERVER_PASSWORD`, scoped to the vault (verify the dir flag per Outstanding Questions); generate the permission config per mode (approval: `edit`/`bash` deny; full-access: `edit` allow within vault, `bash` deny); SDK client server-side; async prompt + events relayed as SSE with cancel. Status surfaces installed/connected for the Connect onboarding (R13). Seed the agent context with topology summary and qmd availability (R15).
-- **Test scenarios:** permission config per mode matches the matrix (approval denies edit and bash; full-access allows edit, still denies bash); child process restarted after crash with a capped backoff; cancel tears down the stream; status distinguishes not-installed / installed-not-connected / ready; password set on spawn and never sent to the browser.
+- **Approach:** Per KTD2/KTD3: spawn `serve` on 127.0.0.1 with a generated `OPENCODE_SERVER_PASSWORD`, scoped to the vault (verify the dir flag per Outstanding Questions); generate the locked-down permission config (both modes deny `edit`/`bash`/`webfetch`/`websearch`/`task`/`skill`, allow `read` glob-scoped to the vault root); agent creates and edits are captured as proposals and applied only via U7's guarded endpoint, never by OpenCode directly. SDK client server-side; async prompt + events relayed as SSE with cancel. `/api/agent/session` and `/api/agent/message` reject when Agent-mode consent is not recorded (R18), mirroring U6. Status surfaces installed/connected for the Connect onboarding (R13). Seed the agent context with topology summary and qmd availability (R15).
+- **Test scenarios:** permission config denies `edit`/`bash`/`webfetch`/`websearch`/`task`/`skill` in both modes and scopes `read` to the vault root; agent cannot read a path outside the vault root; a request to `/api/agent/session` or `/api/agent/message` without recorded Agent-mode consent is rejected with no call to OpenCode (R18); child process restarted after crash with a capped backoff; cancel tears down the stream; status distinguishes not-installed / installed-not-connected / ready; password set on spawn and never sent to the browser.
 - **Verification:** `npm test` green; manual: a streamed reply from a connected OpenCode with a Zen model.
 
 ### U10. Approval gate, audit log, and provenance
@@ -395,7 +399,7 @@ Unit Index:
 - **Requirements:** R14, R17, R19.
 - **Dependencies:** U7, U9.
 - **Files:** `server/integrations/proposals.ts`, `server/integrations/proposals.test.ts`, `server/app.ts` (routes `GET /api/agent/proposals`, `POST /api/agent/proposals/:id/approve`, `POST /api/agent/proposals/:id/reject`).
-- **Approach:** Proposals (create: path+frontmatter+body; edit: path+diff) are held server-side; approve applies through U7's guarded write, reject discards (AE6, AE10); edit-before-approve accepts modified content on approve. Provenance frontmatter injected on agent-created notes; the change log records actor, mode, path, and timestamp for every applied change (both permission modes). In full-access mode the agent's direct edits (via its own `edit` tool) are detected from OpenCode events and journaled too.
+- **Approach:** Proposals (create: path+frontmatter+body; edit: path+diff) are held server-side; approve applies through U7's guarded write, reject discards (AE6, AE10); edit-before-approve accepts modified content on approve. In full-access mode Solaris auto-approves each proposal but still applies it through U7's guarded write (no OpenCode-direct filesystem path, per KTD3), so both modes share one confined write path. Provenance frontmatter injected on agent-created notes; the change log records actor, mode, path, and timestamp for every applied change. Full-access writes also emit an inline chat notice as they land so the conversation shows what changed without waiting for a rescan.
 - **Execution note:** Test-first; this unit proves the trust model.
 - **Test scenarios:** reject → vault untouched (AE6); approve create → file written with provenance frontmatter and journal entry; approve edit → diff applied, journal entry (AE10); edit-before-approve persists the user's modified body; approval-mode agent cannot reach `/api/notes` without a proposal id; full-access direct edit produces a journal entry (AE9 server side); journal survives server restart.
 - **Verification:** `npm test` green, including the negative trust scenarios.
@@ -406,7 +410,7 @@ Unit Index:
 - **Requirements:** R13, R14, R17, R18 (UX).
 - **Dependencies:** U2, U9, U10.
 - **Files:** `web/src/main.ts`, `web/index.html`, `web/src/style.css`.
-- **Approach:** First activation walks consent (R18) then Connect (R13) driven by `/api/agent/status`. Chat panel streams via SSE with a stop button; proposals render inline with body preview or diff and approve/edit/reject actions; full-access toggle lives in settings with an explicit standing-consent confirmation (R17). Model selection reads from config (no hardcoded free model).
+- **Approach:** First activation walks consent (R18) then Connect (R13) driven by `/api/agent/status`. Chat panel streams via SSE with a stop button and a connection-status banner that appears if the stream drops during OpenCode's crash-restart backoff, so the panel does not look frozen or silently lose the in-flight turn; proposals render inline with body preview or diff and approve/edit/reject actions; full-access lands emit an inline write notice (U10); full-access toggle lives in settings with an explicit standing-consent confirmation (R17). Model selection reads from config (no hardcoded free model).
 - **Patterns to follow:** existing panel patterns; reader-pane loading states; menubar click-outside gotcha for any popover.
 - **Test scenarios:** Test expectation: none — frontend has no test framework; covered by the manual checklist (F4, F5, AE9, AE10).
 - **Verification:** Manual: F4 end-to-end (propose → approve → node + edge after rescan) and F5 with full-access enabled.
@@ -431,7 +435,7 @@ Unit Index:
 | Type safety | `npm run typecheck` | All units; includes `bin/` and `desktop/` after U1 |
 | Manual visual checklist | `npm run dev` against a real vault | U2, U4, U8, U11 (frontend has no test framework, per repo convention) |
 
-Manual checklist per milestone: M1 = AE1-AE5 plus flows F1, F2; M2 = AE8 plus flow F3; M3 = AE6, AE9, AE10 plus flows F4, F5. The trust-model negative tests (traversal, sandbox denial, consent enforcement, local-origin/token enforcement) are automated in U1, U7, U9, U10 and are release-blocking.
+Manual checklist per milestone: M1 = AE1-AE5 plus flows F1, F2; M2 = AE8 plus flow F3; M3 = AE6, AE7, AE9, AE10 plus flows F4, F5. The trust-model negative tests (path traversal, agent read/write/egress sandbox denial, consent enforcement on Web and Agent modes, local-origin/token enforcement) are automated in U1, U7, U9, U10 and are release-blocking.
 
 ---
 
@@ -440,6 +444,6 @@ Manual checklist per milestone: M1 = AE1-AE5 plus flows F1, F2; M2 = AE8 plus fl
 - All twelve units landed in dependency order with their listed tests passing under `npm test` and `npm run typecheck` green.
 - Every acceptance example (AE1-AE10) demonstrated: automated where the Verification Contract maps it to a test, otherwise via the milestone manual checklist.
 - A vault user with none of the three tools sees no behavior change beyond disabled mode buttons with install offers.
-- Secrets never appear in the repo, the vault, git history, or any API response body.
+- Secrets never appear in the repo, the vault, git history, or any API response body; rendered note HTML is sanitized; the agent has no filesystem-write or web-egress path outside the guarded endpoint.
 - README and `CLAUDE.md` reflect the re-scoped trust model and the two install flavors.
 - No dead or experimental code from abandoned approaches remains in the diff.
