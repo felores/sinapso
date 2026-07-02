@@ -205,7 +205,7 @@
         "command": "npm run typecheck && npm run build",
         "expected": "Typecheck and build pass. Manual checklist (deferred review): full F3 flow on a real vault ending with the new node visible; AE8 consent gate before any request leaves the machine"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": [
         "F002",
         "F005",
@@ -220,11 +220,11 @@
       "confidence": "needs-review",
       "context_note": "Follow existing modal/panel toggling and the mi-rescan rescan-then-reload flow. Suggested query click populates an editable field, never auto-runs (spends Exa credit).",
       "spec_ref": "docs/plans/2026-07-01-002-feat-optional-integrations-qmd-exa-opencode-plan.md#u8-web-mode-ui",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "typecheck+build+74 tests green. Playwright F3 on a scratch vault: consent modal on first activation, decline leaves mode off with zero egress (AE8), accept persists and opens panel, gap suggestions from live topology, suggestion click populates (never auto-spends), mocked Exa results render, save-as-note lands in inbox/, rescan shows the new node (3->4). Inline error verified with invalid key (401 -> clean message). Global config restored after test. DEFERRED: live Exa query with real key",
+      "implemented_by": "claude-fable-5",
+      "implemented_at": "2026-07-02T07:15:00Z",
+      "verified_by": "harness-progress verify (typecheck+build+test) + playwright F3 flow",
+      "verified_at": "2026-07-02T07:20:00Z"
     },
     {
       "id": "F009",

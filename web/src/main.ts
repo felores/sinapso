@@ -2212,10 +2212,16 @@ async function boot() {
   }
 
   function setMode(m: ModeName | null) {
+    // Web mode is gated behind one-time egress consent (R18/AE8).
+    if (m === "web" && integrations && !integrations.consents.web) {
+      promptWebConsent();
+      return;
+    }
     activeMode = m && modeReady(m) ? m : null;
     if (activeMode) localStorage.setItem("akasha-mode", activeMode);
     else localStorage.removeItem("akasha-mode");
     renderModes();
+    syncWebPanel();
   }
   for (const m of MODE_LIST)
     $(`#mode-${m}`).addEventListener("click", () =>
@@ -2479,6 +2485,206 @@ async function boot() {
         info.textContent = "related notes unavailable (semantic search error)";
     }
   }
+
+  // ---- Web mode: consent gate, gap suggestions, research panel (U8) ----
+  function promptWebConsent() {
+    showModal(
+      "Enable Web research?",
+      `<p>Web mode sends your queries to <b>Exa</b>, a web search API, using your own key. Queries can include note titles and topics from this vault, so <b>content derived from your vault leaves this machine</b> when you run a search.</p>
+       <p>Nothing is sent until you run a query, and saving results back into the vault is always an explicit action.</p>
+       <p style="display:flex;gap:8px"><button id="web-consent-yes">Enable Web mode</button><button id="web-consent-no">Cancel</button></p>`,
+    );
+    $("#web-consent-yes").addEventListener("click", async () => {
+      hideModal();
+      try {
+        await postConfig({ consents: { web: true } });
+        await refreshIntegrations();
+        setMode("web");
+      } catch {
+        showModal(
+          "Could not save consent",
+          "<p>The server rejected the consent update. Try again.</p>",
+        );
+      }
+    });
+    $("#web-consent-no").addEventListener("click", hideModal); // declining sends nothing (AE8)
+  }
+
+  interface GapSuggestion {
+    kind: string;
+    title: string;
+    query: string;
+    reason: string;
+  }
+  let gapsLoaded = false;
+
+  function syncWebPanel() {
+    const panel = $("#web-panel");
+    const on = activeMode === "web";
+    panel.classList.toggle("hidden", !on);
+    if (on && !gapsLoaded) void loadGaps();
+  }
+
+  async function loadGaps() {
+    gapsLoaded = true;
+    const box = $("#web-suggestions");
+    const info = $("#web-suggestions-info");
+    info.textContent = "finding gaps in your galaxy…";
+    try {
+      const data: { suggestions: GapSuggestion[] } = await fetch(
+        "/api/gaps",
+      ).then((r) => r.json());
+      if (!data.suggestions.length) {
+        info.textContent = "no gaps found — your galaxy is well connected";
+        return;
+      }
+      info.remove();
+      for (const s of data.suggestions) {
+        const row = document.createElement("div");
+        row.className = "gap-row";
+        const q = document.createElement("div");
+        q.className = "gap-query";
+        q.textContent = s.query;
+        const why = document.createElement("div");
+        why.className = "gap-reason";
+        why.textContent = s.reason;
+        row.append(q, why);
+        // Populate-then-confirm: clicking never auto-spends Exa credit.
+        row.addEventListener("click", () => {
+          ($("#web-query") as HTMLInputElement).value = s.query;
+          ($("#web-query") as HTMLInputElement).focus();
+        });
+        box.appendChild(row);
+      }
+    } catch {
+      info.textContent = "could not load gap suggestions";
+    }
+  }
+
+  function webError(msg: string | null) {
+    const el = $("#web-error");
+    el.classList.toggle("hidden", !msg);
+    el.textContent = msg ?? "";
+  }
+
+  async function runResearch() {
+    const input = $("#web-query") as HTMLInputElement;
+    const query = input.value.trim();
+    if (!query) return;
+    const results = $("#web-results");
+    webError(null);
+    results.innerHTML = '<p class="muted">searching the web…</p>';
+    try {
+      const res = await fetch("/api/research", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-solaris-token": await apiToken(),
+        },
+        body: JSON.stringify({ query }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        results.innerHTML = "";
+        webError(data.message ?? "research failed");
+        return;
+      }
+      results.innerHTML = "";
+      if (!data.results.length) {
+        results.innerHTML = '<p class="muted">no results</p>';
+        return;
+      }
+      for (const r of data.results as Array<{
+        title: string;
+        url: string;
+        snippet: string;
+        publishedDate: string | null;
+      }>) {
+        results.appendChild(renderWebResult(r, query));
+      }
+    } catch {
+      results.innerHTML = "";
+      webError("research failed — is the server running?");
+    }
+  }
+
+  function renderWebResult(
+    r: {
+      title: string;
+      url: string;
+      snippet: string;
+      publishedDate: string | null;
+    },
+    query: string,
+  ): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "web-result";
+    const link = document.createElement("a");
+    link.href = r.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = r.title;
+    const snip = document.createElement("div");
+    snip.className = "web-snippet";
+    snip.textContent = r.snippet;
+    const meta = document.createElement("div");
+    meta.className = "web-meta";
+    const date = document.createElement("span");
+    date.textContent = r.publishedDate?.slice(0, 10) ?? "";
+    const save = document.createElement("button");
+    save.className = "web-save";
+    save.textContent = "save as note";
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      save.textContent = "saving…";
+      try {
+        const content = [
+          "---",
+          `source: ${r.url}`,
+          `saved: ${new Date().toISOString().slice(0, 10)}`,
+          `query: "${query.replace(/"/g, "'")}"`,
+          "via: solaris-web-research",
+          "---",
+          "",
+          `# ${r.title}`,
+          "",
+          r.snippet,
+          "",
+          `[Source](${r.url})`,
+          "",
+        ].join("\n");
+        const res = await fetch("/api/notes", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-solaris-token": await apiToken(),
+          },
+          body: JSON.stringify({ title: r.title, content }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        save.textContent = `saved ✓ ${data.id}`;
+        const rescanBtn = document.createElement("button");
+        rescanBtn.className = "web-save";
+        rescanBtn.textContent = "rescan to see it";
+        rescanBtn.addEventListener("click", () => rescan(false));
+        meta.appendChild(rescanBtn);
+      } catch {
+        save.disabled = false;
+        save.textContent = "save failed — retry";
+      }
+    });
+    meta.append(date, save);
+    row.append(link, snip, meta);
+    return row;
+  }
+
+  $("#web-run").addEventListener("click", runResearch);
+  ($("#web-query") as HTMLInputElement).addEventListener("keydown", (e) => {
+    if (e.key === "Enter") void runResearch();
+  });
+  // Restore a persisted web mode on boot (consent already recorded).
+  void integrationsLoaded.then(syncWebPanel);
 
   // ---- menubar (File / View / Tools / Help) ----
   const menus = [...document.querySelectorAll<HTMLElement>(".menu")];
