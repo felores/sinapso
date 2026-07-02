@@ -2290,6 +2290,14 @@ async function boot() {
     if (integrations) {
       ($("#agent-mode") as HTMLSelectElement).value = integrations.agentMode;
       syncModelControls();
+      // The key is stored server-side and never echoed back, so the field
+      // is always empty — make the placeholder say a key IS configured.
+      const keyInput = $("#exa-key") as HTMLInputElement;
+      if (!keyInput.value) {
+        keyInput.placeholder = t?.exa.configured
+          ? "key configured ✓ — paste + Enter to replace"
+          : "Exa API key — paste + Enter";
+      }
     }
   }
 
