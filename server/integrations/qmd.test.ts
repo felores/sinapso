@@ -376,8 +376,36 @@ describe("qmd setup and status", () => {
   });
 });
 
+describe("GET /api/gaps/enrich (F016)", () => {
+  it("returns the nearest in-graph note as context for a gap query", async () => {
+    state.vsearchOut = JSON.stringify([
+      { score: 0.9, file: "qmd://vaultcol/a.md", snippet: "closest context" },
+      { score: 0.8, file: "qmd://vaultcol/excluded.md" },
+    ]);
+    const res = await request(covered.app).get(
+      "/api/gaps/enrich?q=missing+concept",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.from).toBe("Note A");
+    expect(res.body.snippet).toBe("closest context");
+    expect(res.body.id).toBe("a.md");
+  });
+
+  it("requires a query and degrades to null without one/qmd", async () => {
+    expect((await request(covered.app).get("/api/gaps/enrich")).status).toBe(
+      400,
+    );
+  });
+});
+
 describe("qmd not installed", () => {
   const bare = makeApp({ collections: {}, vsearchOut: "[]" }, VAULT, false);
+  it("degrades gap enrichment to snippet:null instead of failing", async () => {
+    const res = await request(bare.app).get("/api/gaps/enrich?q=anything");
+    expect(res.status).toBe(200);
+    expect(res.body.snippet).toBeNull();
+  });
+
   it("returns a clean 503 for search surfaces and missing for status", async () => {
     expect(
       (await request(bare.app).get("/api/related?id=self.md")).status,

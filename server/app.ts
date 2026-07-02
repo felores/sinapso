@@ -865,6 +865,47 @@ export function createApp(
     }
   });
 
+  // GET /api/gaps/enrich?q=: qmd context for one gap suggestion (F016) —
+  // the nearest existing in-graph note to the gap query. Best-effort: any
+  // unavailable state returns snippet:null and the template stands alone.
+  app.get("/api/gaps/enrich", async (req, res) => {
+    try {
+      const q = String(req.query.q ?? "").trim();
+      if (!q) {
+        res.status(400).json({ error: "q required" });
+        return;
+      }
+      const bin = await qmdBin();
+      if (!bin || qmdSetup.state() === "indexing") {
+        res.json({ snippet: null });
+        return;
+      }
+      const covering = coveringCollections(await collections(bin), vaultRoot);
+      if (!covering.length) {
+        res.json({ snippet: null });
+        return;
+      }
+      const hits = await qmdSearch(
+        bin,
+        q,
+        3,
+        covering.map((c) => c.name),
+      );
+      const nodeTitles = new Map(
+        graph.nodes.filter((n) => !n.phantom).map((n) => [n.id, n.title]),
+      );
+      const top = hitsToNodes(hits, covering, vaultRoot, nodeTitles)[0];
+      res.json(
+        top
+          ? { snippet: top.snippet, from: top.title, id: top.id }
+          : { snippet: null },
+      );
+    } catch (e) {
+      console.error("gap enrich failed:", e);
+      res.status(500).json({ error: "gap enrich failed" });
+    }
+  });
+
   // GET /api/graph: Return the complete knowledge graph (metadata + nodes + links)
   // Used by frontend to initialize the 3D visualization
   app.get("/api/graph", (_req, res) => {

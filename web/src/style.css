@@ -915,3 +915,12 @@ html, body {
 .integ-install.hidden { display: none; }
 #agent-model.hidden { display: none; }
 #agent-model-select { max-width: 150px; }
+.gap-context {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

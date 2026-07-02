@@ -435,7 +435,7 @@
         "command": "npm test && npm run typecheck && npm run build",
         "expected": "Enrich endpoint returns a snippet for a query via faked warm client and 204/empty when qmd missing; UI gates green; manual: rows fill in progressively"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": [
         "F015",
         "F008"
@@ -448,11 +448,11 @@
       "confidence": "autonomous",
       "context_note": "One warm query per suggestion (~0.2s each) fired in parallel from the browser; cap at the 5 rendered suggestions.",
       "spec_ref": "user follow-up 2026-07-02 (post-plan iteration)",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "117/117 tests (4 consecutive full runs; one earlier failure was a build/test contention flake, not reproducible) + typecheck + build green. /api/gaps/enrich returns nearest in-graph note context via the warm client, degrades to snippet:null without qmd; UI fills rows progressively without blocking. Real-vault probe: wikilinks gap -> Second Brain note context",
+      "implemented_by": "claude-fable-5",
+      "implemented_at": "2026-07-02T09:20:00Z",
+      "verified_by": "gates exit 0 + real-vault probe",
+      "verified_at": "2026-07-02T09:22:00Z"
     },
     {
       "id": "F017",

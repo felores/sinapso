@@ -2697,9 +2697,27 @@ async function boot() {
           ($("#web-query") as HTMLInputElement).focus();
         });
         box.appendChild(row);
+        void enrichGapRow(row, s.query); // progressive, never blocks (F016)
       }
     } catch {
       info.textContent = "could not load gap suggestions";
+    }
+  }
+
+  // Fill each suggestion with the nearest existing vault note as context,
+  // as results arrive. Best-effort: templates stand alone without qmd.
+  async function enrichGapRow(row: HTMLElement, query: string) {
+    try {
+      const data: { snippet: string | null; from?: string } = await fetch(
+        `/api/gaps/enrich?q=${encodeURIComponent(query)}`,
+      ).then((r) => r.json());
+      if (!data.snippet) return;
+      const ctx = document.createElement("div");
+      ctx.className = "gap-context";
+      ctx.textContent = `closest in vault: ${data.from} — ${data.snippet}`;
+      row.appendChild(ctx);
+    } catch {
+      // enrichment is optional
     }
   }
 
