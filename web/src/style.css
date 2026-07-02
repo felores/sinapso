@@ -440,11 +440,15 @@ html, body {
 #reader.hidden { transform: translateX(120%); pointer-events: none; }
 #reader.dragging, #reader.resizing { transition: none; user-select: none; }
 
-/* floating (undocked) mode: full border, shadow, rounded */
+/* floating (undocked) mode: full border, shadow, rounded.
+   z-index sits below all chrome (topbar 10, search-results 11, corner
+   buttons 12, panels 15, dropdowns 50) so menus/search/filters/settings
+   stay clickable on top of the detached reader. Docked reader keeps 20. */
 #reader.floating {
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  z-index: 5;
 }
 #reader.floating.hidden { transform: translateY(120%); }
 
