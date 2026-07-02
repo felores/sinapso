@@ -1,7 +1,7 @@
 {
   "project": "solaris-optional-integrations",
   "created": "2026-07-02T04:37:20Z",
-  "updated": "2026-07-02T14:19:29Z",
+  "updated": "2026-07-02T18:07:39Z",
   "features": [
     {
       "id": "F001",
@@ -536,6 +536,129 @@
       "implemented_at": "2026-07-02T12:10:00Z",
       "verified_by": "gates exit 0 + playwright end-to-end",
       "verified_at": "2026-07-02T12:12:00Z"
+    },
+    {
+      "id": "F020",
+      "priority": 20,
+      "category": "Web (Exa)",
+      "behavior": "Exa deep research: the adapter supports deep mode returning a synthesized answer with grounded citations (type:'deep' + outputSchema:{type:'text'}; response.output.content + citations) alongside the source results. Per-note research questions execute as deep research; manual column queries stay fast with a 'deep research' toggle in the column input row. The column renders the answer paragraph above a Sources list; save-as-note captures the synthesized answer WITH its citations into the vault. Deep runs show a 'researching deeply, takes a while' state.",
+      "verification": {
+        "command": "npm test && npm run typecheck && npm run build",
+        "expected": "exa tests: deep request carries type deep + text outputSchema; canned deep response maps answer.content + citations; non-deep path unchanged. UI gates green"
+      },
+      "state": "not_started",
+      "depends_on": [
+        "F008"
+      ],
+      "files_touched": [
+        "server/integrations/exa.ts",
+        "server/integrations/exa.test.ts",
+        "server/app.ts",
+        "web/src/main.ts",
+        "web/index.html",
+        "web/src/style.css"
+      ],
+      "confidence": "autonomous",
+      "context_note": "Ground against node_modules/exa-js/dist/index.d.ts DeepSearchOptions/DeepSearchOutput before wiring. Deep costs cents + tens of seconds; never auto-run.",
+      "spec_ref": "user decisions 2026-07-02 (AskUserQuestion round 2)",
+      "evidence": null,
+      "implemented_by": null,
+      "implemented_at": null,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F021",
+      "priority": 21,
+      "category": "Semantic (qmd)",
+      "behavior": "LLM-generated note questions with template fallback: /api/note-questions uses the LOCKED-DOWN opencode bridge (session.prompt with json_schema structured output, cfg.defaultModel) to generate 3-5 gap-aware questions from the note content + its graph context (phantom links, title) when opencode is ready AND agent consent is recorded; any failure, missing consent, or missing opencode falls back to the existing templates. Response reports source: llm|templates; the UI button shows a generating state.",
+      "verification": {
+        "command": "npm test && npm run typecheck",
+        "expected": "opencode/topology tests: fake client structured output -> llm questions; no consent -> templates with zero opencode calls; bridge error -> templates; prompt carries note excerpt + gap context"
+      },
+      "state": "not_started",
+      "depends_on": [
+        "F009",
+        "F019"
+      ],
+      "files_touched": [
+        "server/app.ts",
+        "server/integrations/opencode.ts",
+        "server/integrations/opencode.test.ts",
+        "web/src/main.ts"
+      ],
+      "confidence": "autonomous",
+      "context_note": "SDK: client.session.prompt({path:{id}, body:{parts, format:{type:'json_schema', schema}}}) -> result.data.info.structured_output (verify in sdk.gen types). Reuse one utility session per server run. Zen free models = zero cost.",
+      "spec_ref": "user decisions 2026-07-02 (AskUserQuestion round 2)",
+      "evidence": null,
+      "implemented_by": null,
+      "implemented_at": null,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F022",
+      "priority": 22,
+      "category": "Agent (OpenCode)",
+      "behavior": "Embedded terminal agent column: agent mode opens an xterm.js terminal in the research column running the full opencode TUI (node-pty child, cwd=vault, the USER'S own config — no lockdown). Transport reuses existing patterns: SSE for output, token-guarded POSTs for input/resize; PTY killed on column close/disconnect. The search-field first query is typed into the TUI after boot. node-pty missing -> clean 503 with guidance. The sandboxed bridge remains as the headless engine (LLM questions, model selector). Docs re-scope: terminal writes are under opencode's own permissions, outside the Solaris journal/propose guarantees.",
+      "verification": {
+        "command": "npm test && npm run typecheck && npm run build",
+        "expected": "terminal route tests with a faked pty factory: spawn cwd=vault, input requires token, SSE relays output, close kills pty; UI gates green; manual: real TUI session in the column"
+      },
+      "state": "not_started",
+      "depends_on": [
+        "F018"
+      ],
+      "files_touched": [
+        "server/integrations/terminal.ts",
+        "server/integrations/terminal.test.ts",
+        "server/app.ts",
+        "web/src/main.ts",
+        "web/index.html",
+        "web/src/style.css",
+        "package.json",
+        "README.md",
+        "CLAUDE.md"
+      ],
+      "confidence": "needs-review",
+      "context_note": "node-pty is a native dep (optionalDependency; degrade cleanly). xterm = @xterm/xterm + @xterm/addon-fit. Chat UI/proposal review UI retired from the column; proposal server routes stay (headless bridge uses them).",
+      "spec_ref": "user decisions 2026-07-02 (AskUserQuestion round 2)",
+      "evidence": null,
+      "implemented_by": null,
+      "implemented_at": null,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F023",
+      "priority": 23,
+      "category": "Install & Docs",
+      "behavior": "markitdown integration: detection row + per-tool install (uv tool install 'markitdown[all]' when uv exists, else pip3 --user, else instructions); POST /api/ingest {source: file path or URL, title?} (token-guarded) runs markitdown and saves the markdown through the guarded write to inbox/ with source/via/ingested frontmatter, collision-safe; File menu gains 'Ingest Document…' modal with the saved id + rescan affordance. Errors surface markitdown's stderr cleanly.",
+      "verification": {
+        "command": "npm test && npm run typecheck && npm run build",
+        "expected": "install/ingest tests with faked runners: detection, install branches (uv/pip/instructions), URL and file ingest -> guarded create with frontmatter, failure surfaces stderr, token required. Manual: real PDF -> note in inbox/ -> rescan shows node"
+      },
+      "state": "not_started",
+      "depends_on": [
+        "F013"
+      ],
+      "files_touched": [
+        "server/integrations/detect.ts",
+        "server/integrations/install.ts",
+        "server/integrations/ingest.ts",
+        "server/integrations/ingest.test.ts",
+        "server/app.ts",
+        "web/index.html",
+        "web/src/main.ts"
+      ],
+      "confidence": "needs-review",
+      "context_note": "markitdown is a Python uv/pip tool; detect on PATH + ~/.local/bin. Reading files OUTSIDE the vault is intentional (import); writes stay guarded. URL ingest = user-initiated fetch, mention in docs.",
+      "spec_ref": "user decisions 2026-07-02 (AskUserQuestion round 2)",
+      "evidence": null,
+      "implemented_by": null,
+      "implemented_at": null,
+      "verified_by": null,
+      "verified_at": null
     }
   ]
 }
