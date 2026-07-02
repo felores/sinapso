@@ -105,6 +105,11 @@
     </nav>
 
     <div id="search-wrap">
+      <div id="modes">
+        <button class="mode-btn" id="mode-semantic" title="Semantic (qmd)" disabled>◈</button>
+        <button class="mode-btn" id="mode-web" title="Web (Exa)" disabled>◍</button>
+        <button class="mode-btn" id="mode-agent" title="Agent (OpenCode)" disabled>✦</button>
+      </div>
       <input id="search" type="search" placeholder="Search notes…  (press /)" autocomplete="off" />
       <div id="search-results"></div>
     </div>
@@ -173,6 +178,18 @@
       <span class="val" id="w-contrast-val">1.5</span>
     </label>
     <button id="reset-colors" title="Forget custom group colors">reset custom colors</button>
+    <h3 style="margin-top:10px">Integrations</h3>
+    <div class="integ-row" id="integ-qmd"><b>Semantic (qmd)</b><span class="integ-status"></span></div>
+    <div class="integ-row" id="integ-exa"><b>Web (Exa)</b><span class="integ-status"></span></div>
+    <input type="password" id="exa-key" placeholder="Exa API key — paste + Enter" autocomplete="off" />
+    <div class="integ-row" id="integ-opencode"><b>Agent (OpenCode)</b><span class="integ-status"></span></div>
+    <label class="integ-row">agent permissions
+      <select id="agent-mode">
+        <option value="approval">approval (review each change)</option>
+        <option value="full">full access</option>
+      </select>
+    </label>
+    <button id="integ-recheck" title="Re-probe installed tools">re-check installed tools</button>
   </aside>
 
   <aside id="filters" class="hidden">

@@ -2121,6 +2121,165 @@ async function boot() {
     }
   });
 
+  // ---- integrations: mode buttons (Semantic / Web / Agent) + settings ----
+  // At most one mode active at a time; buttons light up only when their tool
+  // is detected (GET /api/integrations). Persisted as akasha-mode.
+  type ModeName = "semantic" | "web" | "agent";
+  interface IntegrationsStatus {
+    tools: {
+      qmd: { installed: boolean; version: string | null };
+      opencode: {
+        installed: boolean;
+        version: string | null;
+        connected: boolean | null;
+      };
+      exa: { configured: boolean };
+    };
+    consents: { web: boolean; agent: boolean };
+    agentMode: "approval" | "full";
+  }
+  const MODE_LIST = ["semantic", "web", "agent"] as const;
+  const MODE_NAMES: Record<ModeName, string> = {
+    semantic: "Semantic (qmd)",
+    web: "Web (Exa)",
+    agent: "Agent (OpenCode)",
+  };
+  const MODE_MISSING: Record<ModeName, string> = {
+    semantic:
+      "Semantic (qmd) — qmd not installed. Add it via the addons install (Settings → Integrations).",
+    web: "Web (Exa) — no API key. Add your Exa key in Settings → Integrations.",
+    agent:
+      "Agent (OpenCode) — OpenCode not installed. Add it via the addons install (Settings → Integrations).",
+  };
+  let integrations: IntegrationsStatus | null = null;
+  let activeMode = localStorage.getItem("akasha-mode") as ModeName | null;
+
+  // Per-session token for mutating routes (fetched once, sent as a header).
+  let sessionToken = "";
+  const apiToken = async () => {
+    if (!sessionToken)
+      sessionToken = (await fetch("/api/session").then((r) => r.json())).token;
+    return sessionToken;
+  };
+  async function postConfig(patch: object) {
+    const res = await fetch("/api/integrations/config", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-solaris-token": await apiToken(),
+      },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error(`config save failed (${res.status})`);
+  }
+
+  const modeReady = (m: ModeName): boolean => {
+    const t = integrations?.tools;
+    if (!t) return false;
+    return m === "semantic"
+      ? t.qmd.installed
+      : m === "web"
+        ? t.exa.configured
+        : t.opencode.installed;
+  };
+
+  function renderModes() {
+    for (const m of MODE_LIST) {
+      const b = $(`#mode-${m}`) as HTMLButtonElement;
+      b.disabled = !modeReady(m);
+      b.title = b.disabled ? MODE_MISSING[m] : MODE_NAMES[m];
+      b.classList.toggle("active", activeMode === m && !b.disabled);
+    }
+  }
+
+  function setMode(m: ModeName | null) {
+    activeMode = m && modeReady(m) ? m : null;
+    if (activeMode) localStorage.setItem("akasha-mode", activeMode);
+    else localStorage.removeItem("akasha-mode");
+    renderModes();
+  }
+  for (const m of MODE_LIST)
+    $(`#mode-${m}`).addEventListener("click", () =>
+      setMode(activeMode === m ? null : m),
+    );
+
+  function renderIntegrationsPanel() {
+    const t = integrations?.tools;
+    const st = (id: string, txt: string, ok: boolean) => {
+      const el = $(`#integ-${id} .integ-status`);
+      el.textContent = txt;
+      el.classList.toggle("ok", ok);
+    };
+    st(
+      "qmd",
+      t
+        ? t.qmd.installed
+          ? `installed ${t.qmd.version ?? ""}`.trim()
+          : "not installed"
+        : "status unavailable",
+      !!t?.qmd.installed,
+    );
+    st(
+      "exa",
+      t
+        ? t.exa.configured
+          ? "key configured"
+          : "no API key"
+        : "status unavailable",
+      !!t?.exa.configured,
+    );
+    st(
+      "opencode",
+      t
+        ? t.opencode.installed
+          ? `installed ${t.opencode.version ?? ""}`.trim()
+          : "not installed"
+        : "status unavailable",
+      !!t?.opencode.installed,
+    );
+    if (integrations)
+      ($("#agent-mode") as HTMLSelectElement).value = integrations.agentMode;
+  }
+
+  async function refreshIntegrations(recheck = false) {
+    try {
+      integrations = await fetch(
+        `/api/integrations${recheck ? "?refresh=1" : ""}`,
+      ).then((r) => r.json());
+    } catch {
+      integrations = null; // server unreachable; buttons stay disabled
+    }
+    renderModes();
+    renderIntegrationsPanel();
+  }
+
+  const exaKeyInput = $("#exa-key") as HTMLInputElement;
+  exaKeyInput.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter") return;
+    const v = exaKeyInput.value.trim();
+    if (!v) return;
+    exaKeyInput.disabled = true;
+    try {
+      await postConfig({ exaKey: v });
+      exaKeyInput.value = "";
+      exaKeyInput.placeholder = "key saved ✓";
+      await refreshIntegrations();
+    } catch {
+      exaKeyInput.placeholder = "save failed — retry";
+    } finally {
+      exaKeyInput.disabled = false;
+    }
+  });
+  $("#agent-mode").addEventListener("change", (e) => {
+    postConfig({ agentMode: (e.target as HTMLSelectElement).value }).catch(() =>
+      refreshIntegrations(),
+    );
+  });
+  $("#integ-recheck").addEventListener("click", () =>
+    refreshIntegrations(true),
+  );
+  refreshIntegrations();
+
   // ---- menubar (File / View / Tools / Help) ----
   const menus = [...document.querySelectorAll<HTMLElement>(".menu")];
   const closeMenus = () => menus.forEach((m) => m.classList.remove("open"));

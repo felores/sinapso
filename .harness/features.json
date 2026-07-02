@@ -33,17 +33,17 @@
         "command": "npm run typecheck && npm run build",
         "expected": "Typecheck and production build pass. Manual checklist (deferred review): AE1/AE5 disabled states with tooltips, mode exclusivity, key save round-trip shows boolean in GET /api/integrations"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": ["F001"],
       "files_touched": ["web/index.html", "web/src/main.ts", "web/src/style.css"],
       "confidence": "needs-review",
       "context_note": "Follow #filters-btn/#settings-btn toggle pattern and akasha-* localStorage namespace; menubar click-outside gotcha: global handler closes menus only when click lands outside any .menu. Frontend stays framework-free imperative (KTD9).",
       "spec_ref": "docs/plans/2026-07-01-002-feat-optional-integrations-qmd-exa-opencode-plan.md#u2-mode-selector-chrome--integrations-settings-ui",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "typecheck + vite build green, 32/32 tests still pass. DEFERRED HUMAN REVIEW: M1 manual checklist (AE1/AE5 tooltips, mode exclusivity, key round-trip) pending — browser smoke planned after F004",
+      "implemented_by": "claude-fable-5",
+      "implemented_at": "2026-07-02T04:50:00Z",
+      "verified_by": "harness-progress verify (npm run typecheck && npm run build, exit 0)",
+      "verified_at": "2026-07-02T04:50:00Z"
     },
     {
       "id": "F003",
