@@ -2589,7 +2589,6 @@ async function boot() {
     $("#research-title").textContent =
       mode === "semantic" ? "Semantic results" : "Web research";
     $("#research-input-row").classList.remove("hidden");
-    $("#research-deep-wrap").classList.toggle("hidden", mode !== "web");
     researchError(null);
     researchInput.placeholder =
       mode === "web"
@@ -2613,11 +2612,7 @@ async function boot() {
 
   function runModeQuery(mode: ModeName, query: string) {
     if (mode === "semantic") void runSemanticQuery(query);
-    else if (mode === "web")
-      startWebResearch(
-        query,
-        ($("#research-deep") as HTMLInputElement).checked,
-      );
+    else if (mode === "web") void startWebResearch(query);
   }
 
   // Follow-ups from inside the column route to the active mode.
@@ -2680,13 +2675,11 @@ async function boot() {
     }
   }
 
-  async function runWebQuery(query: string, deep = false) {
+  async function runWebQuery(query: string) {
     openResearch("web");
-    ($("#research-deep") as HTMLInputElement).checked = deep;
     const body = $("#research-body");
-    body.innerHTML = deep
-      ? '<p class="muted">researching deeply — synthesizing an answer from multiple sources, this can take up to a minute…</p>'
-      : '<p class="muted">searching the web…</p>';
+    body.innerHTML =
+      '<p class="muted">researching deeply — synthesizing an answer from multiple sources, this can take up to a minute…</p>';
     try {
       const res = await fetch("/api/research", {
         method: "POST",
@@ -2694,7 +2687,7 @@ async function boot() {
           "content-type": "application/json",
           "x-solaris-token": await apiToken(),
         },
-        body: JSON.stringify({ query, deep }),
+        body: JSON.stringify({ query, deep: true }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -2804,12 +2797,12 @@ async function boot() {
 
   // Web research entry shared by the search field and the per-note
   // research questions (F019): consent-gated before any egress.
-  function startWebResearch(query: string, deep = false) {
+  function startWebResearch(query: string) {
     if (integrations && !integrations.consents.web) {
       promptWebConsent();
       return;
     }
-    void runWebQuery(query, deep);
+    void runWebQuery(query);
   }
 
   // Per-note research questions (F019): a button at the end of each note
@@ -2855,7 +2848,7 @@ async function boot() {
           text.textContent = q;
           row.appendChild(text);
           // Research questions are research: run deep synthesis (F020).
-          row.addEventListener("click", () => startWebResearch(q, true));
+          row.addEventListener("click", () => startWebResearch(q));
           box.appendChild(row);
         }
       } catch {
