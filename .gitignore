@@ -10,4 +10,4 @@ release/
 code_review.md
 CODE_REVIEW.md
 demo-vault/
-scripts/dist/
+scripts/dist/.playwright-cli/
