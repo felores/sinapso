@@ -870,7 +870,9 @@ body > :not(#graph) {
 #qmd-maint.hidden { display: none; }
 #qmd-maint { margin: 2px 10px 4px; }
 .qmd-maint-btns { display: flex; gap: 6px; }
-.qmd-maint-btns button {
+/* scoped under .mi-group to outweigh `.mi-group button:not(.checked)`, which
+   otherwise forces padding-left:26px and shoves the label off-center */
+.mi-group .qmd-maint-btns button {
   flex: 1;
   display: inline-flex;
   align-items: center;
