@@ -869,12 +869,16 @@ body > :not(#graph) {
 .qmd-maint-btns { display: flex; gap: 6px; }
 .qmd-maint-btns button {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
   background: none;
   border: 1px solid var(--border);
   color: var(--muted);
   border-radius: 6px;
-  padding: 5px;
-  font-size: 12px;
+  padding: 5px 4px;
+  font-size: 11.5px;
   cursor: pointer;
 }
 .qmd-maint-btns button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
