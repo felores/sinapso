@@ -67,3 +67,18 @@ Initialized 2026-07-02 from docs/plans/2026-07-01-002-feat-optional-integrations
 - Exa keyless: not possible (402 x402 crypto payments); Exa unchanged per user instruction
 
 **22/23 passing, 142 tests.**
+
+## Session 2026-07-03: Phase 0.4 — multilingual embedding model
+
+**Features (F024-F026, from docs/plans/2026-07-03-003-...-plan.md):**
+- F024: not_started -> passing (config.embedModel + Runner env param + maintenance embed carries QMD_EMBED_MODEL/-f)
+  - verification: npm test 132 + typecheck
+- F025: not_started -> passing (embedModel via guarded /api/integrations/config, returned by GET /api/integrations; maintenance reads it + ?force=1)
+  - verification: npm test 134 (unguarded write 403; persist+reflect; embed spawn carries model+-f)
+- F026: not_started -> passing (Tools -> Semantic embedding-model selector default/Qwen3/custom; change persists + marks model-dirty; re-embed becomes "re-embed (full)" force)
+  - verification: typecheck + agent-browser LIVE (3 options, Qwen3 persisted, dirty flag, button relabel). Real config reset to null after test.
+
+Model wiring: QMD_EMBED_MODEL = hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf (1024-dim). Heavy re-embed intentionally NOT run (user re-embeds later).
+
+**Gates:** 134 tests + typecheck + build green.
+**Passing (this run):** 3/3 (F024-F026).

@@ -101,6 +101,14 @@
             <div class="integ-row" id="integ-qmd"><b>Semantic</b><span class="integ-status"></span><button class="integ-install hidden" data-tool="qmd" title="Install qmd; existing installs are never touched">install</button></div>
             <button id="qmd-enable" class="hidden">enable semantic search</button>
             <div id="qmd-maint" class="hidden">
+              <label class="ctl embed-model-row">embedding model
+                <select id="embed-model-select">
+                  <option value="">default (English-leaning)</option>
+                  <option value="hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf">Qwen3 0.6B (multilingual)</option>
+                  <option value="__custom">custom…</option>
+                </select>
+              </label>
+              <input type="text" id="embed-model-custom" class="hidden" placeholder="hf:org/repo/file.gguf + Enter" autocomplete="off" spellcheck="false" />
               <div class="qmd-maint-btns">
                 <button id="qmd-update" title="Re-index changed notes (qmd update)">update</button>
                 <button id="qmd-embed" title="Refresh vector embeddings (qmd embed)">re-embed</button>

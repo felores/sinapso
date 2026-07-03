@@ -740,7 +740,7 @@ body > :not(#graph) {
 .integ-model select { width: 100%; }
 .integ-status { font-size: 11.5px; text-align: right; }
 .integ-status.ok { color: var(--accent); }
-#exa-key, #openrouter-key, #llm-model {
+#exa-key, #openrouter-key, #llm-model, #embed-model-custom {
   width: calc(100% - 20px);
   margin: 2px 10px 6px;
   padding: 5px 8px;
@@ -750,10 +750,19 @@ body > :not(#graph) {
   color: var(--fg);
   font-size: 12px;
 }
-#exa-key:focus, #openrouter-key:focus, #llm-model:focus {
+#exa-key:focus, #openrouter-key:focus, #llm-model:focus, #embed-model-custom:focus {
   outline: none;
   border-color: var(--accent);
 }
+#embed-model-custom.hidden { display: none; }
+.embed-model-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.embed-model-row select { width: 100%; }
 #integ-recheck {
   margin: 8px 10px 0;
   width: calc(100% - 20px);

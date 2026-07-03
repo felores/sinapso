@@ -2202,6 +2202,7 @@ async function boot() {
     };
     consents: { web: boolean };
     defaultModel: string | null;
+    embedModel: string | null;
   }
   const MODE_LIST = ["semantic", "web", "ingest"] as const;
   const MODE_NAMES: Record<ModeName, string> = {
@@ -2364,6 +2365,21 @@ async function boot() {
       } else {
         sel.value = "";
         ($("#llm-model") as HTMLInputElement).classList.add("hidden");
+      }
+      // embedding-model selector (same default/preset/__custom shape)
+      const esel = $("#embed-model-select") as HTMLSelectElement;
+      const emodel = integrations.embedModel ?? "";
+      const ecustom = $("#embed-model-custom") as HTMLInputElement;
+      if ([...esel.options].some((o) => o.value === emodel)) {
+        esel.value = emodel;
+        ecustom.classList.add("hidden");
+      } else if (emodel) {
+        esel.value = "__custom";
+        ecustom.classList.remove("hidden");
+        ecustom.value = emodel;
+      } else {
+        esel.value = "";
+        ecustom.classList.add("hidden");
       }
     }
     // Live-validate the OpenRouter key for free (GET /key); Exa has no free
@@ -2648,18 +2664,23 @@ async function boot() {
       maintMaxPending = 0;
       bar.classList.add("hidden");
       fill.style.width = "0";
+      const dirtyHint =
+        localStorage.getItem("akasha-qmd-model-dirty") === "1"
+          ? " · model changed — run a full re-embed"
+          : "";
       $("#qmd-maint-status").textContent = m.error
         ? `error: ${m.error}`
         : pending
-          ? `${pending} pending${stale}`
-          : `index up to date${stale}`;
+          ? `${pending} pending${stale}${dirtyHint}`
+          : `index up to date${stale}${dirtyHint}`;
     }
   }
-  async function startMaint(update: boolean, embed: boolean) {
+  async function startMaint(update: boolean, embed: boolean, force = false) {
     try {
       const q = new URLSearchParams();
       if (update) q.set("update", "1");
       if (embed) q.set("embed", "1");
+      if (force) q.set("force", "1");
       const res = await fetch(`/api/qmd/maintenance?${q}`, {
         method: "POST",
         headers: { "x-solaris-token": await apiToken() },
@@ -2672,8 +2693,51 @@ async function boot() {
         "could not start — check the server log";
     }
   }
+  // A model switch needs a full (-f) re-embed; a dirty flag drives that until
+  // the forced re-embed runs.
+  const modelDirty = () =>
+    localStorage.getItem("akasha-qmd-model-dirty") === "1";
+  function updateEmbedBtnLabel() {
+    ($("#qmd-embed") as HTMLButtonElement).textContent = modelDirty()
+      ? "re-embed (full)"
+      : "re-embed";
+  }
+  function markModelDirty() {
+    localStorage.setItem("akasha-qmd-model-dirty", "1");
+    updateEmbedBtnLabel();
+  }
+  updateEmbedBtnLabel();
   $("#qmd-update").addEventListener("click", () => startMaint(true, false));
-  $("#qmd-embed").addEventListener("click", () => startMaint(false, true));
+  $("#qmd-embed").addEventListener("click", () => {
+    const dirty = modelDirty();
+    if (dirty) localStorage.removeItem("akasha-qmd-model-dirty");
+    updateEmbedBtnLabel();
+    void startMaint(false, true, dirty);
+  });
+  const embedSelect = $("#embed-model-select") as HTMLSelectElement;
+  const embedCustom = $("#embed-model-custom") as HTMLInputElement;
+  embedSelect.addEventListener("change", () => {
+    if (embedSelect.value === "__custom") {
+      embedCustom.classList.remove("hidden");
+      embedCustom.focus();
+      return;
+    }
+    embedCustom.classList.add("hidden");
+    postConfig({ embedModel: embedSelect.value || null })
+      .then(markModelDirty)
+      .catch(() => refreshIntegrations());
+  });
+  embedCustom.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter") return;
+    const v = embedCustom.value.trim();
+    try {
+      await postConfig({ embedModel: v || null });
+      markModelDirty();
+      embedCustom.placeholder = "model saved ✓";
+    } catch {
+      embedCustom.placeholder = "save failed — retry";
+    }
+  });
   const refreshRescanBox = $("#qmd-refresh-rescan") as HTMLInputElement;
   refreshRescanBox.checked =
     localStorage.getItem("akasha-qmd-refresh-rescan") === "1";

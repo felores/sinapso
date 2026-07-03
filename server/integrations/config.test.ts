@@ -44,6 +44,16 @@ describe("integrations config", () => {
     expect(cfg.exaKey).toBe("keep-me");
   });
 
+  it("persists and clears the embedding-model override", () => {
+    const p = join(DIR, "embed-model.json");
+    expect(defaultConfig().embedModel).toBeNull();
+    const model =
+      "hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf";
+    updateConfig({ embedModel: model }, p);
+    expect(loadConfig(p).embedModel).toBe(model);
+    expect(updateConfig({ embedModel: null }, p).embedModel).toBeNull();
+  });
+
   it("ignores mistyped or unknown patch fields", () => {
     const p = join(DIR, "sanitize.json");
     const cfg = updateConfig(

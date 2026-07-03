@@ -220,7 +220,11 @@ export function createQmdMaintenance(run: Runner) {
     running: () => running,
     op: () => op,
     error: () => error,
-    start(qmd: string, steps: { update?: boolean; embed?: boolean }): boolean {
+    start(
+      qmd: string,
+      steps: { update?: boolean; embed?: boolean },
+      opts: { embedModel?: string | null; force?: boolean } = {},
+    ): boolean {
       if (running) return false;
       const seq: QmdMaintOp[] = [];
       if (steps.update) seq.push("update");
@@ -231,9 +235,16 @@ export function createQmdMaintenance(run: Runner) {
       void (async () => {
         for (const s of seq) {
           op = s;
+          // Only `embed` uses the embedding model; force (-f) re-embeds all so a
+          // model switch doesn't leave mixed-dimension vectors.
+          const args = s === "embed" && opts.force ? ["embed", "-f"] : [s];
+          const env =
+            s === "embed" && opts.embedModel
+              ? { QMD_EMBED_MODEL: opts.embedModel }
+              : undefined;
           let r: RunResult;
           try {
-            r = await run(qmd, [s], SETUP_TIMEOUT_MS);
+            r = await run(qmd, args, SETUP_TIMEOUT_MS, env);
           } catch (e) {
             r = { ok: false, stdout: "", stderr: String(e) };
           }

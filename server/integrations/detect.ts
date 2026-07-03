@@ -20,6 +20,7 @@ export type Runner = (
   cmd: string,
   args: string[],
   timeoutMs?: number,
+  env?: Record<string, string>,
 ) => Promise<RunResult>;
 
 export interface DetectDeps {
@@ -29,12 +30,16 @@ export interface DetectDeps {
   env: Record<string, string | undefined>;
 }
 
-export const realRunner: Runner = (cmd, args, timeoutMs) =>
+export const realRunner: Runner = (cmd, args, timeoutMs, env) =>
   new Promise((res) => {
     execFile(
       cmd,
       args,
-      { timeout: timeoutMs ?? 10_000 },
+      {
+        timeout: timeoutMs ?? 10_000,
+        // Extra env is merged over the inherited process env (e.g. QMD_EMBED_MODEL).
+        ...(env ? { env: { ...process.env, ...env } } : {}),
+      },
       (err, stdout, stderr) =>
         res({
           ok: !err,
