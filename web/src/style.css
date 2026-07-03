@@ -800,7 +800,8 @@ body > :not(#graph) {
   border-radius: 6px;
   padding: 5px;
   font-size: 12px;
-  text-align: center;
+  /* .dropdown button is display:flex, so center via justify-content */
+  justify-content: center;
   cursor: pointer;
 }
 #integ-recheck:hover { color: var(--accent); border-color: var(--accent); }
@@ -860,7 +861,7 @@ body > :not(#graph) {
   border-radius: 6px;
   padding: 5px;
   font-size: 12px;
-  text-align: center;
+  justify-content: center;
   cursor: pointer;
 }
 #qmd-enable:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
