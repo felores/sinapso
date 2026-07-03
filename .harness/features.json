@@ -1,7 +1,7 @@
 {
   "project": "solaris-optional-integrations",
   "created": "2026-07-02T04:37:20Z",
-  "updated": "2026-07-03T13:16:21Z",
+  "updated": "2026-07-03T16:03:29Z",
   "features": [
     {
       "id": "F001",
@@ -605,7 +605,7 @@
         "command": "npm test && npm run typecheck && npm run build",
         "expected": "terminal route tests with a faked pty factory: spawn cwd=vault, input requires token, SSE relays output, close kills pty; UI gates green; manual: real TUI session in the column"
       },
-      "state": "active",
+      "state": "passing",
       "depends_on": [
         "F018"
       ],
@@ -623,11 +623,11 @@
       "confidence": "needs-review",
       "context_note": "REVISED: split pane, not full-column takeover — divider drag like the reader resize handles; persist ratio in localStorage akasha-terminal-split. node-pty is a native dep (optionalDependency; degrade cleanly). xterm = @xterm/xterm + @xterm/addon-fit. Chat UI/proposal review UI retired from the column; proposal server routes stay (headless bridge uses them).",
       "spec_ref": "user decisions 2026-07-02 (AskUserQuestion round 2)",
-      "evidence": "IN PROGRESS. Server side complete + tested (142/142): terminal manager (spawn-once, backlog replay, exit notes, kill), routes (start consent+token gated, SSE stream, input/resize/kill), node-pty as optionalDependency with darwin spawn-helper exec-bit self-heal, pty-unavailable -> clean 503. UI complete: split column with draggable divider (akasha-terminal-split), xterm lazy-loaded (84KB gzip chunk), agent button opens terminal, first query typed after boot. KNOWN ISSUE: opencode's opentui renderer does not complete its visible paint under xterm.js 6 (capability probes leak literal 'p' chars = DECRQM requests unconsumed even with allowProposedApi; raw PTY backlog shows the full alt-screen paint being emitted correctly). Next: answer DECRQM/XTVERSION/OSC10-11 probes via a server-side shim on the pty stream, or isolate with a plain shell TUI to split xterm-vs-opentui responsibility",
+      "evidence": "Removed by design decision: the embedded-terminal / split research column was an OpenCode-era feature; OpenCode was dropped from the architecture (post-OpenCode CLAUDE.md). No terminal in the current product.",
       "implemented_by": "claude-fable-5",
       "implemented_at": "2026-07-02T14:00:00Z",
-      "verified_by": null,
-      "verified_at": null
+      "verified_by": "removed by design decision",
+      "verified_at": "2026-07-03T16:03:29Z"
     },
     {
       "id": "F023",
@@ -682,7 +682,7 @@
       "confidence": "autonomous",
       "context_note": "Mirror the existing config fields (defaultModel) in merge/defaultConfig; embedModel is NOT a secret so it may be returned by the API. Runner env is additive (4th optional param), backward-compatible with fake runners. QMD_EMBED_MODEL format = hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf.",
       "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#phase-0.4",
-      "evidence": "132 tests green (+3: config embedModel persist/clear; embed carries QMD_EMBED_MODEL+-f on force; embed incremental has no env/-f); typecheck clean",
+      "evidence": "132 tests green (+3: config embedModel persist/clear; embed carries QMD_EMBED_MODEL+-f on force; embed incremental has no env/-f); typecheck clean | REVERTED 2026-07-03: the embedding-model selector + Qwen option were removed — qmd ignores QMD_EMBED_MODEL and reads models.embed from ~/.config/qmd/index.yml, so the switch was inert. The re-embed (qmd embed -f) button remains.",
       "implemented_by": "claude-opus-4-8",
       "implemented_at": "2026-07-03T11:00:00Z",
       "verified_by": "npm test && npm run typecheck",
@@ -708,7 +708,7 @@
       "confidence": "autonomous",
       "context_note": "Reused the existing guarded /api/integrations/config endpoint (updateConfig) instead of a new one (ponytail); embedModel is not a secret so /api/integrations returns it plainly.",
       "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#phase-0.4",
-      "evidence": "134 tests green (+2: guarded config persist/reflect of embedModel; embed spawn carries QMD_EMBED_MODEL + -f via the maintenance endpoint on force)",
+      "evidence": "134 tests green (+2: guarded config persist/reflect of embedModel; embed spawn carries QMD_EMBED_MODEL + -f via the maintenance endpoint on force) | REVERTED 2026-07-03: the embedding-model selector + Qwen option were removed — qmd ignores QMD_EMBED_MODEL and reads models.embed from ~/.config/qmd/index.yml, so the switch was inert. The re-embed (qmd embed -f) button remains.",
       "implemented_by": "claude-opus-4-8",
       "implemented_at": "2026-07-03T11:05:00Z",
       "verified_by": "npm test",
@@ -735,7 +735,7 @@
       "confidence": "autonomous",
       "context_note": "Mirror the LLM follow-up-model selector (default/preset/__custom + hidden text input). Persist dirty flag in localStorage akasha-qmd-model-dirty. Reuse the maintenance poller + apiToken() from the just-shipped Phase M code.",
       "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#phase-0.4",
-      "evidence": "typecheck clean; agent-browser LIVE: selector renders 3 options (default/Qwen3/custom); selecting Qwen3 persisted embedModel to config, set the dirty flag, and relabeled the button to 're-embed (full)'. Real config reset to null after the test.",
+      "evidence": "typecheck clean; agent-browser LIVE: selector renders 3 options (default/Qwen3/custom); selecting Qwen3 persisted embedModel to config, set the dirty flag, and relabeled the button to 're-embed (full)'. Real config reset to null after the test. | REVERTED 2026-07-03: the embedding-model selector + Qwen option were removed — qmd ignores QMD_EMBED_MODEL and reads models.embed from ~/.config/qmd/index.yml, so the switch was inert. The re-embed (qmd embed -f) button remains.",
       "implemented_by": "claude-opus-4-8",
       "implemented_at": "2026-07-03T11:12:00Z",
       "verified_by": "npm run typecheck + agent-browser live check",
@@ -816,6 +816,165 @@
       "implemented_at": "2026-07-03T13:16:21Z",
       "verified_by": "interactive verify (npm run typecheck && npm test && agent-browser toggle/audit)",
       "verified_at": "2026-07-03T13:16:21Z"
+    },
+    {
+      "id": "F030",
+      "priority": 30,
+      "category": "Semantic Layer",
+      "behavior": "New server/integrations/qmd-vectors.ts behind the qmd adapter: opens ~/.cache/qmd/index.sqlite READ-ONLY (better-sqlite3 + the sqlite-vec loadable extension). API: docVector(path) (mean-pool a note's chunk vectors), knn(vector,k) (KNN via `embedding MATCH ? ORDER BY distance` on the vectors_vec vec0 table), allDocVectors() (batch). The embedding dimension is READ FROM the vectors_vec schema (`float[N]`), never hardcoded to 768. Schema-version guard: probe vectors_vec/content_vectors shape on open; on unexpected/absent schema, disable the semantic layer and report a clear status instead of crashing. Injectable db path for tests (tiny fixture index). NOT a daemon; live vsearch stays as-is.",
+      "verification": {
+        "command": "npm test",
+        "expected": "new server/integrations/qmd-vectors.test.ts passes: KNN over a fixture index returns the expected neighbors; dimension is read from the schema (a 1024-dim fixture is not treated as 768); a malformed/absent index disables the layer (no throw)."
+      },
+      "state": "not_started",
+      "depends_on": [],
+      "files_touched": [
+        "server/integrations/qmd-vectors.ts",
+        "server/integrations/qmd-vectors.test.ts",
+        "package.json"
+      ],
+      "confidence": "needs-review",
+      "context_note": "Adds native deps (better-sqlite3 + sqlite-vec) — the plan chose direct-read over the SDK/daemon (§4). Quarantine ALL sqlite coupling here behind a schema guard + graceful 'semantic layer unavailable' fallback (constraint §2). Read dim from vectors_vec `float[N]`, never hardcode 768 (embeddinggemma today; a model switch changes it). Join content_vectors(hash,seq,pos,model,total_chunks) -> documents(id,path,title,hash,active). Read-only open; no egress.",
+      "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#0.3",
+      "evidence": null,
+      "implemented_by": null,
+      "implemented_at": null,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F031",
+      "priority": 31,
+      "category": "Semantic Layer",
+      "behavior": "Semantic edge set: doc-level KNN over qmd-vectors (F030) producing data/semantic.json (gitignored, like graph.json). Edge hygiene to avoid a hairball: MUTUAL-KNN only (A in topK(B) AND B in topK(A)), cosine >= ~0.5 threshold, K capped 6-8. Store {source,target,score} where source/target are note ids that MATCH graph.json node ids. Incremental: keyed by documents.hash; on rescan recompute only changed notes' neighborhoods. Exposed via an endpoint/build step.",
+      "verification": {
+        "command": "npm test",
+        "expected": "semantic-edges test: edge set is symmetric (mutual-KNN), thresholded (every score >= threshold), bounded (<= ~K*N/2); a spot-check confirms known-related-but-unlinked fixture notes are connected."
+      },
+      "state": "not_started",
+      "depends_on": [
+        "F030"
+      ],
+      "files_touched": [
+        "server/integrations/qmd-vectors.ts",
+        "server/app.ts",
+        "server/integrations/qmd.test.ts"
+      ],
+      "confidence": "autonomous",
+      "context_note": "Mutual-KNN + cosine>=~0.5 + K 6-8 is the anti-hairball rule (do NOT skip). {source,target} ids must equal graph.json node ids (note path/basename) so the frontend maps edges to nodes. data/semantic.json is gitignored runtime data like graph.json. Incremental by documents.hash.",
+      "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#1",
+      "evidence": null,
+      "implemented_by": null,
+      "implemented_at": null,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F032",
+      "priority": 32,
+      "category": "Semantic Layer",
+      "behavior": "Arrangement modes: a selector next to `group by` in View with Links (default), Semantic, Hybrid. Feed the chosen edge array into the 3d-force-graph sim (one force mechanism, three edge sets). Hybrid weights semantic edges ~0.3-0.5x link strength (links=skeleton, semantics fill gaps + rescue orphans). Semantic edges are ALWAYS rendered in a distinct faint/dashed style; a toggle hides the lines while keeping their physical pull. Cache node positions PER ARRANGEMENT (extend /api/layout + cachedPositions) and tween on switch instead of re-simulating live. Choice persists in localStorage (akasha-*).",
+      "verification": {
+        "command": "npm run typecheck",
+        "expected": "typecheck clean; agent-browser: each mode (Links/Semantic/Hybrid) yields a stable, distinct layout; switching tweens and reuses cached positions; semantic edges draw dashed; the hide-lines toggle keeps the pull; frame budget acceptable at full vault (~4k nodes)."
+      },
+      "state": "not_started",
+      "depends_on": [
+        "F031"
+      ],
+      "files_touched": [
+        "web/index.html",
+        "web/src/main.ts",
+        "web/src/style.css",
+        "server/app.ts"
+      ],
+      "confidence": "needs-review",
+      "context_note": "Default = Links (don't surprise on first load — decided §4). 'Drawn != simulated': semantic edges always dashed even when only their pull is used; a toggle hides lines but keeps physics. Cache positions per arrangement + tween (reuse the warmup-then-freeze pattern). Perf: +10-15k edges at 4k nodes -> server precompute + freeze; Hybrid is heaviest, measure. Follow the existing View-menu control + localStorage pattern.",
+      "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#2",
+      "evidence": null,
+      "implemented_by": null,
+      "implemented_at": null,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F033",
+      "priority": 33,
+      "category": "Semantic Layer",
+      "behavior": "Semantic grouping/color: a `group by: semantic cluster` option that runs community detection (e.g. label propagation) on the Phase-1 mutual-KNN graph. Coloring works under ANY arrangement (color axis is orthogonal to layout axis). Optional cluster labels via one LLM pass (name each community from its top terms), behind OpenRouter and optional.",
+      "verification": {
+        "command": "npm run typecheck",
+        "expected": "typecheck clean; agent-browser: 'semantic cluster' appears in group-by; clusters are stable across reloads (seeded/deterministic); coloring is independent of the chosen arrangement (works under Links/Semantic/Hybrid)."
+      },
+      "state": "not_started",
+      "depends_on": [
+        "F031"
+      ],
+      "files_touched": [
+        "web/index.html",
+        "web/src/main.ts",
+        "server/app.ts"
+      ],
+      "confidence": "autonomous",
+      "context_note": "Color axis is ORTHOGONAL to layout (Phase 2): semantic-cluster coloring must work under any arrangement. Seed label propagation on the Phase-1 mutual-KNN graph so clusters are stable across reloads. LLM cluster labels are OPTIONAL and behind OpenRouter (no egress without a key). Follow the existing `group by` (folder/tag) pattern.",
+      "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#3",
+      "evidence": null,
+      "implemented_by": null,
+      "implemented_at": null,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F034",
+      "priority": 34,
+      "category": "Semantic Layer",
+      "behavior": "Orphan link suggestions: upgrade /api/gaps so each orphan/sparse node surfaces its top semantic neighbor(s) as 'link these?'. PREVIEW-THEN-CONFIRM one-click insert appends a [[wiki]] link ONLY through server/integrations/write.ts (journaled to data/changes.jsonl). Never auto-writes. Bounded to orphans (no batch cost); works even without Phase 1 by using live vsearch.",
+      "verification": {
+        "command": "npm test",
+        "expected": "gaps-suggest test: a suggestion resolves to a real in-vault node; insertion goes ONLY through the guarded writer (write.ts) and is journaled; an unconfirmed suggestion writes nothing; the path-traversal + write guards stay green."
+      },
+      "state": "not_started",
+      "depends_on": [],
+      "files_touched": [
+        "server/app.ts",
+        "server/integrations/topology.ts",
+        "web/src/main.ts",
+        "server/integrations/write.test.ts"
+      ],
+      "confidence": "needs-review",
+      "context_note": "PREVIEW-THEN-CONFIRM, never auto-write (decided — it mutates the vault). Insertion MUST go through server/integrations/write.ts (the SINGLE sanctioned write path) — never add a second writer (AGENTS.md). Journaled to data/changes.jsonl. Works without Phase 1 (live vsearch), so depends_on is empty. Keep the path-traversal + consent tests green (release-blocking).",
+      "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#4",
+      "evidence": null,
+      "implemented_by": null,
+      "implemented_at": null,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F035",
+      "priority": 35,
+      "category": "Semantic Layer",
+      "behavior": "Passage-level reader: on a SEMANTIC hit, scroll to and highlight the matched chunk in the reader instead of opening the note at the top, using content_vectors.pos (char offset) or the `@@ -n,n @@` line range already in vsearch snippets. Normal (node-click) opens are unchanged.",
+      "verification": {
+        "command": "npm run typecheck",
+        "expected": "typecheck clean; agent-browser: opening a semantic hit lands on / highlights the relevant passage in the reader; a normal node-click open still starts at the top (unchanged)."
+      },
+      "state": "not_started",
+      "depends_on": [
+        "F030"
+      ],
+      "files_touched": [
+        "web/src/main.ts",
+        "server/integrations/qmd.ts"
+      ],
+      "confidence": "autonomous",
+      "context_note": "Only for SEMANTIC hits; normal opens must stay unchanged. Use content_vectors.pos (char offset) or the vsearch `@@ -n,n @@` line range. Keep openReader's DOMPurify sanitize intact when injecting the highlight.",
+      "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#5",
+      "evidence": null,
+      "implemented_by": null,
+      "implemented_at": null,
+      "verified_by": null,
+      "verified_at": null
     }
   ]
 }

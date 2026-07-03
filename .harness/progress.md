@@ -125,3 +125,34 @@ currentColor (renders white, matches sibling icons). Bug fix: #reopen-content
 
 **Gates:** npm run typecheck clean, npm test 134/134, agent-browser EN<->ES
 swap+persist verified, ES key audit missingKeys=[]. Verified live in dev.
+
+## Session 2026-07-03 (evening): topbar/panels + embed removal; queued semantic layer
+
+**Shipped (commit 0f35c65):**
+- Topbar redesign: brand+menu grouped (#nav-group) centering together when the left
+  panel docks; search stacks below the menu on collision only; menu z-index above the
+  search; Help items -> File menu (Help menu removed); flag centered + label-sized
+  hover bg.
+- Content/research panel fixes: #reopen-content docks the reader LEFT (not hide);
+  setReaderCtxLeft() suppresses the transition on a hidden reader (was sliding across
+  the screen when ctx-left flipped via open/closeResearch); removed the redundant
+  research follow-up input.
+- Embed model REMOVED (Qwen + selector): qmd ignores QMD_EMBED_MODEL (reads
+  models.embed from ~/.config/qmd/index.yml). Dropped config.embedModel, env passing,
+  i18n, tests. Re-embed (qmd embed -f) button kept. F024-F026 evidence noted as reverted.
+- Loading graphic/text resized; Tools order = Ingestion/Semantics/Web Research/LLM.
+
+**Tracking cleanup:** F022 (embedded terminal, OpenCode-era) active -> passing
+(removed by design). F024-F026 kept passing with a REVERTED note.
+
+**QUEUED — the core semantic layer (nothing built yet), self-contained in
+features.json F030-F035 + plan #0.3/#1-5:**
+- F030 (0.3) qmd-vectors.ts read-only sqlite-vec reader — GATES F031-F033, F035.
+- F031 (Phase 1) mutual-KNN edges -> data/semantic.json (dep F030).
+- F032 (Phase 2) arrangement Links/Semantic/Hybrid, Links default (dep F031).
+- F033 (Phase 3) semantic-cluster color, orthogonal to layout (dep F031).
+- F034 (Phase 4) orphan link suggestions, preview-then-confirm via write.ts (no dep).
+- F035 (Phase 5) passage-level reader (dep F030).
+
+**RESUME POINT: F030 (vector reader).** Full detail: plan "Status & resume point" +
+features.json. typecheck clean, 132 tests green at session end.

@@ -21,37 +21,54 @@ prep work that makes both cheap to build and to extend.
 Strategic fit: QMD is 100% local, no egress. Everything here keeps Solaris's
 "the core uploads nothing" promise intact (unlike the Exa/OpenRouter paths).
 
-## Status & resume point (updated 2026-07-03)
+## Status & resume point (updated 2026-07-03 evening)
 
-**Shipped to `main`** (commits `5e2370d` → `7af8ad1`, then i18n follows):
-- **Phase M — QMD index maintenance (A+B)**: Tools → Semantics `update` / `embed`
-  / `re-embed` buttons + progress bar (driven by polling `qmd status`); auto-
-  refresh on rescan. Code in `server/integrations/qmd-maintenance.ts`
-  (`createQmdMaintenance`, `parseQmdStatus`, `qmdIndexStatus`); endpoints
-  `GET/POST /api/qmd/maintenance` (POST token-guarded).
-- **Phase 0.4 — multilingual embedding model** (F024–F026): selectable qmd embed
-  model in Tools → Semantics. Config field `embedModel` (`config.ts`,
-  `~/.solaris/config.json`, `null` = default). `Runner` gained an optional `env`
-  param (`detect.ts`); the embed spawn carries `QMD_EMBED_MODEL` + `-f` on force.
-- Large UX pile: external-link `.ext-icon`, panel slide + floating-fade (phantom
-  fix), Tools reorg (Ingestion → Web Research → Semantics → LLM Provider), honest
-  weight-based model labels, OpenRouter dedupe + key/credit links + out-of-credits,
-  moved Copy-link/Open-in-Obsidian to File menu, button centering.
+**Shipped to `main`** (latest commit `0f35c65`):
+- **Phase M — qmd index maintenance (A+B)**: Tools → Semantics `update`/`embed`/
+  `re-embed` buttons + progress bar. `server/integrations/qmd-maintenance.ts`
+  (`createQmdMaintenance`/`parseQmdStatus`/`qmdIndexStatus`); `GET/POST
+  /api/qmd/maintenance` (POST token-guarded).
+- **Phase 0.1 — i18n EN/ES** (F027–F028): `web/src/i18n.ts` (`t`/`getLang`/`setLang`/
+  `hydrate`, EN+ES dicts, `akasha-lang`). Language menu (last, COUNTRY FLAGS 🇬🇧/🇪🇸).
+  Menubar + Tools + settings + search + loading + reader/research chrome tagged and
+  translated; dynamic strings routed through `t()`.
+- **Phase 0.2 — `DESIGN.md`** (F029) at repo root.
+- **Phase 6 — content language follows the note** (bundled in F028): note-questions
+  prompt (`server/app.ts`) asks to reply in the note's language.
+- **Phase 0.4 — multilingual embed model (F024–F026): SHIPPED then REVERTED
+  2026-07-03.** Removed the Qwen option + embedding-model selector + `config.embedModel`
+  + `QMD_EMBED_MODEL` passing. **Root cause: qmd IGNORES `QMD_EMBED_MODEL`** and reads
+  `models.embed` from `~/.config/qmd/index.yml` (embeddinggemma, 768-dim) — proven by
+  running `qmd embed` with a bogus model (used gemma anyway). The switch was inert. The
+  `re-embed` (`qmd embed -f`) button remains. See the revised decision below.
+- **Topbar redesign + panel fixes** (ad-hoc today, not in the original plan): brand+menu
+  grouped as one unit that centers on screen when the left panel docks; search drops to
+  a centered 2nd row only on collision; menu above the search layer; Help items moved
+  into File (Help menu removed); `#reopen-content` docks the reader LEFT (not hide);
+  `setReaderCtxLeft()` suppresses the transition on a hidden reader so it no longer
+  slides across the screen; removed the redundant research follow-up input; loading
+  graphic resized; Tools order = Ingestion / Semantics / Web Research / LLM Provider.
 
-**RESUME HERE → Phase 0.1 (i18n) is IN PROGRESS — nothing built yet.** Tracked as
-F027–F029 in `.harness/features.json`. Order: 0.1 i18n foundation + language
-toggle → translate menubar/chrome (ES) → 0.2 `DESIGN.md`. Then 0.3 vector reader
-→ Phase 1 edges → 2 arrangement → 3 clusters; 4 orphans and 6 content-language are
-independent quick wins; 5 passage-jump anytime after 0.3.
+**RESUME HERE → Phase 0.3 (vector reader) is the entry point.** Nothing semantic is
+built yet. The core semantic layer is queued as **F030–F035** in
+`.harness/features.json` (all self-contained). Order (see §3 Sequencing):
+- **F030 (0.3)** `server/integrations/qmd-vectors.ts` read-only sqlite-vec reader —
+  **gates F031–F033, F035.** Dimension from schema (768 today), not hardcoded.
+- **F031 (Phase 1)** mutual-KNN semantic edge set → `data/semantic.json` (dep F030).
+- **F032 (Phase 2)** arrangement modes Links/Semantic/Hybrid, Links default (dep F031).
+- **F033 (Phase 3)** semantic-cluster grouping/color, ⟂ layout (dep F031).
+- **F034 (Phase 4)** orphan link suggestions, preview-then-confirm via `write.ts` (no dep).
+- **F035 (Phase 5)** passage-level reader (dep F030).
 
 ### Decisions locked this session (do NOT re-litigate)
-- **Embedding models: keep BOTH + custom, labeled by WEIGHT not language** (both
-  are multilingual). `EmbeddingGemma 300M · lighter` (default = `null` config) /
-  `Qwen3 0.6B · premium · heavier`
-  (`hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf`, 1024-dim) /
-  `custom…`. MMTEB 61.15 vs 64.33; Qwen3 is ~2× size + slower. Default stays
-  EmbeddingGemma (matches the current 768-dim index); switching needs a full
-  re-embed. `custom` = any HF GGUF embedding model (`hf:org/repo/file.gguf`).
+- **Embedding model: SINGLE model — EmbeddingGemma 300M (qmd's default). The Qwen
+  option + selector were REMOVED 2026-07-03.** qmd ignores `QMD_EMBED_MODEL` and reads
+  `models.embed` from `~/.config/qmd/index.yml`, so Solaris could not switch the model
+  from the UI; the ~3-pt MMTEB gain (61 vs 64) didn't justify a 2× model, a full
+  102k-vector re-embed, and the mixed-dimension footgun. The reranker (Qwen3-Reranker-
+  0.6B, already in qmd) does the precision work. Index stays 768-dim gemma. (If a model
+  change is ever wanted: edit `~/.config/qmd/index.yml` `models.embed` + `qmd embed -f`;
+  F030's reader reads the dimension from the schema so downstream still works.)
 - **qmd maintenance = three explicit buttons**: update (BM25 reindex) / embed
   (incremental — pending chunks only) / re-embed (`qmd embed -f`, rebuild ALL,
   after a model change). No "(full)" relabel magic. Refresh-on-rescan is automatic
