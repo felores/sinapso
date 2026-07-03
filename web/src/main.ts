@@ -57,6 +57,8 @@ interface GLink {
   source: string | GNode;
   target: string | GNode;
   weight: number;
+  /** true for semantic (mutual-KNN) edges, false/absent for structural links */
+  __sem?: boolean;
 }
 
 interface Graph {
@@ -880,6 +882,7 @@ async function boot() {
       linePos[o + 5] = t.z ?? 0;
     }
     (lineGeo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+    if (semLines) updateSemanticPositions();
   }
 
   const C_BASE = new THREE.Color(T().linkBase);
@@ -901,6 +904,174 @@ async function boot() {
       lineCol[o + 2] = lineCol[o + 5] = c.b;
     }
     (lineGeo.attributes.color as THREE.BufferAttribute).needsUpdate = true;
+  }
+
+  // ---- arrangement modes (F032): links / semantic / hybrid ----
+  // The force sim runs off graph.graphData().links; three arrangements feed it
+  // three edge sets (structural links, semantic mutual-KNN edges, or both with
+  // semantic dampened). Semantic edges render in a SEPARATE dashed buffer whose
+  // visibility is independent of their physical pull, so hiding the lines keeps
+  // the arrangement. Settled positions are cached per arrangement via
+  // /api/layout?arrangement= so re-visiting one restores instead of re-simulating.
+  type Arrangement = "links" | "semantic" | "hybrid";
+  const validArr = (v: string | null): Arrangement =>
+    v === "semantic" || v === "hybrid" ? v : "links";
+  let arrangement: Arrangement = "links"; // boot always simulates structural
+  let semanticLinks: GLink[] = [];
+  let semanticReady = false;
+  let semLinesOn = localStorage.getItem("akasha-sem-lines") !== "0";
+  let semGeo: THREE.BufferGeometry | null = null;
+  let semPos: Float32Array | null = null;
+  let semLines: THREE.LineSegments | null = null;
+  const arrLayoutMem = new Map<Arrangement, Record<string, number[]>>();
+
+  function updateSemanticPositions() {
+    if (!semLines || !semPos || !semGeo) return;
+    const SL = semanticLinks.length;
+    for (let i = 0; i < SL; i++) {
+      const l = semanticLinks[i];
+      const o = i * 6;
+      const s = endNode(l.source);
+      const t = endNode(l.target);
+      semPos[o] = s.x ?? 0;
+      semPos[o + 1] = s.y ?? 0;
+      semPos[o + 2] = s.z ?? 0;
+      semPos[o + 3] = t.x ?? 0;
+      semPos[o + 4] = t.y ?? 0;
+      semPos[o + 5] = t.z ?? 0;
+    }
+    (semGeo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+    semLines.computeLineDistances(); // needed for the dashed material
+  }
+
+  function updateSemanticVisibility() {
+    if (semLines) semLines.visible = semLinesOn && arrangement !== "links";
+  }
+
+  function buildSemanticBuffer() {
+    const SL = semanticLinks.length;
+    semPos = new Float32Array(SL * 6);
+    semGeo = new THREE.BufferGeometry();
+    semGeo.setAttribute("position", new THREE.BufferAttribute(semPos, 3));
+    semLines = new THREE.LineSegments(
+      semGeo,
+      new THREE.LineDashedMaterial({
+        color: new THREE.Color(T().linkLit),
+        transparent: true,
+        opacity: 0.3,
+        dashSize: 2.5,
+        gapSize: 2.5,
+        depthWrite: false,
+      }),
+    );
+    semLines.frustumCulled = false;
+    graph.scene().add(semLines);
+    updateSemanticPositions();
+    updateSemanticVisibility();
+  }
+
+  async function fetchSemantic(): Promise<boolean> {
+    if (semanticReady) return true;
+    try {
+      const d = await (await fetch("/api/semantic")).json();
+      if (!d.available) return false;
+      semanticLinks = (
+        d.edges as Array<{ source: string; target: string; score: number }>
+      )
+        .filter((e) => byId.has(e.source) && byId.has(e.target))
+        .map((e) => ({
+          source: e.source,
+          target: e.target,
+          weight: e.score,
+          __sem: true,
+        }));
+      buildSemanticBuffer();
+      semanticReady = true;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function loadArrangementLayout(
+    mode: Arrangement,
+  ): Promise<Record<string, number[]> | null> {
+    if (arrLayoutMem.has(mode)) return arrLayoutMem.get(mode)!;
+    try {
+      const r = await fetch(`/api/layout?arrangement=${mode}`);
+      if (!r.ok) return null;
+      const d = await r.json();
+      if (d.fingerprint !== data.meta.fingerprint) return null;
+      arrLayoutMem.set(mode, d.positions);
+      return d.positions;
+    } catch {
+      return null;
+    }
+  }
+
+  const linkForce = graph.d3Force("link");
+
+  async function applyArrangement(mode: Arrangement) {
+    if (mode !== "links") {
+      const ok = await fetchSemantic();
+      if (!ok) {
+        // semantic layer unavailable: stay on links
+        arrangement = "links";
+        ($("#arrange") as HTMLSelectElement).value = "links";
+        localStorage.setItem("akasha-arrangement", "links");
+        return;
+      }
+    }
+    arrangement = mode;
+    localStorage.setItem("akasha-arrangement", mode);
+    updateSemanticVisibility();
+
+    // Active sim edge set: structural for links/hybrid, semantic for semantic/hybrid.
+    const links: GLink[] = [];
+    if (mode !== "semantic") for (const l of data.links) links.push(l);
+    if (mode !== "links") for (const l of semanticLinks) links.push(l);
+
+    // Per-link strength: d3's default (1/min degree) for structural, dampened
+    // for semantic so links stay the skeleton and semantics only fill gaps.
+    const deg = new Map<string, number>();
+    const bump = (e: string | GNode) => {
+      const id = typeof e === "object" ? e.id : e;
+      deg.set(id, (deg.get(id) ?? 0) + 1);
+    };
+    for (const l of links) {
+      bump(l.source);
+      bump(l.target);
+    }
+    if (linkForce) {
+      (
+        linkForce as unknown as { strength(fn: (l: GLink) => number): void }
+      ).strength((l: GLink) => {
+        const a = endNode(l.source).id;
+        const b = endNode(l.target).id;
+        const base =
+          1 / Math.max(1, Math.min(deg.get(a) ?? 1, deg.get(b) ?? 1));
+        return l.__sem ? base * 0.4 : base;
+      });
+    }
+
+    // Reuse cached positions (tween/quick-settle) if we have them; otherwise
+    // let the sim settle into this arrangement from the current layout, once.
+    const cached = await loadArrangementLayout(mode);
+    if (cached) {
+      for (const n of data.nodes) {
+        const p = cached[n.id];
+        if (p) {
+          n.x = p[0];
+          n.y = p[1];
+          n.z = p[2];
+        }
+      }
+      graph.warmupTicks(0).cooldownTicks(60);
+    } else {
+      graph.warmupTicks(60).cooldownTicks(220);
+    }
+    layoutSaved = false; // let onEngineStop persist this arrangement
+    graph.graphData({ nodes: data.nodes, links });
   }
 
   graph.onEngineTick(updateLinkPositions);
@@ -939,10 +1110,15 @@ async function boot() {
         Math.round((n.z ?? 0) * 10) / 10,
       ];
     }
+    arrLayoutMem.set(arrangement, positions);
     fetch("/api/layout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fingerprint: data.meta.fingerprint, positions }),
+      body: JSON.stringify({
+        arrangement,
+        fingerprint: data.meta.fingerprint,
+        positions,
+      }),
     }).catch(() => {});
   }
 
@@ -1883,6 +2059,34 @@ async function boot() {
     buildLegend();
     repaint();
   });
+
+  // --- arrangement mode (links / semantic / hybrid) ---
+  const arrangementPref = validArr(localStorage.getItem("akasha-arrangement"));
+  const arrSel = $("#arrange") as HTMLSelectElement;
+  arrSel.value = arrangementPref;
+  arrSel.addEventListener("change", (e) => {
+    const mode = validArr((e.target as HTMLSelectElement).value);
+    arrSel.disabled = true;
+    applyArrangement(mode).finally(() => {
+      arrSel.disabled = false;
+    });
+  });
+  const semLinesToggle = $("#toggle-sem-lines") as HTMLInputElement;
+  semLinesToggle.checked = semLinesOn;
+  semLinesToggle.addEventListener("change", () => {
+    semLinesOn = semLinesToggle.checked;
+    localStorage.setItem("akasha-sem-lines", semLinesOn ? "1" : "0");
+    updateSemanticVisibility();
+    repaint();
+  });
+  // Apply a persisted non-default arrangement once the structural boot layout
+  // has had a chance to settle and cache (so /api/layout?arrangement=links exists).
+  if (arrangementPref !== "links") {
+    window.setTimeout(
+      () => applyArrangement(arrangementPref),
+      cachedPositions ? 400 : 2600,
+    );
+  }
 
   // --- controls ---
   ($("#toggle-phantoms") as HTMLInputElement).addEventListener(

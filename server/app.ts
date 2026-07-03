@@ -890,25 +890,35 @@ export function createApp(
     res.sendFile(graphPath, { dotfiles: "allow" });
   });
 
-  // Layout cache lives beside graph.json
-  const layoutPath = resolve(dirname(graphPath), "layout.json");
+  // Layout cache lives beside graph.json, one file per arrangement (F032):
+  // the default "links" arrangement stays layout.json for backward compat.
+  const layoutFile = (arrangement?: unknown): string => {
+    const a = String(arrangement ?? "links").replace(/[^a-z]/g, "");
+    return resolve(
+      dirname(graphPath),
+      a && a !== "links" ? `layout-${a}.json` : "layout.json",
+    );
+  };
 
-  // GET /api/layout: Retrieve cached node positions from previous session
-  // Allows hot-restart without re-running physics simulation (fast boot)
-  // Keyed by graph fingerprint; if vault changed, cache is invalidated
-  app.get("/api/layout", (_req, res) => {
-    if (!existsSync(layoutPath)) {
+  // GET /api/layout[?arrangement=]: Retrieve cached node positions for an
+  // arrangement. Keyed by graph fingerprint (checked client-side); fast boot.
+  app.get("/api/layout", (req, res) => {
+    const p = layoutFile(req.query.arrangement);
+    if (!existsSync(p)) {
       res.status(404).json({ error: "no cached layout" });
       return;
     }
-    res.sendFile(layoutPath, { dotfiles: "allow" });
+    res.sendFile(p, { dotfiles: "allow" });
   });
 
-  // POST /api/layout: Persist settled node positions for fast subsequent boots
-  // Frontend posts positions after physics simulation stabilizes
+  // POST /api/layout: Persist settled node positions for an arrangement (from
+  // the request body's `arrangement`) after the physics simulation stabilizes.
   app.post("/api/layout", express.json({ limit: "20mb" }), (req, res) => {
     try {
-      writeFileSync(layoutPath, JSON.stringify(req.body));
+      writeFileSync(
+        layoutFile(req.body?.arrangement),
+        JSON.stringify(req.body),
+      );
       res.json({ ok: true });
     } catch (e) {
       console.error("Failed to save layout:", e);
