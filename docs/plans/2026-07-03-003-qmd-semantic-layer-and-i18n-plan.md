@@ -3,7 +3,7 @@ artifact: ce-unified-plan/v1
 readiness: requirements-with-approach
 title: QMD semantic layer + interface i18n
 date: 2026-07-03
-status: draft
+status: in-progress
 ---
 
 # QMD Semantic Layer + Interface i18n — Plan
@@ -20,6 +20,74 @@ prep work that makes both cheap to build and to extend.
 
 Strategic fit: QMD is 100% local, no egress. Everything here keeps Solaris's
 "the core uploads nothing" promise intact (unlike the Exa/OpenRouter paths).
+
+## Status & resume point (updated 2026-07-03)
+
+**Shipped to `main`** (commits `5e2370d` → `7af8ad1`, then i18n follows):
+- **Phase M — QMD index maintenance (A+B)**: Tools → Semantics `update` / `embed`
+  / `re-embed` buttons + progress bar (driven by polling `qmd status`); auto-
+  refresh on rescan. Code in `server/integrations/qmd-maintenance.ts`
+  (`createQmdMaintenance`, `parseQmdStatus`, `qmdIndexStatus`); endpoints
+  `GET/POST /api/qmd/maintenance` (POST token-guarded).
+- **Phase 0.4 — multilingual embedding model** (F024–F026): selectable qmd embed
+  model in Tools → Semantics. Config field `embedModel` (`config.ts`,
+  `~/.solaris/config.json`, `null` = default). `Runner` gained an optional `env`
+  param (`detect.ts`); the embed spawn carries `QMD_EMBED_MODEL` + `-f` on force.
+- Large UX pile: external-link `.ext-icon`, panel slide + floating-fade (phantom
+  fix), Tools reorg (Ingestion → Web Research → Semantics → LLM Provider), honest
+  weight-based model labels, OpenRouter dedupe + key/credit links + out-of-credits,
+  moved Copy-link/Open-in-Obsidian to File menu, button centering.
+
+**RESUME HERE → Phase 0.1 (i18n) is IN PROGRESS — nothing built yet.** Tracked as
+F027–F029 in `.harness/features.json`. Order: 0.1 i18n foundation + language
+toggle → translate menubar/chrome (ES) → 0.2 `DESIGN.md`. Then 0.3 vector reader
+→ Phase 1 edges → 2 arrangement → 3 clusters; 4 orphans and 6 content-language are
+independent quick wins; 5 passage-jump anytime after 0.3.
+
+### Decisions locked this session (do NOT re-litigate)
+- **Embedding models: keep BOTH + custom, labeled by WEIGHT not language** (both
+  are multilingual). `EmbeddingGemma 300M · lighter` (default = `null` config) /
+  `Qwen3 0.6B · premium · heavier`
+  (`hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf`, 1024-dim) /
+  `custom…`. MMTEB 61.15 vs 64.33; Qwen3 is ~2× size + slower. Default stays
+  EmbeddingGemma (matches the current 768-dim index); switching needs a full
+  re-embed. `custom` = any HF GGUF embedding model (`hf:org/repo/file.gguf`).
+- **qmd maintenance = three explicit buttons**: update (BM25 reindex) / embed
+  (incremental — pending chunks only) / re-embed (`qmd embed -f`, rebuild ALL,
+  after a model change). No "(full)" relabel magic. Refresh-on-rescan is automatic
+  when qmd covers the vault (no checkbox); incremental embed keeps it light.
+- **Language toggle (0.1): NEUTRAL `EN`/`ES` chips, NOT country flags.** Last menu
+  after Help. Interface strings only.
+- **Content language (Phase 6) follows the NOTE, never the UI toggle** — add "reply
+  in the same language as the note" to the note-questions prompt (`app.ts` ~L721).
+- **Arrangement (Phase 2): build all three, Links = default.** Separate *drawn* vs
+  *simulated* edges; mutual-KNN + cosine ≥ ~0.5 + K≈6–8 (anti-hairball); weight
+  semantic ~0.3–0.5× links in Hybrid; cache positions per mode + animate the swap.
+  Arrangement (layout) ⟂ Grouping (color): `group by` gains a `semantic cluster`.
+- **Orphan links (Phase 4): preview-then-confirm**, real `[[wiki]]` markdown edits
+  via `write.ts` `guardedEdit` (portable to Obsidian) — never a Solaris-only overlay.
+- **Background freshness (cron/launchd): OUT of scope — Hermes owns it later.**
+- **OpenRouter: no free-model chasing** (they get pulled/break). Flash = default /
+  cheapest; show credits via free `GET /key`; warn out-of-credits; link keys +
+  add-credits (`openrouter.ai/workspaces/default/keys`, `.../settings/credits`;
+  Exa: `dashboard.exa.ai/api-keys`, `.../billing`).
+
+### i18n (0.1) implementation notes
+- `web/src/i18n.ts`: `t(key, vars?)`, `EN`/`ES` dicts, `getLang()` (localStorage
+  `akasha-lang`, default `navigator.language`, fallback EN), `setLang()`,
+  `hydrate(root?)`.
+- `hydrate` handles three attrs: `[data-i18n]` (set textContent; if the element has
+  a child element like a `.mi-hint` span, set only the leading text node so the
+  hint survives), `[data-i18n-ph]` (placeholder), `[data-i18n-title]` (tooltip).
+- Mixed items keep the hint as its own tagged span, e.g.
+  `<button id="mi-rescan" data-i18n="file.rescan">Rescan Vault <span class="mi-hint" data-i18n="hint.incremental">incremental</span></button>`.
+- Call `hydrate()` on boot and inside `setLang()`. Skip proper nouns + model slugs.
+  ES = neutral Spanish, `tú`, no em dashes (repo doc rule).
+- String surface to tag: menubar labels (File/Layers/View/Tools/Help), all File/
+  View/Help items + hints, Tools item labels (Display Filters/Settings, the
+  integration section headings), the `#search` placeholder, the `#loading` hint,
+  reader/research chrome. Dynamic strings in `main.ts` (`"searching semantically…"`,
+  research titles, modal bodies) route through `t()`.
 
 ## 1. Feasibility (verified 2026-07-03, not assumed)
 
@@ -73,8 +141,8 @@ the easy change." Ship these first; they are independently valuable.
   the skeleton, moves copy into the dictionary.
 - **Dynamic strings** in `main.ts` (`"searching semantically…"`, `"Web research"`,
   modal bodies, tooltips): route through `t()`.
-- Flag/language menu item: **last menu, after Help** (`🇺🇸 / 🇨🇴`), click toggles
-  lang, re-hydrates, persists. Interface-only.
+- Language menu item: **last menu, after Help**, **neutral `EN` / `ES` chips (NOT
+  country flags)**, click toggles lang, re-hydrates, persists. Interface-only.
 - **Scope discipline (ponytail):** extract strings into the dictionary; do NOT
   rewrite `main.ts` structure wholesale. String centralization is the win.
 - Verify: switching lang swaps all tagged UI; no key misses (a dev assertion logs
@@ -110,14 +178,13 @@ so `harness-preview`/DesignSync can consume it:
 - Verify: unit test against a tiny fixture index (KNN returns expected neighbors;
   dimension mismatch → disabled, not thrown).
 
-### 0.4 Multilingual embedding option
+### 0.4 Multilingual embedding option — SHIPPED 2026-07-03 (F024–F026)
 
-- During QMD setup, allow `QMD_EMBED_MODEL=Qwen3-Embedding-0.6B` for materially
-  better Spanish recall on this bilingual vault; re-`embed`.
-- Because 0.3 is dimension-agnostic, this "just works" downstream.
-- Trade-off: larger model, slower embed, 1024-dim vectors (more disk). Opt-in.
-- Verify: after re-embed, a known Spanish query returns Spanish neighbors it
-  previously missed.
+- Selectable embed model in Tools → Semantics (default `null` / Qwen3 / custom);
+  `config.embedModel` + `QMD_EMBED_MODEL` on the embed spawn (+ `-f` on the
+  `re-embed` button). The heavy re-embed is user-run (deliberately not auto-run).
+- Because a future 0.3 reads the dimension from the schema, a model switch (768→
+  1024) "just works" downstream.
 
 ---
 

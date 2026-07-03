@@ -736,6 +736,78 @@
       "implemented_at": "2026-07-03T11:12:00Z",
       "verified_by": "npm run typecheck + agent-browser live check",
       "verified_at": "2026-07-03T11:12:00Z"
+    },
+    {
+      "id": "F027",
+      "priority": 27,
+      "category": "i18n",
+      "behavior": "web/src/i18n.ts provides t(key,vars?), EN+ES dictionaries, getLang()/setLang() (localStorage akasha-lang, default navigator.language, fallback EN), and hydrate(root?) for [data-i18n] (leading text node only when the element has child elements like a .mi-hint span), [data-i18n-ph] (placeholder) and [data-i18n-title] (tooltip). A language menu is the LAST menubar item after Help with neutral EN/ES chips (no country flags); toggling re-hydrates and persists. main.ts calls hydrate() on boot and on setLang().",
+      "verification": {
+        "command": "npm run typecheck",
+        "expected": "typecheck clean; agent-browser: toggling EN<->ES swaps tagged strings and persists across reload"
+      },
+      "state": "not_started",
+      "depends_on": [],
+      "files_touched": [
+        "web/src/i18n.ts",
+        "web/index.html",
+        "web/src/main.ts",
+        "web/src/style.css"
+      ],
+      "confidence": "autonomous",
+      "context_note": "Neutral EN/ES chips NOT country flags (decided). hydrate must preserve .mi-hint child spans (tag them separately). Mirror the existing .menu/.dropdown markup for the language menu. See docs/plans/...#i18n (0.1) implementation notes.",
+      "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#0.1",
+      "evidence": null,
+      "implemented_by": null,
+      "implemented_at": null,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F028",
+      "priority": 28,
+      "category": "i18n",
+      "behavior": "Menubar + core chrome are tagged with data-i18n and fully translated to neutral Spanish: menu labels (File/Layers/View/Tools/Help), all File/View/Help items + mi-hints, Tools item labels (Display Filters/Settings + integration section headings), the #search placeholder, the #loading hint, and reader/research chrome. Dynamic strings in main.ts route through t(). Proper nouns + model slugs are left untranslated.",
+      "verification": {
+        "command": "npm run typecheck",
+        "expected": "agent-browser: switching to ES translates the visible menu system + chrome; no untranslated-key regressions on the tagged surface"
+      },
+      "state": "not_started",
+      "depends_on": ["F027"],
+      "files_touched": [
+        "web/index.html",
+        "web/src/i18n.ts",
+        "web/src/main.ts"
+      ],
+      "confidence": "autonomous",
+      "context_note": "ES = neutral Spanish, tu (not vos), NO em dashes (repo rule). Bundle Phase 6 (content-language) opportunistically: add 'reply in the note's language' to the note-questions prompt in app.ts (~L721).",
+      "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#0.1",
+      "evidence": null,
+      "implemented_by": null,
+      "implemented_at": null,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F029",
+      "priority": 29,
+      "category": "Docs",
+      "behavior": "DESIGN.md at repo root captures the design system so visual work needs no archaeology: THEMES CSS-variable model + --accent; panel anatomy (flush header divider, 18px inset, 45px header row, 25px .reader-icon, .reader-actions-right, dock/float geometry engine); z-index ladder (graph<panels 20<floating 5<chrome<menus 50<modal 100); CSS gotchas (.dropdown button is display:flex so center via justify-content not text-align; .mi-group button:not(.checked) forces padding-left:26px so scope over it); .ext-icon external-link convention; interaction conventions (mode exclusivity, search-first, web consent gate, keyboard map a/d + r/g/l/u/o + Ctrl±).",
+      "verification": {
+        "command": "test -f DESIGN.md",
+        "expected": "DESIGN.md exists at repo root; a contributor can restyle a panel from it alone"
+      },
+      "state": "not_started",
+      "depends_on": [],
+      "files_touched": ["DESIGN.md"],
+      "confidence": "autonomous",
+      "context_note": "Read the current web/src/style.css to ground the values (don't invent). Root DESIGN.md is a recognized harness file (harness-preview/DesignSync consume it).",
+      "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#0.2",
+      "evidence": null,
+      "implemented_by": null,
+      "implemented_at": null,
+      "verified_by": null,
+      "verified_at": null
     }
   ]
 }

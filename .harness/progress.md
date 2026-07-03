@@ -82,3 +82,14 @@ Model wiring: QMD_EMBED_MODEL = hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embeddin
 
 **Gates:** 134 tests + typecheck + build green.
 **Passing (this run):** 3/3 (F024-F026).
+
+## Session 2026-07-03 (late): Phase 0.4 shipped, i18n queued for resume
+
+**Shipped:** F024-F026 (multilingual embed model) + Phase M maintenance + big UX
+pile. Commits through 7af8ad1. qmd.ts split into qmd-maintenance.ts.
+
+**RESUME POINT:** Phase 0.1 (i18n) is next, NOTHING built yet. Queued as F027
+(i18n foundation + EN/ES toggle), F028 (tag + translate menubar/chrome), F029
+(DESIGN.md). Full self-contained detail + all locked decisions are in
+docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md → "Status & resume
+point". Language chips are NEUTRAL EN/ES (not country flags).
