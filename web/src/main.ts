@@ -2680,7 +2680,7 @@ async function boot() {
       fill.style.width = "0";
       const dirtyHint =
         localStorage.getItem("akasha-qmd-model-dirty") === "1"
-          ? " · model changed — run a full re-embed"
+          ? " · model changed — click Re-embed"
           : "";
       $("#qmd-maint-status").textContent = m.error
         ? `error: ${m.error}`
@@ -2707,26 +2707,19 @@ async function boot() {
         "could not start — check the server log";
     }
   }
-  // A model switch needs a full (-f) re-embed; a dirty flag drives that until
-  // the forced re-embed runs.
-  const modelDirty = () =>
-    localStorage.getItem("akasha-qmd-model-dirty") === "1";
-  function updateEmbedBtnLabel() {
-    ($("#qmd-embed") as HTMLButtonElement).textContent = modelDirty()
-      ? "re-embed (full)"
-      : "re-embed";
-  }
+  // Three explicit jobs. A model switch needs the full re-embed; a dirty flag
+  // only drives the status hint (which button to click), set on model change
+  // and cleared when the full re-embed runs.
   function markModelDirty() {
     localStorage.setItem("akasha-qmd-model-dirty", "1");
-    updateEmbedBtnLabel();
   }
-  updateEmbedBtnLabel();
+  // update: re-index changed notes (BM25). embed: new/changed chunks only.
+  // re-embed: rebuild ALL embeddings (qmd embed -f) — after a model change.
   $("#qmd-update").addEventListener("click", () => startMaint(true, false));
-  $("#qmd-embed").addEventListener("click", () => {
-    const dirty = modelDirty();
-    if (dirty) localStorage.removeItem("akasha-qmd-model-dirty");
-    updateEmbedBtnLabel();
-    void startMaint(false, true, dirty);
+  $("#qmd-embed").addEventListener("click", () => startMaint(false, true));
+  $("#qmd-re-embed").addEventListener("click", () => {
+    localStorage.removeItem("akasha-qmd-model-dirty");
+    void startMaint(false, true, true);
   });
   const embedSelect = $("#embed-model-select") as HTMLSelectElement;
   const embedCustom = $("#embed-model-custom") as HTMLInputElement;
