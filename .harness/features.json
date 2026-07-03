@@ -1,7 +1,7 @@
 {
   "project": "solaris-optional-integrations",
   "created": "2026-07-02T04:37:20Z",
-  "updated": "2026-07-03T21:49:38Z",
+  "updated": "2026-07-03T21:54:41Z",
   "features": [
     {
       "id": "F001",
@@ -906,7 +906,7 @@
         "command": "npm run typecheck",
         "expected": "typecheck clean; agent-browser: 'semantic cluster' appears in group-by; clusters are stable across reloads (seeded/deterministic); coloring is independent of the chosen arrangement (works under Links/Semantic/Hybrid)."
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": [
         "F031"
       ],
@@ -918,11 +918,11 @@
       "confidence": "autonomous",
       "context_note": "Color axis is ORTHOGONAL to layout (Phase 2): semantic-cluster coloring must work under any arrangement. Seed label propagation on the Phase-1 mutual-KNN graph so clusters are stable across reloads. LLM cluster labels are OPTIONAL and behind OpenRouter (no egress without a key). Follow the existing `group by` (folder/tag) pattern.",
       "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#3",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "typecheck clean. agent-browser: 'semantic cluster' added to group-by; selecting it recolors nodes by deterministic label propagation over the F031 mutual-KNN edges (seeded per-node label + fixed order + lexicographic tie-break, no randomness). Clusters IDENTICAL across a full page reload (same legend signature: #agencia29/#dev25/#podcast20/... other1235/unclustered2494). Coloring is orthogonal to layout: verified under both Links and Hybrid arrangements. Cluster names derive from top tag/pillar (free heuristic); LLM labeling left as the optional future enhancement per spec.",
+      "implemented_by": "claude-opus-4-8",
+      "implemented_at": "2026-07-03T21:54:41Z",
+      "verified_by": "npm run typecheck + agent-browser",
+      "verified_at": "2026-07-03T21:54:41Z"
     },
     {
       "id": "F034",

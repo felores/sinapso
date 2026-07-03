@@ -474,14 +474,18 @@ async function boot() {
   // ===== GROUPING: COLOR BY PILLAR (FOLDER) OR BY FIRST #TAG =====
   // Allows both structural (folder-based) and semantic (tag-based) coloring
   // User picks a grouping mode (persisted); group colors are customizable and persisted
+  type GroupMode = "folder" | "tag" | "cluster";
   let groupMode = (new URLSearchParams(window.location.search).get("group") ||
     localStorage.getItem("akasha-group") ||
-    "folder") as "folder" | "tag";
-  if (groupMode !== "tag") groupMode = "folder";
+    "folder") as GroupMode;
+  if (!["folder", "tag", "cluster"].includes(groupMode)) groupMode = "folder";
   let groups: string[] = [];
   let groupCounts = new Map<string, number>();
   const groupOfId = new Map<string, string>();
   const groupOf = (n: GNode) => groupOfId.get(n.id) ?? "other";
+  // semantic-cluster labels (F033): node id -> friendly cluster name. Filled by
+  // computeSemanticClusters() once the mutual-KNN edges (F031) are loaded.
+  const clusterNameOfId = new Map<string, string>();
 
   function computeGroups() {
     groupOfId.clear();
@@ -490,7 +494,9 @@ async function boot() {
         ? "Unwritten"
         : groupMode === "folder"
           ? n.pillar
-          : (n.tags?.[0] ?? "untagged");
+          : groupMode === "tag"
+            ? (n.tags?.[0] ?? "untagged")
+            : (clusterNameOfId.get(n.id) ?? "unclustered");
     const rawCounts = new Map<string, number>();
     for (const n of data.nodes) {
       const g = raw(n);
@@ -991,6 +997,92 @@ async function boot() {
     } catch {
       return false;
     }
+  }
+
+  // Deterministic label propagation over the mutual-KNN edges (F033): each node
+  // seeds as its own label, then a FIXED node order + lexicographic tie-break
+  // make the clusters stable across reloads with no randomness. The color axis
+  // is orthogonal to the layout axis, so this works under any arrangement.
+  // Each cluster is named by its most common tag (fallback pillar), deduped.
+  function computeSemanticClusters() {
+    clusterNameOfId.clear();
+    if (!semanticLinks.length) return;
+    const adj = new Map<string, Array<[string, number]>>();
+    const link = (a: string, b: string, w: number) => {
+      (adj.get(a) ?? adj.set(a, []).get(a)!).push([b, w]);
+    };
+    for (const l of semanticLinks) {
+      const a = endNode(l.source).id;
+      const b = endNode(l.target).id;
+      link(a, b, l.weight);
+      link(b, a, l.weight);
+    }
+    const nodes = [...adj.keys()].sort();
+    const label = new Map<string, string>();
+    for (const id of nodes) label.set(id, id);
+    for (let iter = 0; iter < 20; iter++) {
+      let changed = false;
+      for (const id of nodes) {
+        const counts = new Map<string, number>();
+        for (const [nb, w] of adj.get(id)!) {
+          const lab = label.get(nb)!;
+          counts.set(lab, (counts.get(lab) ?? 0) + w);
+        }
+        let best = label.get(id)!;
+        let bestW = -1;
+        for (const [lab, w] of counts) {
+          if (w > bestW || (w === bestW && lab < best)) {
+            best = lab;
+            bestW = w;
+          }
+        }
+        if (best !== label.get(id)) {
+          label.set(id, best);
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    // Group members by label and name each cluster deterministically.
+    const members = new Map<string, string[]>();
+    for (const [id, lab] of label) {
+      (members.get(lab) ?? members.set(lab, []).get(lab)!).push(id);
+    }
+    const ordered = [...members.entries()].sort(
+      (a, b) => b[1].length - a[1].length || (a[0] < b[0] ? -1 : 1),
+    );
+    const used = new Map<string, number>();
+    const nameOfLabel = new Map<string, string>();
+    for (const [lab, ids] of ordered) {
+      const tally = new Map<string, number>();
+      for (const id of ids)
+        for (const t of byId.get(id)?.tags ?? [])
+          tally.set(t, (tally.get(t) ?? 0) + 1);
+      let name: string;
+      if (tally.size) {
+        name =
+          "#" +
+          [...tally.entries()].sort(
+            (a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1),
+          )[0][0];
+      } else {
+        const pc = new Map<string, number>();
+        for (const id of ids) {
+          const p = byId.get(id)?.pillar;
+          if (p) pc.set(p, (pc.get(p) ?? 0) + 1);
+        }
+        name = pc.size
+          ? [...pc.entries()].sort(
+              (a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1),
+            )[0][0]
+          : "cluster";
+      }
+      const k = (used.get(name) ?? 0) + 1;
+      used.set(name, k);
+      nameOfLabel.set(lab, k > 1 ? `${name} ${k}` : name);
+    }
+    for (const [id, lab] of label)
+      clusterNameOfId.set(id, nameOfLabel.get(lab)!);
   }
 
   async function loadArrangementLayout(
@@ -2042,8 +2134,20 @@ async function boot() {
 
   // --- group-by mode (folder structure vs #tags) ---
   ($("#group") as HTMLSelectElement).value = groupMode;
-  ($("#group") as HTMLSelectElement).addEventListener("change", (e) => {
-    groupMode = (e.target as HTMLSelectElement).value as "folder" | "tag";
+  ($("#group") as HTMLSelectElement).addEventListener("change", async (e) => {
+    const sel = e.target as HTMLSelectElement;
+    const mode = sel.value as GroupMode;
+    if (mode === "cluster") {
+      sel.disabled = true;
+      const ok = await fetchSemantic();
+      sel.disabled = false;
+      if (!ok) {
+        sel.value = groupMode; // semantic unavailable: keep current grouping
+        return;
+      }
+      computeSemanticClusters();
+    }
+    groupMode = mode;
     localStorage.setItem("akasha-group", groupMode);
     for (const k of Object.keys(pillarOn)) delete pillarOn[k]; // all visible again
     computeGroups();
@@ -2085,6 +2189,22 @@ async function boot() {
     window.setTimeout(
       () => applyArrangement(arrangementPref),
       cachedPositions ? 400 : 2600,
+    );
+  }
+  // If semantic-cluster grouping was persisted, compute it once the edges load.
+  if (groupMode === "cluster") {
+    window.setTimeout(
+      async () => {
+        if (await fetchSemantic()) {
+          computeSemanticClusters();
+          computeGroups();
+          recomputeColors();
+          buildLegend();
+          refreshVisibility();
+          repaint();
+        }
+      },
+      cachedPositions ? 500 : 2700,
     );
   }
 
