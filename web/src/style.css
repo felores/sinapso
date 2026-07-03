@@ -448,7 +448,41 @@ body > :not(#graph) {
   padding: 2px 6px;
   margin-left: auto;
 }
-.dropdown label.ctl input[type="checkbox"] { accent-color: var(--accent); }
+/* View-menu toggles: a compact pill switch (label left, switch right) in place
+   of the native checkbox. Still a real <input type=checkbox>, so the JS and the
+   G/L/O/U keyboard shortcuts keep flipping it unchanged. */
+.dropdown label.ctl input[type="checkbox"] {
+  order: 2;
+  margin-left: auto;
+  flex: 0 0 auto;
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 28px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--border);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.dropdown label.ctl input[type="checkbox"]::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--fg);
+  transition: transform 0.15s ease;
+}
+.dropdown label.ctl input[type="checkbox"]:checked {
+  background: var(--accent);
+}
+.dropdown label.ctl input[type="checkbox"]:checked::before {
+  transform: translateX(12px);
+  background: #fff;
+}
 
 /* ---------- display settings panel ---------- */
 #settings {
