@@ -182,3 +182,41 @@ export function guardedEdit(
   });
   return { id };
 }
+
+export interface AppendLinkOptions {
+  /** Vault-relative id of the note to append the link to. */
+  id: string;
+  /** Wikilink target (a note basename); brackets are stripped if present. */
+  target: string;
+  actor: ChangeLogEntry["actor"];
+}
+
+/**
+ * Append a `[[target]]` wikilink to an existing note (F034 orphan linker).
+ * Same confinement + journal as guardedEdit — this is NOT a second write path,
+ * just an append helper inside the single sanctioned writer. Idempotent: a note
+ * that already links to the target is left unchanged.
+ */
+export function guardedAppendLink(
+  deps: WriteDeps,
+  opts: AppendLinkOptions,
+): { id: string; added: boolean } {
+  requireVault(deps.vaultRoot);
+  const full = confine(deps.vaultRoot, opts.id);
+  if (!existsSync(full)) throw new WriteError(404, "note not found");
+  const target = opts.target.replace(/[[\]]/g, "").trim();
+  if (!target) throw new WriteError(400, "empty link target");
+  const id = relative(resolve(deps.vaultRoot), full);
+  const current = readFileSync(full, "utf-8");
+  const wikilink = `[[${target}]]`;
+  if (current.includes(wikilink)) return { id, added: false };
+  const gap = current.length === 0 || current.endsWith("\n") ? "" : "\n";
+  writeFileSync(full, `${current}${gap}\n${wikilink}\n`);
+  appendChangeLog(deps.dataDir, {
+    at: new Date().toISOString(),
+    actor: opts.actor,
+    action: "edit",
+    path: id,
+  });
+  return { id, added: true };
+}

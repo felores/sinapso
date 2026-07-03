@@ -13,7 +13,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../app";
 import { TOKEN_HEADER } from "./security";
-import { guardedCreate, readChangeLog, WriteError } from "./write";
+import {
+  guardedAppendLink,
+  guardedCreate,
+  readChangeLog,
+  WriteError,
+} from "./write";
 
 // Vault and data dir are separate so the vault can be destroyed in the
 // missing-vault scenario without losing the graph file.
@@ -204,5 +209,92 @@ describe("write module edge cases", () => {
     expect(res.body.id.startsWith("inbox/")).toBe(true);
     expect(res.body.id).not.toContain("*");
     expect(res.body.id.split("/").length).toBe(2); // no extra path segments
+  });
+});
+
+describe("guardedAppendLink (F034 orphan linker)", () => {
+  it("appends a [[wikilink]] to an existing note and journals it", () => {
+    writeFileSync(join(VAULT, "orphan.md"), "# Orphan\nsome body\n");
+    const before = readChangeLog(DATA).length;
+    const r = guardedAppendLink(
+      { vaultRoot: VAULT, dataDir: DATA },
+      { id: "orphan.md", target: "Related Note", actor: "user" },
+    );
+    expect(r).toEqual({ id: "orphan.md", added: true });
+    const content = readFileSync(join(VAULT, "orphan.md"), "utf-8");
+    expect(content).toContain("[[Related Note]]");
+    expect(content.startsWith("# Orphan\nsome body")).toBe(true); // original kept
+    const log = readChangeLog(DATA);
+    expect(log.length).toBe(before + 1);
+    expect(log.at(-1)).toMatchObject({ action: "edit", path: "orphan.md" });
+  });
+
+  it("is idempotent: re-linking the same target writes nothing new", () => {
+    const before = readChangeLog(DATA).length;
+    const r = guardedAppendLink(
+      { vaultRoot: VAULT, dataDir: DATA },
+      { id: "orphan.md", target: "[[Related Note]]", actor: "user" },
+    );
+    expect(r.added).toBe(false);
+    const content = readFileSync(join(VAULT, "orphan.md"), "utf-8");
+    expect(content.split("[[Related Note]]").length - 1).toBe(1); // no dup
+    expect(readChangeLog(DATA).length).toBe(before); // no new journal entry
+  });
+
+  it("404s on a missing note (never creates it)", () => {
+    expect(() =>
+      guardedAppendLink(
+        { vaultRoot: VAULT, dataDir: DATA },
+        { id: "nope/missing.md", target: "X", actor: "user" },
+      ),
+    ).toThrowError(
+      expect.objectContaining({ status: 404 }) as unknown as WriteError,
+    );
+    expect(existsSync(join(VAULT, "nope", "missing.md"))).toBe(false);
+  });
+
+  it("applies the same confinement guard (rejects traversal)", () => {
+    expect(() =>
+      guardedAppendLink(
+        { vaultRoot: VAULT, dataDir: DATA },
+        { id: "../escape.md", target: "X", actor: "user" },
+      ),
+    ).toThrowError(
+      expect.objectContaining({ status: 400 }) as unknown as WriteError,
+    );
+  });
+});
+
+describe("POST /api/gaps/link (F034)", () => {
+  it("rejects without the session token (mutating route)", async () => {
+    const res = await request(app)
+      .post("/api/gaps/link")
+      .send({ id: "existing.md", target: "X" });
+    expect(res.status).toBe(403);
+  });
+
+  it("appends the link only after confirmation and journals it", async () => {
+    writeFileSync(join(VAULT, "orphan2.md"), "# Orphan2\n");
+    const res = await request(app)
+      .post("/api/gaps/link")
+      .set(TOKEN_HEADER, await token())
+      .send({ id: "orphan2.md", target: "Some Target" });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: "orphan2.md", added: true });
+    expect(readFileSync(join(VAULT, "orphan2.md"), "utf-8")).toContain(
+      "[[Some Target]]",
+    );
+    expect(readChangeLog(DATA).at(-1)).toMatchObject({
+      action: "edit",
+      path: "orphan2.md",
+    });
+  });
+
+  it("GET /api/gaps surfaces suggestions but writes nothing", async () => {
+    const before = readChangeLog(DATA).length;
+    const res = await request(app).get("/api/gaps");
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.suggestions)).toBe(true);
+    expect(readChangeLog(DATA).length).toBe(before); // read-only: no vault write
   });
 });

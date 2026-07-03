@@ -1870,9 +1870,11 @@ async function boot() {
       }
       // Fixed-order footer: related notes (async) above research questions.
       const relatedSlot = document.createElement("div");
+      const orphanSlot = document.createElement("div");
       const questionsSlot = document.createElement("div");
-      body.append(relatedSlot, questionsSlot);
+      body.append(relatedSlot, orphanSlot, questionsSlot);
       void appendRelated(n, relatedSlot);
+      void appendOrphanLink(n, orphanSlot);
       appendNoteQuestions(n, questionsSlot);
       // A fresh open (not history nav) is logged server-side; sync the reader
       // history so the panel's prev/next and the corner button reflect it.
@@ -3857,6 +3859,69 @@ async function boot() {
       return;
     }
     void runWebQuery(query);
+  }
+
+  // Orphan link suggestion (F034): for a note with no links in or out, offer
+  // its top semantic neighbor as a one-click [[wiki]] link. PREVIEW-THEN-CONFIRM
+  // — nothing is written until the user clicks; the insert goes through the
+  // guarded writer (POST /api/gaps/link -> write.ts) and is journaled.
+  async function appendOrphanLink(n: GNode, slot: HTMLElement) {
+    if (n.phantom || n.in + n.out > 0) return; // orphans only
+    if (!(await fetchSemantic())) return; // needs the semantic edges
+    let best: { id: string; score: number } | null = null;
+    for (const l of semanticLinks) {
+      const s = endNode(l.source).id;
+      const t = endNode(l.target).id;
+      const other = s === n.id ? t : t === n.id ? s : null;
+      if (other && (!best || l.weight > best.score))
+        best = { id: other, score: l.weight };
+    }
+    if (!best) return;
+    const neighbor = byId.get(best.id);
+    if (!neighbor) return;
+    const targetBase = best.id.split("/").pop()!.replace(/\.md$/i, "");
+
+    const box = document.createElement("section");
+    box.id = "orphan-link";
+    const h = document.createElement("h3");
+    h.textContent = "Link suggestion";
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent =
+      "This note has no links. Connect it to its closest note in the vault?";
+    const preview = document.createElement("div");
+    preview.className = "gap-query";
+    preview.textContent = `[[${neighbor.title}]] · ${Math.round(best.score * 100)}% similar`;
+    const btn = document.createElement("button");
+    btn.className = "q-btn q-semantic";
+    btn.textContent = "add this link";
+    btn.title = `Append [[${targetBase}]] to this note`;
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      btn.textContent = "adding…";
+      try {
+        const res = await fetch("/api/gaps/link", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-solaris-token": await apiToken(),
+          },
+          body: JSON.stringify({ id: n.id, target: targetBase }),
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error);
+        btn.textContent = d.added
+          ? "linked ✓ — rescan to see it"
+          : "already linked";
+        btn.disabled = false;
+        btn.onclick = () => rescan(false);
+      } catch {
+        btn.disabled = false;
+        btn.textContent = "add failed — retry";
+      }
+    });
+    box.append(h, p, preview, btn);
+    slot.appendChild(box);
   }
 
   // Per-note research questions (F019): a button at the end of each note

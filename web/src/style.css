@@ -1276,17 +1276,26 @@ body > :not(#graph) {
 #reader.ctx-left:not(.floating).hidden { transform: translateX(-120%); }
 
 /* ---------- per-note research questions (F019) ---------- */
-#note-questions {
+#note-questions,
+#orphan-link {
   margin-top: 18px;
   border-top: 1px solid var(--border);
   padding-top: 10px;
 }
-#note-questions h3 {
+#note-questions h3,
+#orphan-link h3 {
   margin: 0 0 8px;
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 1px;
   color: var(--muted);
+}
+#orphan-link p {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+}
+#orphan-link .gap-query {
+  margin-bottom: 8px;
 }
 #note-questions-btn {
   width: 100%;

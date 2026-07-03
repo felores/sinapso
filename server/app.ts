@@ -87,6 +87,7 @@ import {
   type SemanticEdge,
 } from "./integrations/semantic.js";
 import {
+  guardedAppendLink,
   guardedCreate,
   guardedEdit,
   WriteError,
@@ -716,10 +717,56 @@ export function createApp(
   // live graph, so a rescan/reload is picked up automatically.
   app.get("/api/gaps", (_req, res) => {
     try {
-      res.json(computeGaps(graph.nodes, graph.links ?? []));
+      const gaps = computeGaps(graph.nodes, graph.links ?? []);
+      // F034: enrich orphan suggestions with their top semantic neighbor from
+      // the cached edges (read-only; never triggers a build). Orphans have no
+      // structural links but often DO have a semantic neighbor to link to.
+      const sem = readSemanticCache();
+      if (sem) {
+        const best = new Map<string, { id: string; score: number }>();
+        for (const e of sem.edges) {
+          const cur1 = best.get(e.source);
+          if (!cur1 || e.score > cur1.score)
+            best.set(e.source, { id: e.target, score: e.score });
+          const cur2 = best.get(e.target);
+          if (!cur2 || e.score > cur2.score)
+            best.set(e.target, { id: e.source, score: e.score });
+        }
+        const titleOf = new Map(graph.nodes.map((n) => [n.id, n.title]));
+        for (const s of gaps.suggestions) {
+          if (s.kind !== "orphan" || !s.nodeId) continue;
+          const b = best.get(s.nodeId);
+          const title = b && titleOf.get(b.id);
+          if (b && title) s.suggestedLink = { id: b.id, title, score: b.score };
+        }
+      }
+      res.json(gaps);
     } catch (e) {
       console.error("gaps failed:", e);
       res.status(500).json({ error: "gaps failed" });
+    }
+  });
+
+  // POST /api/gaps/link: confirm one orphan link suggestion (F034). Appends a
+  // [[target]] wikilink to the orphan note THROUGH the single guarded writer
+  // (journaled). Token-guarded (mutating); nothing is written until confirmed.
+  app.post("/api/gaps/link", guarded, express.json(), (req, res) => {
+    const id = String(req.body?.id ?? "");
+    const target = String(req.body?.target ?? "");
+    if (!id || !target) {
+      res.status(400).json({ error: "id and target are required" });
+      return;
+    }
+    try {
+      const r = guardedAppendLink(writeDeps(), { id, target, actor: "user" });
+      res.json(r);
+    } catch (e) {
+      if (e instanceof WriteError) {
+        res.status(e.status).json({ error: e.message });
+        return;
+      }
+      console.error("gap link failed:", e);
+      res.status(500).json({ error: "link failed" });
     }
   });
 
@@ -938,19 +985,26 @@ export function createApp(
     return String(m.fingerprint ?? graph.meta.notes);
   };
 
+  // Read the cached semantic edges WITHOUT triggering a build (used by
+  // /api/gaps so surfacing suggestions never blocks on a 10s+ rebuild).
+  type SemanticReady = Extract<SemanticResult, { available: true }>;
+  const readSemanticCache = (): SemanticReady | null => {
+    if (!existsSync(semanticPath)) return null;
+    try {
+      const c = JSON.parse(
+        readFileSync(semanticPath, "utf-8"),
+      ) as SemanticResult;
+      if (c.available && c.fingerprint === graphFingerprint()) return c;
+    } catch {
+      /* stale/corrupt cache */
+    }
+    return null;
+  };
+
   const ensureSemantic = async (): Promise<SemanticResult> => {
     const fingerprint = graphFingerprint();
-    if (existsSync(semanticPath)) {
-      try {
-        const cached = JSON.parse(
-          readFileSync(semanticPath, "utf-8"),
-        ) as SemanticResult;
-        if (cached.available && cached.fingerprint === fingerprint)
-          return cached;
-      } catch {
-        /* fall through to rebuild */
-      }
-    }
+    const cachedHit = readSemanticCache();
+    if (cachedHit) return cachedHit;
     if (semanticBuild) return semanticBuild;
     semanticBuild = (async (): Promise<SemanticResult> => {
       const qv = openQmdVectors({ vaultRoot });

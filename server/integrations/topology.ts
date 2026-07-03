@@ -29,6 +29,11 @@ export interface GapSuggestion {
   reason: string;
   /** Graph node this gap anchors to (null for cluster suggestions). */
   nodeId: string | null;
+  /**
+   * F034: top semantic neighbor an orphan could link to. Attached by the server
+   * from the cached semantic edges; drives the preview-then-confirm link insert.
+   */
+  suggestedLink?: { id: string; title: string; score: number };
 }
 
 export interface GapStats {

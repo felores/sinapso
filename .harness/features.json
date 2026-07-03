@@ -1,7 +1,7 @@
 {
   "project": "solaris-optional-integrations",
   "created": "2026-07-02T04:37:20Z",
-  "updated": "2026-07-03T21:54:41Z",
+  "updated": "2026-07-03T22:04:01Z",
   "features": [
     {
       "id": "F001",
@@ -933,7 +933,7 @@
         "command": "npm test",
         "expected": "gaps-suggest test: a suggestion resolves to a real in-vault node; insertion goes ONLY through the guarded writer (write.ts) and is journaled; an unconfirmed suggestion writes nothing; the path-traversal + write guards stay green."
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": [],
       "files_touched": [
         "server/app.ts",
@@ -944,11 +944,11 @@
       "confidence": "needs-review",
       "context_note": "PREVIEW-THEN-CONFIRM, never auto-write (decided \u2014 it mutates the vault). Insertion MUST go through server/integrations/write.ts (the SINGLE sanctioned write path) \u2014 never add a second writer (AGENTS.md). Journaled to data/changes.jsonl. Works without Phase 1 (live vsearch), so depends_on is empty. Keep the path-traversal + consent tests green (release-blocking).",
       "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#4",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "npm test 145/145 incl 8 new write.test.ts cases: guardedAppendLink appends [[wiki]] + journals; idempotent (no dup, no journal); 404 on missing note; confinement rejects traversal (400); POST /api/gaps/link 403 without token, appends+journals with token; GET /api/gaps writes nothing (read-only). Server enriches orphan gap suggestions with their top neighbor from the cached edges (readSemanticCache, never triggers a build). agent-browser: opening orphan notas/vibe-docs.md shows a preview-then-confirm card 'LINK SUGGESTION: [[ui-libraries]] 72% similar / add this link' (998 orphans have a neighbor). Live vault mutation intentionally NOT triggered in test; write path proven by unit tests.",
+      "implemented_by": "claude-opus-4-8",
+      "implemented_at": "2026-07-03T22:04:01Z",
+      "verified_by": "npm test + agent-browser",
+      "verified_at": "2026-07-03T22:04:01Z"
     },
     {
       "id": "F035",
