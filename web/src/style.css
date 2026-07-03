@@ -101,7 +101,7 @@ body > :not(#graph) {
 #nav-group { display: flex; align-items: center; gap: 18px; pointer-events: auto; position: relative; z-index: 2; }
 #brand { display: flex; align-items: baseline; gap: 10px; }
 #brand-name { font-size: 22px; font-weight: 650; letter-spacing: 0.5px; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7); }
-#brand-stats { color: var(--muted); font-size: 13px; font-family: Consolas, monospace; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7); }
+#brand-stats { color: var(--muted); font-size: 13px; font-family: Consolas, monospace; }
 
 /* ---------- menubar ---------- */
 /* nudged down a few px so the labels sit on the Solaris wordmark's baseline */
@@ -126,9 +126,7 @@ body > :not(#graph) {
 :root[data-theme="notebook"] #brand-name,
 :root[data-theme="manuscript"] #brand-name,
 :root[data-theme="notebook"] .menu-label,
-:root[data-theme="manuscript"] .menu-label,
-:root[data-theme="notebook"] #brand-stats,
-:root[data-theme="manuscript"] #brand-stats {
+:root[data-theme="manuscript"] .menu-label {
   text-shadow: none;
 }
 
