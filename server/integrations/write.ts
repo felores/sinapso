@@ -88,12 +88,22 @@ function requireVault(vaultRoot: string): void {
     throw new WriteError(503, "vault root is missing or not reachable");
 }
 
-/** Strip filesystem-hostile characters from a title used as a filename. */
+/**
+ * Turn a note title into a vault-standard filename stem: lowercase kebab-case,
+ * accents transliterated, only [a-z0-9-], never spaces (FeloVault AGENTS.md:
+ * "Nombres de archivo: kebab-case, NUNCA espacios"). Long titles are capped
+ * like the vault's own notes.
+ */
 function safeName(title: string): string {
   const cleaned = title
-    .replace(/[\\/:*?"<>|#^[\]]/g, "-")
-    .replace(/^\.+|\.+$/g, "")
-    .trim();
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "") // strip accent marks (e-acute -> e, n-tilde -> n)
+    .toLowerCase()
+    .replace(/['’‘"]/g, "") // drop apostrophes so contractions don't split
+    .replace(/[^a-z0-9]+/g, "-") // any non-alphanumeric run -> one hyphen
+    .replace(/^-+|-+$/g, "") // trim leading/trailing hyphens
+    .slice(0, 80) // cap length like the vault's notes
+    .replace(/-+$/g, ""); // re-trim if the cap left a dangling hyphen
   if (!cleaned) throw new WriteError(400, "empty note title");
   return cleaned;
 }
@@ -104,6 +114,8 @@ export interface CreateOptions {
   path?: string;
   /** Title used as filename when no explicit path is given. */
   title?: string;
+  /** Verbatim filename prefix (e.g. "2026-07-03_") kept out of the kebab slug. */
+  prefix?: string;
   /** Vault-relative destination folder for title-based creates. */
   destination?: string;
   actor: ChangeLogEntry["actor"];
@@ -117,7 +129,10 @@ export function guardedCreate(
   requireVault(deps.vaultRoot);
   const rel =
     opts.path ??
-    join(opts.destination ?? "inbox", safeName(opts.title ?? "") + ".md");
+    join(
+      opts.destination ?? "inbox",
+      (opts.prefix ?? "") + safeName(opts.title ?? "") + ".md",
+    );
   let full = confine(deps.vaultRoot, rel);
   // Never overwrite on create: filename collisions get a numeric suffix.
   if (existsSync(full)) {

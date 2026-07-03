@@ -17,8 +17,11 @@ export default defineConfig({
     // Vite dev server port
     port: 5173,
     proxy: {
-      // Proxy API requests to the Express backend (running on different port)
-      "/api": "http://localhost:5175",
+      // Proxy API requests to the Express backend (running on different port).
+      // Use 127.0.0.1, not "localhost": the server binds IPv4 only, and
+      // "localhost" prefers IPv6 (::1) on macOS — a stray IPv6 listener on
+      // this port would then hijack the proxy and hang requests.
+      "/api": "http://127.0.0.1:5175",
     },
   },
   build: {

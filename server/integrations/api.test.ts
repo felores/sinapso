@@ -158,4 +158,31 @@ describe("GET /api/note-questions", () => {
     expect(fetched[0]).toContain("/chat/completions");
     expect(JSON.stringify(res.body)).not.toContain("or-secret"); // key never echoed
   });
+
+  it("uses the LLM with the default model when a key is set but no model", async () => {
+    const bodies: string[] = [];
+    const { app: app2 } = createApp(graphPath, undefined, {
+      configPath: join(VAULT, "llm-nomodel-config.json"),
+      openrouter: {
+        fetch: (async (_url: string, init: RequestInit) => {
+          bodies.push(String(init.body));
+          return new Response(
+            JSON.stringify({
+              choices: [{ message: { content: '["q1?", "q2?"]' } }],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }) as never,
+      },
+    });
+    const t = (await request(app2).get("/api/session")).body.token;
+    await request(app2)
+      .post("/api/integrations/config")
+      .set(TOKEN_HEADER, t)
+      .send({ openrouterKey: "or-secret" }); // key only, no defaultModel
+    const res = await request(app2).get("/api/note-questions?id=real.md");
+    expect(res.status).toBe(200);
+    expect(res.body.source).toBe("llm");
+    expect(bodies[0]).toContain("deepseek/deepseek-v4-flash"); // fell back to default
+  });
 });

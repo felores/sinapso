@@ -24,7 +24,7 @@
           <button id="mi-reload">Reload App <span class="mi-hint">F5</span></button>
           <button id="mi-export">Export Image (PNG)</button>
           <hr />
-          <button id="mi-ingest">Ingest Document… <span class="mi-hint">PDF, Word, URL → note</span></button>
+          <button id="mi-clear-history">Clear Research History</button>
         </div>
       </div>
       <div class="menu">
@@ -91,21 +91,23 @@
       <div class="menu">
         <span class="menu-label">Tools</span>
         <div class="dropdown">
+          <button id="mi-filters">Display Filters…</button>
           <button id="mi-settings">Display Settings…</button>
           <hr />
           <button id="mi-copyfocus">Copy Link to Selected Note <span class="mi-hint">Ctrl+C</span></button>
           <button id="mi-obsidian">Open Selected in Obsidian <span class="mi-hint">Ctrl+O</span></button>
           <hr />
           <div class="mi-group" id="mi-integrations">
-            <div class="integ-row" id="integ-qmd"><b>Semantic (qmd)</b><span class="integ-status"></span><button class="integ-install hidden" data-tool="qmd" title="Install qmd; existing installs are never touched">install</button></div>
+            <div class="integ-row" id="integ-qmd"><b>Semantic</b><span class="integ-status"></span><button class="integ-install hidden" data-tool="qmd" title="Install qmd; existing installs are never touched">install</button></div>
             <button id="qmd-enable" class="hidden">enable semantic search</button>
-            <div class="integ-row" id="integ-exa"><b>Web (Exa)</b><span class="integ-status"></span></div>
+            <div class="integ-row" id="integ-markitdown"><b>Ingest</b><span class="integ-status"></span><button class="integ-install hidden" data-tool="markitdown" title="Install markitdown; existing installs are never touched">install</button></div>
+            <div class="integ-row" id="integ-exa"><b>Web</b><span class="integ-status"></span></div>
             <input type="password" id="exa-key" placeholder="Exa API key — paste + Enter" autocomplete="off" />
-            <div class="integ-row" id="integ-openrouter"><b>LLM (OpenRouter)</b><span class="integ-status"></span></div>
+            <div class="integ-row" id="integ-openrouter"><b>LLM</b><span class="integ-status"></span></div>
             <input type="password" id="openrouter-key" placeholder="OpenRouter API key — paste + Enter" autocomplete="off" />
-            <label class="integ-row">follow-up model
+            <label class="integ-row integ-model">follow-up model
               <select id="llm-model-select">
-                <option value="">default</option>
+                <option value="">default (DeepSeek V4 Flash)</option>
                 <option value="deepseek/deepseek-v4-flash">DeepSeek V4 Flash (cheap)</option>
                 <option value="deepseek/deepseek-v4-pro">DeepSeek V4 Pro (strong)</option>
                 <option value="z-ai/glm-5.2">GLM 5.2</option>
@@ -115,7 +117,6 @@
               </select>
             </label>
             <input type="text" id="llm-model" class="hidden" placeholder="provider/model + Enter" autocomplete="off" spellcheck="false" />
-            <div class="integ-row" id="integ-markitdown"><b>Ingest (markitdown)</b><span class="integ-status"></span><button class="integ-install hidden" data-tool="markitdown" title="Install markitdown; existing installs are never touched">install</button></div>
             <button id="integ-recheck" title="Re-probe installed tools">re-check installed tools</button>
           </div>
         </div>
@@ -216,15 +217,17 @@
     </div>
     <div id="filter-list"></div>
     <div id="filter-help"><b>show</b> keeps matches, <b>ignore</b> hides them. Top rule wins; drag to reorder.</div>
-    <div id="collections-group" class="hidden">
-      <h3>Collections <span class="rel-tag">semantic</span></h3>
-      <div id="collections-list"></div>
-    </div>
   </aside>
 
   <aside id="research" class="hidden">
     <div id="research-head">
       <h3 id="research-title">Research</h3>
+      <div id="research-nav" class="hidden">
+        <button id="research-prev" class="reader-icon" title="Older result">‹</button>
+        <span id="research-pos"></span>
+        <button id="research-next" class="reader-icon" title="Newer result">›</button>
+        <button id="research-trash" class="reader-icon" title="Delete this result from history"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>
+      </div>
       <button id="research-close" class="reader-icon" title="Close (Esc)">✕</button>
     </div>
     <div id="research-error" class="hidden"></div>

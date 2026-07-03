@@ -44,7 +44,7 @@ describe("ingestDocument", () => {
   it("converts a file and saves it through the guarded write with frontmatter", async () => {
     const { calls, run } = recorder(() => ok("# Report\n\nConverted body.\n"));
     const r = await ingestDocument(run, MD_BIN, writeDeps, { source: DOC });
-    expect(r.id).toBe(join("inbox", "report.md"));
+    expect(r.id).toMatch(/^inbox\/\d{4}-\d{2}-\d{2}_report\.md$/);
     const text = readFileSync(join(VAULT, r.id), "utf-8");
     expect(text).toContain("via: markitdown");
     expect(text).toContain(`source: ${DOC}`);
@@ -57,12 +57,22 @@ describe("ingestDocument", () => {
     });
   });
 
-  it("ingests URLs with a derived title", async () => {
-    const { calls, run } = recorder(() => ok("# Page\n\nweb content"));
+  it("names the note after the content's H1, overriding the source filename", async () => {
+    const { run } = recorder(() =>
+      ok("# Quarterly Earnings Deep Dive\n\nbody text"),
+    );
+    const r = await ingestDocument(run, MD_BIN, writeDeps, { source: DOC });
+    expect(r.id).toMatch(
+      /^inbox\/\d{4}-\d{2}-\d{2}_quarterly-earnings-deep-dive\.md$/,
+    );
+  });
+
+  it("falls back to a derived title when the content has no H1", async () => {
+    const { calls, run } = recorder(() => ok("plain web content, no heading"));
     const r = await ingestDocument(run, MD_BIN, writeDeps, {
       source: "https://example.com/articles/deep-work.html",
     });
-    expect(r.id).toBe(join("inbox", "deep-work.md"));
+    expect(r.id).toMatch(/^inbox\/\d{4}-\d{2}-\d{2}_deep-work\.md$/);
     expect(calls[0][1]).toBe("https://example.com/articles/deep-work.html");
   });
 

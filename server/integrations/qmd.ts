@@ -128,7 +128,7 @@ function cleanSnippet(s: string | undefined): string {
     .join(" ")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 200);
+    .slice(0, 340);
 }
 
 /**

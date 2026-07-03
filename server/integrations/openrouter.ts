@@ -33,6 +33,11 @@ export class OpenRouterError extends Error {
 
 const BASE = "https://openrouter.ai/api/v1";
 
+/** Model used when a key is present but the user hasn't picked a model.
+ *  Cheap + fast — enough for note-question generation. Lets the LLM work the
+ *  moment a key is entered, no model choice required. */
+export const DEFAULT_MODEL = "deepseek/deepseek-v4-flash";
+
 /** Send a chat completion; return the assistant message text. */
 export async function chatCompletion(
   key: string,
@@ -60,6 +65,35 @@ export async function chatCompletion(
     choices?: Array<{ message?: { content?: string } }>;
   };
   return data.choices?.[0]?.message?.content ?? "";
+}
+
+export interface KeyStatus {
+  ok: boolean;
+  /** Credits spent so far (present when the key is valid). */
+  usage?: number;
+  /** Credit ceiling; null = unlimited. */
+  limit?: number | null;
+}
+
+/**
+ * Validate a key for FREE via GET /key — returns the key's usage + limit, no
+ * completion charged. 200 → valid; 401 → invalid. Grounded against the live
+ * API (2026-07): GET https://openrouter.ai/api/v1/key, Bearer auth.
+ */
+export async function validateKey(
+  key: string,
+  opts: OpenRouterOptions = {},
+): Promise<KeyStatus> {
+  const f = opts.fetch ?? fetch;
+  const res = await f(`${opts.endpoint ?? BASE}/key`, {
+    headers: { authorization: `Bearer ${key}` },
+  });
+  if (res.status === 401) return { ok: false };
+  if (!res.ok) throw new OpenRouterError(res.status, `HTTP ${res.status}`);
+  const data = (await res.json()) as {
+    data?: { usage?: number; limit?: number | null };
+  };
+  return { ok: true, usage: data.data?.usage, limit: data.data?.limit ?? null };
 }
 
 export interface LlmModel {

@@ -664,7 +664,13 @@ async function boot() {
       repaint();
     })
     .onNodeClick((n: GNode) => select(n))
-    .onBackgroundClick(() => clearSelection());
+    .onBackgroundClick(() => clearSelection())
+    // Registering onBackgroundClick makes 3d-force-graph treat the empty
+    // background as "clickable" (pointer cursor) once showPointerCursor is
+    // truthy — which, after the first node→background hover, left the canvas
+    // stuck on the pointer cursor forever. Restrict the pointer to real
+    // nodes/links so the background keeps its grab (open-hand) affordance.
+    .showPointerCursor((o: GNode | GLink | null) => !!o);
 
   graph.d3Force("charge")!.strength(-45);
 
@@ -1549,6 +1555,13 @@ async function boot() {
       // ingested documents carry untrusted content; unsanitized script would
       // run same-origin and could drive the token-authenticated endpoints.
       body.innerHTML = DOMPurify.sanitize(await marked.parse(prepped));
+      // External URL links open in a new tab so they never replace the app.
+      // Wiki links carry no href (they use data-target + a click handler), so
+      // a[href] matches only real outbound links.
+      for (const a of body.querySelectorAll<HTMLAnchorElement>("a[href]")) {
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+      }
       // Fixed-order footer: related notes (async) above research questions.
       const relatedSlot = document.createElement("div");
       const questionsSlot = document.createElement("div");
@@ -1681,13 +1694,17 @@ async function boot() {
       handle.addEventListener("pointerdown", (e: PointerEvent) => {
         w0 = geom.width;
         l0 = geom.left;
+        // Left-docked, the grip is on the right edge: dragging right grows it.
+        const leftDocked =
+          !geom.floating &&
+          ($("#reader") as HTMLElement).classList.contains("ctx-left");
         dragOp((dx) => {
           if (geom.floating) {
             // left edge moves; right edge stays put
             geom.width = w0 - dx;
             geom.left = l0 + dx;
           } else {
-            geom.width = w0 - dx;
+            geom.width = leftDocked ? w0 + dx : w0 - dx;
           }
           applyGeom();
         }, "resizing")(e);
@@ -2260,40 +2277,37 @@ async function boot() {
       );
       install?.classList.toggle("hidden", !t || ok);
     };
-    st(
-      "qmd",
-      t
-        ? t.qmd.installed
-          ? `installed ${t.qmd.version ?? ""}`.trim()
-          : "not installed"
-        : "status unavailable",
-      !!t?.qmd.installed,
-    );
-    st(
-      "exa",
-      t
-        ? t.exa.configured
-          ? "key configured"
-          : "no API key"
-        : "status unavailable",
-      !!t?.exa.configured,
-    );
+    // The row label now names only the function (Semantic, Web, …); the engine
+    // and its state live here on the right, accent-colored when active. A CLI
+    // tool's version line already leads with the engine name ("qmd 0.5.0").
+    const cliStatus = (
+      engine: string,
+      s: { installed: boolean; version: string | null } | undefined,
+    ) =>
+      !s
+        ? "status unavailable"
+        : s.installed
+          ? (s.version ?? engine)
+          : `${engine} · not installed`;
+    const keyStatus = (
+      engine: string,
+      s: { configured: boolean } | undefined,
+    ) =>
+      !s
+        ? "status unavailable"
+        : s.configured
+          ? `${engine} · key set`
+          : `${engine} · no key`;
+    st("qmd", cliStatus("qmd", t?.qmd), !!t?.qmd.installed);
+    st("exa", keyStatus("Exa", t?.exa), !!t?.exa.configured);
     st(
       "markitdown",
-      t
-        ? t.markitdown.installed
-          ? `installed ${t.markitdown.version ?? ""}`.trim()
-          : "not installed"
-        : "status unavailable",
+      cliStatus("markitdown", t?.markitdown),
       !!t?.markitdown.installed,
     );
     st(
       "openrouter",
-      t
-        ? t.openrouter.configured
-          ? "key configured"
-          : "no API key"
-        : "status unavailable",
+      keyStatus("OpenRouter", t?.openrouter),
       !!t?.openrouter.configured,
     );
     if (integrations) {
@@ -2325,6 +2339,48 @@ async function boot() {
         sel.value = "";
         ($("#llm-model") as HTMLInputElement).classList.add("hidden");
       }
+    }
+    // Live-validate the OpenRouter key for free (GET /key); Exa has no free
+    // check, so it stays at "key set" until Web mode actually runs.
+    if (t?.openrouter.configured) void testOpenRouter();
+  }
+
+  // Free OpenRouter key validation → real status + remaining credit.
+  async function testOpenRouter() {
+    const el = $("#integ-openrouter .integ-status");
+    el.textContent = "OpenRouter · testing…";
+    el.classList.remove("ok");
+    try {
+      const r: {
+        configured: boolean;
+        ok?: boolean;
+        usage?: number;
+        limit?: number | null;
+        unreachable?: boolean;
+      } = await fetch("/api/integrations/test/openrouter").then((x) =>
+        x.json(),
+      );
+      if (!r.configured) {
+        el.textContent = "OpenRouter · no key";
+        return;
+      }
+      if (r.unreachable) {
+        el.textContent = "OpenRouter · unreachable";
+        return;
+      }
+      if (!r.ok) {
+        el.textContent = "OpenRouter · invalid key";
+        return;
+      }
+      const left =
+        r.limit == null ? null : Math.max(0, r.limit - (r.usage ?? 0));
+      el.textContent =
+        left == null
+          ? "OpenRouter · ready"
+          : `OpenRouter · $${left.toFixed(2)} left`;
+      el.classList.add("ok");
+    } catch {
+      el.textContent = "OpenRouter · unreachable";
     }
   }
 
@@ -2460,22 +2516,6 @@ async function boot() {
   let qmdStatus: { state: QmdState; collections?: string[] } = {
     state: "missing",
   };
-  // Per-collection on/off prefs (R8), keyed by collection name.
-  let colPrefs: Record<string, boolean> = JSON.parse(
-    localStorage.getItem("akasha-collections") ?? "{}",
-  );
-
-  // Enabled subset, or null when no narrowing is needed (all on / all off).
-  function enabledCollections(): string[] | null {
-    const cols = qmdStatus.collections ?? [];
-    const enabled = cols.filter((c) => colPrefs[c] !== false);
-    return enabled.length && enabled.length < cols.length ? enabled : null;
-  }
-  function collectionsParam(): string {
-    const list = enabledCollections();
-    return list ? `&collections=${encodeURIComponent(list.join(","))}` : "";
-  }
-
   async function refreshQmdStatus() {
     if (!integrations?.tools.qmd.installed) {
       qmdStatus = { state: "missing" };
@@ -2486,32 +2526,8 @@ async function boot() {
         qmdStatus = { state: "error" };
       }
     }
-    renderCollections();
     renderQmdSettings();
     maybePromptSetup();
-  }
-
-  function renderCollections() {
-    const group = $("#collections-group");
-    const list = $("#collections-list");
-    const cols =
-      qmdStatus.state === "ready" ? (qmdStatus.collections ?? []) : [];
-    group.classList.toggle("hidden", !cols.length);
-    list.innerHTML = "";
-    for (const c of cols) {
-      const label = document.createElement("label");
-      label.className = "col-row";
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = colPrefs[c] !== false;
-      cb.addEventListener("change", () => {
-        colPrefs[c] = cb.checked;
-        localStorage.setItem("akasha-collections", JSON.stringify(colPrefs));
-        if (selected && !selected.phantom) refreshRelated(selected);
-      });
-      label.append(cb, document.createTextNode(" " + c));
-      list.appendChild(label);
-    }
   }
 
   function renderQmdSettings() {
@@ -2591,9 +2607,7 @@ async function boot() {
       '<h3>Related notes <span class="rel-tag">semantic</span></h3><p class="rel-info muted">finding related notes…</p>';
     body.appendChild(box);
     try {
-      const r = await fetch(
-        `/api/related?id=${encodeURIComponent(n.id)}${collectionsParam()}`,
-      );
+      const r = await fetch(`/api/related?id=${encodeURIComponent(n.id)}`);
       if (token !== relatedToken) return;
       if (!r.ok) throw new Error(String(r.status));
       const data: {
@@ -2667,6 +2681,24 @@ async function boot() {
   // semantic/web results. The search field is the entry point; the
   // column owns follow-ups via its own input.
   let researchMode: ModeName | null = null;
+
+  // Research history (app-local): every web/semantic result is persisted; the
+  // column pages back through them and can trash/curate. See server
+  // research-history.ts + /api/research/history.
+  type ResearchEntry = {
+    id: string;
+    ts: string;
+    mode: "web" | "semantic";
+    query: string;
+    answer?: {
+      content: string;
+      citations: Array<{ url: string; title: string }>;
+    } | null;
+    results?: unknown[];
+  };
+  let researchHistory: ResearchEntry[] = [];
+  let historyIdx = -1; // position in researchHistory (0 = newest); -1 = none
+  let currentEntryId: string | null = null; // id of the shown entry (for move/trash)
   const researchInput = $("#research-input") as HTMLInputElement;
 
   function openResearch(mode: ModeName) {
@@ -2722,6 +2754,146 @@ async function boot() {
     if (e.key === "Enter") submitResearchInput();
   });
 
+  // ---- research history: shared renderers + navigation ----
+  function renderSemanticInto(
+    body: HTMLElement,
+    results: Array<{ id: string; title: string; snippet: string }>,
+  ) {
+    if (!results.length) {
+      body.innerHTML = '<p class="muted">no matching notes</p>';
+      return;
+    }
+    for (const r of results) {
+      const node = byId.get(r.id);
+      if (!node) continue;
+      const row = document.createElement("div");
+      row.className = "rel-row";
+      const title = document.createElement("span");
+      title.className = "rel-title";
+      title.textContent = node.title;
+      const snip = document.createElement("span");
+      snip.className = "rel-snippet";
+      snip.textContent = r.snippet;
+      row.append(title, snip);
+      row.addEventListener("click", () => select(node));
+      body.appendChild(row);
+    }
+  }
+
+  function renderWebInto(
+    body: HTMLElement,
+    data: {
+      answer: ResearchEntry["answer"];
+      results: Array<{
+        title: string;
+        url: string;
+        snippet: string;
+        publishedDate: string | null;
+      }>;
+    },
+    query: string,
+  ) {
+    if (data.answer) body.appendChild(renderAnswer(data.answer, query));
+    if (!data.results.length && !data.answer) {
+      body.innerHTML = '<p class="muted">no results</p>';
+      return;
+    }
+    if (data.results.length && data.answer) {
+      const h = document.createElement("div");
+      h.className = "sources-head";
+      h.textContent = "Results";
+      body.appendChild(h);
+    }
+    for (const r of data.results) body.appendChild(renderWebResult(r, query));
+  }
+
+  async function apiDelete(url: string) {
+    await fetch(url, {
+      method: "DELETE",
+      headers: { "x-solaris-token": await apiToken() },
+    }).catch(() => {});
+  }
+
+  async function loadHistory() {
+    try {
+      researchHistory =
+        (await fetch("/api/research/history").then((r) => r.json())).entries ??
+        [];
+    } catch {
+      researchHistory = [];
+    }
+  }
+
+  function updateHistoryNav() {
+    $("#research-nav").classList.toggle("hidden", researchHistory.length === 0);
+    if (!researchHistory.length) return;
+    historyIdx = Math.max(0, Math.min(historyIdx, researchHistory.length - 1));
+    ($("#research-prev") as HTMLButtonElement).disabled =
+      historyIdx >= researchHistory.length - 1;
+    ($("#research-next") as HTMLButtonElement).disabled = historyIdx <= 0;
+    $("#research-pos").textContent =
+      `${historyIdx + 1}/${researchHistory.length}`;
+  }
+
+  // Re-render a stored entry (no network query, no spend).
+  function showHistoryEntry(entry: ResearchEntry) {
+    openResearch(entry.mode);
+    currentEntryId = entry.id;
+    researchError(null);
+    const body = $("#research-body");
+    body.innerHTML = "";
+    if (entry.mode === "web")
+      renderWebInto(
+        body,
+        {
+          answer: entry.answer ?? null,
+          results: (entry.results ?? []) as never,
+        },
+        entry.query,
+      );
+    else renderSemanticInto(body, (entry.results ?? []) as never);
+    updateHistoryNav();
+  }
+
+  // After a fresh query the new entry is newest (index 0).
+  async function noteQueryPersisted(id: string | undefined) {
+    currentEntryId = id ?? null;
+    await loadHistory();
+    historyIdx = 0;
+    updateHistoryNav();
+  }
+
+  async function clearResearchHistory() {
+    await apiDelete("/api/research/history");
+    researchHistory = [];
+    historyIdx = -1;
+    currentEntryId = null;
+    updateHistoryNav();
+    if (!$("#research").classList.contains("hidden")) closeResearch();
+  }
+
+  $("#research-prev").addEventListener("click", () => {
+    if (historyIdx < researchHistory.length - 1)
+      showHistoryEntry(researchHistory[++historyIdx]);
+  });
+  $("#research-next").addEventListener("click", () => {
+    if (historyIdx > 0) showHistoryEntry(researchHistory[--historyIdx]);
+  });
+  $("#research-trash").addEventListener("click", async () => {
+    const entry = researchHistory[historyIdx];
+    if (!entry) return;
+    await apiDelete(`/api/research/history/${encodeURIComponent(entry.id)}`);
+    await loadHistory();
+    if (!researchHistory.length) {
+      updateHistoryNav();
+      closeResearch();
+      return;
+    }
+    historyIdx = Math.min(historyIdx, researchHistory.length - 1);
+    showHistoryEntry(researchHistory[historyIdx]);
+  });
+  void loadHistory();
+
   async function runSemanticQuery(query: string) {
     openResearch("semantic");
     const body = $("#research-body");
@@ -2729,9 +2901,10 @@ async function boot() {
     try {
       const data: {
         state: string;
+        historyId?: string;
         results?: Array<{ id: string; title: string; snippet: string }>;
       } = await fetch(
-        `/api/semantic-search?q=${encodeURIComponent(query)}${collectionsParam()}`,
+        `/api/semantic-search?q=${encodeURIComponent(query)}`,
       ).then((r) => r.json());
       body.innerHTML = "";
       if (data.state === "indexing") {
@@ -2744,26 +2917,8 @@ async function boot() {
           '<p class="muted">semantic search is not set up for this vault (Tools → Integrations)</p>';
         return;
       }
-      const results = data.results ?? [];
-      if (!results.length) {
-        body.innerHTML = '<p class="muted">no matching notes</p>';
-        return;
-      }
-      for (const r of results) {
-        const node = byId.get(r.id);
-        if (!node) continue;
-        const row = document.createElement("div");
-        row.className = "rel-row";
-        const title = document.createElement("span");
-        title.className = "rel-title";
-        title.textContent = node.title;
-        const snip = document.createElement("span");
-        snip.className = "rel-snippet";
-        snip.textContent = r.snippet;
-        row.append(title, snip);
-        row.addEventListener("click", () => select(node)); // column stays open
-        body.appendChild(row);
-      }
+      renderSemanticInto(body, data.results ?? []);
+      if (data.historyId) await noteQueryPersisted(data.historyId);
     } catch {
       body.innerHTML = "";
       researchError("semantic search failed — is the server running?");
@@ -2791,25 +2946,8 @@ async function boot() {
         return;
       }
       body.innerHTML = "";
-      if (data.answer) body.appendChild(renderAnswer(data.answer, query));
-      if (!data.results.length && !data.answer) {
-        body.innerHTML = '<p class="muted">no results</p>';
-        return;
-      }
-      if (data.results.length && data.answer) {
-        const h = document.createElement("div");
-        h.className = "sources-head";
-        h.textContent = "Results";
-        body.appendChild(h);
-      }
-      for (const r of data.results as Array<{
-        title: string;
-        url: string;
-        snippet: string;
-        publishedDate: string | null;
-      }>) {
-        body.appendChild(renderWebResult(r, query));
-      }
+      renderWebInto(body, data, query);
+      if (data.historyId) await noteQueryPersisted(data.historyId);
     } catch {
       body.innerHTML = "";
       researchError("research failed — is the server running?");
@@ -2903,15 +3041,17 @@ async function boot() {
       h.className = "sources-head";
       h.textContent = "Sources";
       box.appendChild(h);
-      for (const c of a.citations) {
+      a.citations.forEach((c, i) => {
         const link = document.createElement("a");
         link.href = c.url;
         link.target = "_blank";
         link.rel = "noopener noreferrer";
         link.className = "answer-source";
-        link.textContent = c.title;
+        // Prefix each source with its [N] so it lines up with the numbered
+        // references Exa embeds in the answer text (no more counting).
+        link.textContent = `[${i + 1}] ${c.title}`;
         box.appendChild(link);
-      }
+      });
     }
     const save = document.createElement("button");
     save.className = "web-save";
@@ -2939,7 +3079,7 @@ async function boot() {
           "",
           "## Sources",
           "",
-          ...a.citations.map((c) => `- [${c.title}](${c.url})`),
+          ...a.citations.map((c, i) => `${i + 1}. [${c.title}](${c.url})`),
           "",
         ].join("\n");
         const res = await fetch("/api/notes", {
@@ -2953,6 +3093,15 @@ async function boot() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
         save.textContent = `saved ✓ ${data.id}`;
+        // Move-on-save: once curated into the vault, drop it from history.
+        if (currentEntryId) {
+          await apiDelete(
+            `/api/research/history/${encodeURIComponent(currentEntryId)}`,
+          );
+          currentEntryId = null;
+          await loadHistory();
+          updateHistoryNav();
+        }
         const rescanBtn = document.createElement("button");
         rescanBtn.className = "web-save";
         rescanBtn.textContent = "rescan to see it";
@@ -3180,15 +3329,13 @@ async function boot() {
     a.href = graph.renderer().domElement.toDataURL("image/png");
     a.click();
   });
+  $("#mi-clear-history").addEventListener("click", () => {
+    closeMenus();
+    void clearResearchHistory();
+  });
 
   // Ingest a document or URL via markitdown (F023): switch to Ingest mode
   // so the search field becomes the path/URL input.
-  $("#mi-ingest").addEventListener("click", () => {
-    closeMenus();
-    setMode(activeMode === "ingest" ? null : "ingest");
-    searchBox.focus();
-  });
-
   // ---- View ----
   $("#mi-fullscreen").addEventListener("click", () => {
     closeMenus();
@@ -3201,6 +3348,10 @@ async function boot() {
     graph.zoomToFit(1000, 60);
   });
   // ---- Tools ----
+  $("#mi-filters").addEventListener("click", () => {
+    closeMenus();
+    $("#filters").classList.remove("hidden");
+  });
   $("#mi-settings").addEventListener("click", () => {
     closeMenus();
     $("#settings").classList.remove("hidden");
@@ -3232,7 +3383,8 @@ async function boot() {
       `<table>
         <tr><td>Rotate</td><td>left-drag</td></tr>
         <tr><td>Fly</td><td><kbd>↑</kbd> forward, <kbd>↓</kbd> back, <kbd>←</kbd><kbd>→</kbd> strafe</td></tr>
-        <tr><td>Zoom</td><td>scroll, or <kbd>+</kbd> / <kbd>−</kbd></td></tr>
+        <tr><td>Zoom (map)</td><td>scroll</td></tr>
+        <tr><td>Zoom (interface)</td><td><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>−</kbd>, <kbd>Ctrl</kbd>+<kbd>0</kbd> resets</td></tr>
         <tr><td>Pan</td><td>right-drag, or <kbd>Shift</kbd>+arrows</td></tr>
         <tr><td>Search</td><td><kbd>/</kbd>, then <kbd>Enter</kbd> to fly to the top hit</td></tr>
         <tr><td>Select / read note</td><td>click a node</td></tr>
@@ -3261,7 +3413,7 @@ async function boot() {
 
   // --- global keys: search, clear, and keyboard camera control ---
   // Arrows fly the camera through space (↑ forward, ↓ back, ←/→ strafe),
-  // shift+arrows pan, +/- zoom. Rotation stays on mouse left-drag.
+  // shift+arrows pan; scroll zooms the map. Rotation stays on mouse left-drag.
   // Held arrows drive a per-frame loop (smooth, frame-rate independent)
   // that accelerates from base speed to FLY_RAMP× over FLY_RAMP_S seconds.
   const FLY_BASE = 1.5; // distance-to-target multiples per second
@@ -3324,6 +3476,18 @@ async function boot() {
     cb.dispatchEvent(new Event("change", { bubbles: true }));
   };
 
+  // ---- interface zoom (Ctrl +/-/0): scales the UI chrome + panels via CSS
+  // zoom (see style.css `body > :not(#graph)`), never the 3D canvas. Persisted
+  // like a browser's zoom level. ----
+  let uiZoom = Number(localStorage.getItem("akasha-ui-zoom")) || 1;
+  function setUiZoom(z: number) {
+    uiZoom = Math.min(2, Math.max(0.6, Math.round(z * 20) / 20));
+    document.documentElement.style.setProperty("--ui-zoom", String(uiZoom));
+    localStorage.setItem("akasha-ui-zoom", String(uiZoom));
+  }
+  const bumpUiZoom = (d: number) => setUiZoom(uiZoom + d);
+  setUiZoom(uiZoom); // restore on boot
+
   window.addEventListener("keydown", (e) => {
     // Typing in ANY text field (search, web query, Exa key,
     // filters, model entry…) must never trigger app shortcuts.
@@ -3361,6 +3525,24 @@ async function boot() {
       if (document.fullscreenElement) document.exitFullscreen();
       else document.documentElement.requestFullscreen();
       return;
+    }
+    // Ctrl/Cmd +/-/0: zoom the interface like any web app (works while typing).
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === "=" || e.key === "+") {
+        e.preventDefault();
+        bumpUiZoom(0.1);
+        return;
+      }
+      if (e.key === "-" || e.key === "_") {
+        e.preventDefault();
+        bumpUiZoom(-0.1);
+        return;
+      }
+      if (e.key === "0") {
+        e.preventDefault();
+        setUiZoom(1);
+        return;
+      }
     }
 
     const k = e.key.toLowerCase();
@@ -3416,31 +3598,6 @@ async function boot() {
       if (!heldArrows.size) flyStart = performance.now(); // (re)start the ramp
       heldArrows.add(e.key);
       return;
-    }
-
-    const controls = graph.controls() as unknown as { target: THREE.Vector3 };
-    const camera = graph.camera();
-    const target = controls.target ?? new THREE.Vector3();
-    const offset = camera.position.clone().sub(target);
-
-    const sph = new THREE.Spherical().setFromVector3(offset);
-    let handled = true;
-    switch (e.key) {
-      case "+":
-      case "=":
-        sph.radius *= 0.93;
-        break;
-      case "-":
-      case "_":
-        sph.radius *= 1.075;
-        break;
-      default:
-        handled = false;
-    }
-    if (handled) {
-      e.preventDefault();
-      camera.position.copy(target).add(offset.setFromSpherical(sph));
-      camera.lookAt(target);
     }
   });
 

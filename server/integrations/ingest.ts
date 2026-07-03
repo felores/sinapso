@@ -39,6 +39,22 @@ function deriveTitle(source: string, isUrl: boolean): string {
   return basename(source).replace(/\.[a-z0-9]+$/i, "");
 }
 
+/**
+ * The document's own title: the first Markdown H1 ("# Heading") in the
+ * converted output. Preferred over the source filename so an ingested PDF is
+ * named after its headline, not "scan-2026-final". Null when there's no H1.
+ */
+function extractTitle(markdown: string): string | null {
+  for (const line of markdown.split("\n")) {
+    const m = line.match(/^#\s+(.+?)\s*#*\s*$/); // ATX H1, optional closing #
+    if (m) {
+      const t = m[1].replace(/[*_`[\]]/g, "").trim(); // drop inline emphasis
+      if (t) return t;
+    }
+  }
+  return null;
+}
+
 export async function ingestDocument(
   run: Runner,
   markitdownBin: string,
@@ -61,11 +77,15 @@ export async function ingestDocument(
     throw new WriteError(502, (r.stderr || "markitdown failed").slice(0, 500));
   const markdown = r.stdout.trim();
   if (!markdown) throw new WriteError(422, "markitdown produced no content");
-  const title = opts.title?.trim() || deriveTitle(source, isUrl);
+  // The converted content's own H1 wins, so the note is named after the
+  // document's headline; fall back to an explicit title, then the source name.
+  const title =
+    extractTitle(markdown) || opts.title?.trim() || deriveTitle(source, isUrl);
+  const date = new Date().toISOString().slice(0, 10);
   const content = [
     "---",
     `source: ${(opts.sourceLabel ?? source).replace(/\n/g, " ")}`,
-    `ingested: ${new Date().toISOString().slice(0, 10)}`,
+    `ingested: ${date}`,
     "via: markitdown",
     "---",
     "",
@@ -77,6 +97,7 @@ export async function ingestDocument(
     content,
     destination: opts.destination,
     actor: "user",
+    prefix: `${date}_`, // date-stamp ingested notes: 2026-07-03_<title>.md
   });
 }
 
@@ -100,7 +121,9 @@ export async function ingestBytes(
     return await ingestDocument(run, markitdownBin, writeDeps, {
       source: tmp,
       sourceLabel: opts.name,
-      title: opts.name,
+      // Drop the extension so the note name is clean (safeName kebab-cases it);
+      // matches how path/URL ingest derives its title.
+      title: opts.name.replace(/\.[a-z0-9]+$/i, ""),
     });
   } finally {
     rmSync(dir, { recursive: true, force: true });

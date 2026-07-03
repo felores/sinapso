@@ -20,6 +20,12 @@ html, body {
 
 #graph { position: fixed; inset: 0; }
 
+/* Ctrl +/- interface zoom: scale every UI layer (chrome, panels, reader,
+   research) but never the 3D canvas, which has its own scroll-zoom. */
+body > :not(#graph) {
+  zoom: var(--ui-zoom, 1);
+}
+
 /* ---------- top bar ---------- */
 #topbar {
   position: fixed;
@@ -467,6 +473,12 @@ html, body {
   z-index: 3;
 }
 #reader-resize-w:hover { background: linear-gradient(90deg, transparent, rgba(125, 145, 180, 0.25)); }
+/* Left-docked reader sits on the screen's left edge, so its resize grip must
+   move to the INNER (right) edge — resizing from the screen border is useless. */
+#reader.ctx-left:not(.floating) #reader-resize-w { left: auto; right: -3px; }
+#reader.ctx-left:not(.floating) #reader-resize-w:hover {
+  background: linear-gradient(270deg, transparent, rgba(125, 145, 180, 0.25));
+}
 #reader-resize-corner {
   position: absolute;
   right: 0;
@@ -524,6 +536,12 @@ html, body {
   overflow-y: auto;
   font-size: 14.5px;
   line-height: 1.65;
+}
+/* Images track the panel width: shrink to fit a narrow panel, scale back up
+   as it widens (capped at natural size). height:auto keeps aspect ratio. */
+#reader-body img {
+  max-width: 100%;
+  height: auto;
 }
 #reader-body h1, #reader-body h2, #reader-body h3 {
   border-bottom: 1px solid var(--border);
@@ -606,21 +624,37 @@ html, body {
 .mode-btn.active { border-color: var(--accent); color: var(--accent); }
 .mode-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* Integration rows mirror the View menu's .ctl rows: same padding, size,
+   centered alignment, name left / status (or control) right. */
 .integ-row {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
-  margin: 6px 0 2px;
-  font-size: 12.5px;
+  padding: 5px 10px;
+  font-size: 13px;
   color: var(--muted);
 }
 .integ-row b { color: var(--fg); font-weight: 600; }
+.integ-row select {
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+/* follow-up model: label on its own full-width line, selector stacked below */
+.integ-model {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.integ-model select { width: 100%; }
 .integ-status { font-size: 11.5px; text-align: right; }
 .integ-status.ok { color: var(--accent); }
-#exa-key {
-  width: 100%;
-  margin: 2px 0 4px;
+#exa-key, #openrouter-key, #llm-model {
+  width: calc(100% - 20px);
+  margin: 2px 10px 6px;
   padding: 5px 8px;
   background: none;
   border: 1px solid var(--border);
@@ -628,10 +662,13 @@ html, body {
   color: var(--fg);
   font-size: 12px;
 }
-#exa-key:focus { outline: none; border-color: var(--accent); }
+#exa-key:focus, #openrouter-key:focus, #llm-model:focus {
+  outline: none;
+  border-color: var(--accent);
+}
 #integ-recheck {
-  margin-top: 8px;
-  width: 100%;
+  margin: 8px 10px 0;
+  width: calc(100% - 20px);
   background: none;
   border: 1px solid var(--border);
   color: var(--muted);
@@ -678,35 +715,19 @@ html, body {
 .rel-snippet {
   font-size: 11.5px;
   color: var(--muted);
+  line-height: 1.45;
+  /* Show the matched passage over several lines instead of a truncated
+     sliver — the semantically relevant content is the point of the result. */
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-
-#collections-group.hidden { display: none; }
-#collections-group h3 {
-  margin: 10px 0 6px;
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--muted);
-}
-.col-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 0;
-  font-size: 12.5px;
-  color: var(--fg);
-  cursor: pointer;
-}
-.col-row input { accent-color: var(--accent); }
 
 #qmd-enable.hidden { display: none; }
 #qmd-enable {
-  margin-top: 2px;
-  margin-bottom: 4px;
-  width: 100%;
+  margin: 2px 10px 4px;
+  width: calc(100% - 20px);
   background: none;
   border: 1px solid var(--border);
   color: var(--muted);
@@ -902,6 +923,45 @@ html, body {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+}
+/* history navigation: older/newer/trash + position, grouped left of close */
+#research-nav {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: auto;
+  margin-right: 6px;
+}
+#research-nav.hidden {
+  display: none;
+}
+#research-pos {
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 30px;
+  text-align: center;
+}
+#research-nav button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 5px;
+  font-size: 16px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
+#research-nav button:hover:not(:disabled) {
+  color: var(--accent);
+}
+#research-nav button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+#research-nav button svg {
+  display: block;
 }
 #research-head h3 {
   margin: 0;

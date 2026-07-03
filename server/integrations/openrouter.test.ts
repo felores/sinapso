@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { chatCompletion, listModels, OpenRouterError } from "./openrouter";
+import {
+  chatCompletion,
+  listModels,
+  OpenRouterError,
+  validateKey,
+} from "./openrouter";
 
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), {
@@ -48,5 +53,23 @@ describe("openrouter adapter", () => {
       { id: "z-ai/glm-5.2", name: "GLM 5.2" },
       { id: "orphan", name: "orphan" },
     ]);
+  });
+
+  it("validateKey hits GET /key and returns usage/limit for a valid key", async () => {
+    let url = "";
+    const f = async (u: string) => {
+      url = u;
+      return json(200, { data: { usage: 1.5, limit: 10 } }) as Response;
+    };
+    const s = await validateKey("k", { fetch: f as never });
+    expect(url).toBe("https://openrouter.ai/api/v1/key");
+    expect(s).toEqual({ ok: true, usage: 1.5, limit: 10 });
+  });
+
+  it("validateKey reports an invalid key on 401 without throwing", async () => {
+    const f = async () => json(401, { error: "no" }) as Response;
+    await expect(validateKey("bad", { fetch: f as never })).resolves.toEqual({
+      ok: false,
+    });
   });
 });

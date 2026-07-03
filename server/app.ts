@@ -48,11 +48,19 @@ import {
   type ExaAdapterOptions,
 } from "./integrations/exa.js";
 import { ingestBytes, ingestDocument } from "./integrations/ingest.js";
+import {
+  clearEntries,
+  deleteEntry,
+  listEntries,
+  saveEntry,
+} from "./integrations/research-history.js";
 import { installAddons, type InstallableTool } from "./integrations/install.js";
 import {
   chatCompletion,
+  DEFAULT_MODEL,
   listModels,
   OpenRouterError,
+  validateKey,
   type OpenRouterOptions,
 } from "./integrations/openrouter.js";
 import {
@@ -135,6 +143,7 @@ export function createApp(
 
   const configPath = integrations?.configPath ?? defaultConfigPath();
   const detectDeps = integrations?.detectDeps;
+  const dataDir = dirname(graphPath); // data/ — runtime store (history, journal)
 
   // Detection is slow-ish (may spawn a login shell); cache in memory,
   // re-probe on ?refresh=1 (settings re-check).
@@ -467,7 +476,12 @@ export function createApp(
         return;
       }
       const r = await semanticQuery(q, req.query.collections);
-      res.status(r.status).json(r.body);
+      const results = (r.body as { results?: unknown[] }).results;
+      const historyId =
+        r.status === 200 && Array.isArray(results) && results.length
+          ? saveEntry(dataDir, { mode: "semantic", query: q, results }).id
+          : undefined;
+      res.status(r.status).json({ ...r.body, historyId });
     } catch (e) {
       console.error("semantic search failed:", e);
       res.status(500).json({ error: "semantic search failed" });
@@ -509,7 +523,16 @@ export function createApp(
       const r = await exaResearch(cfg.exaKey, query, {
         deep: !!req.body?.deep,
       });
-      res.json({ results: r.results, answer: r.answer });
+      const historyId =
+        r.results.length || r.answer
+          ? saveEntry(dataDir, {
+              mode: "web",
+              query,
+              answer: r.answer,
+              results: r.results,
+            }).id
+          : undefined;
+      res.json({ results: r.results, answer: r.answer, historyId });
     } catch (e) {
       console.error("research failed:", e instanceof Error ? e.message : e);
       res.status(502).json({
@@ -518,6 +541,19 @@ export function createApp(
           "Exa request failed after retries. Check your key and try again.",
       });
     }
+  });
+
+  // ---- Research history (app-local, data/research/): page past results,
+  // curate into the vault, trash one, or clear all. Never in the vault/graph. ----
+  app.get("/api/research/history", (_req, res) => {
+    res.json({ entries: listEntries(dataDir) });
+  });
+  app.delete("/api/research/history", guarded, (_req, res) => {
+    res.json({ cleared: clearEntries(dataDir) });
+  });
+  app.delete("/api/research/history/:id", guarded, (req, res) => {
+    const ok = deleteEntry(dataDir, String(req.params.id));
+    res.status(ok ? 200 : 404).json({ ok });
   });
 
   // ---- Guarded vault writes (U7): the single sanctioned write path ----
@@ -615,6 +651,26 @@ export function createApp(
     }
   });
 
+  // GET /api/integrations/test/openrouter: validate the stored key for FREE
+  // (GET /key — no completion charged), returning credit usage/limit. Exa has
+  // no equivalent free check, so it is deliberately not auto-tested.
+  app.get("/api/integrations/test/openrouter", async (_req, res) => {
+    const cfg = loadConfig(configPath);
+    if (!cfg.openrouterKey) {
+      res.json({ configured: false });
+      return;
+    }
+    try {
+      const status = await validateKey(
+        cfg.openrouterKey,
+        integrations?.openrouter,
+      );
+      res.json({ configured: true, ...status });
+    } catch {
+      res.json({ configured: true, ok: false, unreachable: true });
+    }
+  });
+
   // GET /api/note-questions?id=: 3-5 research questions derived from one
   // note. LLM-generated via OpenRouter when a key + model are configured
   // (F021); otherwise the local templates (F019). Note content leaves the
@@ -623,7 +679,9 @@ export function createApp(
     const id = String(req.query.id ?? "");
     const templates = () => noteQuestions(graph.nodes, graph.links ?? [], id);
     const cfg = loadConfig(configPath);
-    if (!cfg.openrouterKey || !cfg.defaultModel) {
+    // The key alone enables the LLM; the model falls back to DEFAULT_MODEL
+    // when the user hasn't picked one, so it works right after key entry.
+    if (!cfg.openrouterKey) {
       res.json({ questions: templates(), source: "templates" });
       return;
     }
@@ -661,7 +719,7 @@ export function createApp(
     try {
       const text = await chatCompletion(
         cfg.openrouterKey,
-        cfg.defaultModel,
+        cfg.defaultModel || DEFAULT_MODEL,
         [
           {
             role: "system",

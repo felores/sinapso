@@ -90,9 +90,10 @@ describe("POST /api/notes (create)", () => {
       .set(TOKEN_HEADER, await token())
       .send({ title: "Saved Result", content: "# Saved\nbody\n" });
     expect(res.status).toBe(200);
-    expect(res.body.id).toBe(join("inbox", "Saved Result.md"));
+    // Vault standard: kebab-case filename, never spaces (FeloVault AGENTS.md).
+    expect(res.body.id).toBe(join("inbox", "saved-result.md"));
     expect(
-      readFileSync(join(VAULT, "inbox", "Saved Result.md"), "utf-8"),
+      readFileSync(join(VAULT, "inbox", "saved-result.md"), "utf-8"),
     ).toContain("# Saved");
     const log = readChangeLog(DATA);
     expect(log.at(-1)).toMatchObject({
@@ -108,9 +109,18 @@ describe("POST /api/notes (create)", () => {
       .set(TOKEN_HEADER, await token())
       .send({ title: "Elsewhere", content: "x", destination: "captures/web" });
     expect(res.status).toBe(200);
-    expect(existsSync(join(VAULT, "captures", "web", "Elsewhere.md"))).toBe(
+    expect(existsSync(join(VAULT, "captures", "web", "elsewhere.md"))).toBe(
       true,
     );
+  });
+
+  it("slugs the title to kebab-case (spaces, accents, punctuation, case)", async () => {
+    const res = await request(app)
+      .post("/api/notes")
+      .set(TOKEN_HEADER, await token())
+      .send({ title: "  Café: Ñoño's Deep-Dive! (v2)  ", content: "x" });
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(join("inbox", "cafe-nonos-deep-dive-v2.md"));
   });
 
   it("never overwrites: collisions get a numeric suffix", async () => {
@@ -123,12 +133,12 @@ describe("POST /api/notes (create)", () => {
       .post("/api/notes")
       .set(TOKEN_HEADER, t)
       .send({ title: "Twice", content: "second" });
-    expect(first.body.id).toBe(join("inbox", "Twice.md"));
-    expect(second.body.id).toBe(join("inbox", "Twice-2.md"));
-    expect(readFileSync(join(VAULT, "inbox", "Twice.md"), "utf-8")).toBe(
+    expect(first.body.id).toBe(join("inbox", "twice.md"));
+    expect(second.body.id).toBe(join("inbox", "twice-2.md"));
+    expect(readFileSync(join(VAULT, "inbox", "twice.md"), "utf-8")).toBe(
       "first",
     );
-    expect(readFileSync(join(VAULT, "inbox", "Twice-2.md"), "utf-8")).toBe(
+    expect(readFileSync(join(VAULT, "inbox", "twice-2.md"), "utf-8")).toBe(
       "second",
     );
   });
