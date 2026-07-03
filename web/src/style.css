@@ -792,7 +792,7 @@ body > :not(#graph) {
 }
 .embed-model-row select { width: 100%; }
 #integ-recheck {
-  margin: 8px 10px 0;
+  margin: 8px 10px 5px;
   width: calc(100% - 20px);
   background: none;
   border: 1px solid var(--border);
@@ -800,6 +800,7 @@ body > :not(#graph) {
   border-radius: 6px;
   padding: 5px;
   font-size: 12px;
+  text-align: center;
   cursor: pointer;
 }
 #integ-recheck:hover { color: var(--accent); border-color: var(--accent); }
@@ -859,6 +860,7 @@ body > :not(#graph) {
   border-radius: 6px;
   padding: 5px;
   font-size: 12px;
+  text-align: center;
   cursor: pointer;
 }
 #qmd-enable:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
