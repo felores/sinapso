@@ -4349,6 +4349,7 @@ async function boot() {
         <tr><td>Select / read note</td><td>click a node</td></tr>
         <tr><td>Open in Obsidian</td><td>double-click or right-click a node</td></tr>
         <tr><td>Show / hide panels</td><td><kbd>A</kbd> content (left) · <kbd>D</kbd> research (right)</td></tr>
+        <tr><td>Cycle arrangement</td><td><kbd>S</kbd> links → semantic → hybrid</td></tr>
         <tr><td>Clear selection</td><td><kbd>Esc</kbd></td></tr>
         <tr><td>Focus depth</td><td>1–3 in the bottom bar (local-graph radius)</td></tr>
       </table>`,
@@ -4526,6 +4527,15 @@ async function boot() {
       }
       if (k === "o") {
         flipCheck("#toggle-orphans");
+        return;
+      }
+      // s cycles the arrangement links -> semantic -> hybrid, reusing the
+      // View-menu dropdown so applyArrangement + persistence stay identical.
+      if (k === "s") {
+        const sel = $("#arrange") as HTMLSelectElement;
+        const order = ["links", "semantic", "hybrid"];
+        sel.value = order[(order.indexOf(sel.value) + 1) % order.length];
+        sel.dispatchEvent(new Event("change"));
         return;
       }
       // a / d toggle the left (content) and right (research) panels, reusing
