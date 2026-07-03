@@ -991,10 +991,9 @@ body > :not(#graph) {
   background: var(--panel);
   border-left: 1px solid var(--border);
   backdrop-filter: blur(8px);
-  z-index: 19;
+  z-index: 20; /* same stacking level as the content/reader panel */
   display: flex;
   flex-direction: column;
-  padding: 10px 14px;
   font-size: 13px;
 }
 #research.hidden { display: none; }
@@ -1033,11 +1032,13 @@ body > :not(#graph) {
   opacity: 0.6;
 }
 #research.floating #research-resize-corner { display: block; }
+/* header spans flush to the panel borders with a divider, like the content panel */
 #research-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 8px;
+  padding: 12px 18px 10px;
+  border-bottom: 1px solid var(--border);
 }
 /* history navigation sits at the LEFT of the title, matching the content panel */
 #research-nav {
@@ -1070,10 +1071,11 @@ body > :not(#graph) {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  padding: 14px 18px;
 }
 #research-body.hidden { display: none; }
 #research-error {
-  margin: 8px 0;
+  margin: 8px 18px;
   padding: 7px 9px;
   border: 1px solid #b3585f;
   border-radius: 6px;
@@ -1081,7 +1083,7 @@ body > :not(#graph) {
   font-size: 12px;
 }
 #research-error.hidden { display: none; }
-#research-input-row { margin-top: 8px; }
+#research-input-row { margin: 8px 18px 14px; }
 #research-input {
   flex: 1;
   min-width: 0;

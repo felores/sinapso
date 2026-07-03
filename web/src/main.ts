@@ -3657,6 +3657,7 @@ async function boot() {
         <tr><td>Search</td><td><kbd>/</kbd>, then <kbd>Enter</kbd> to fly to the top hit</td></tr>
         <tr><td>Select / read note</td><td>click a node</td></tr>
         <tr><td>Open in Obsidian</td><td>double-click or right-click a node</td></tr>
+        <tr><td>Show / hide panels</td><td><kbd>A</kbd> content (left) · <kbd>D</kbd> research (right)</td></tr>
         <tr><td>Clear selection</td><td><kbd>Esc</kbd></td></tr>
         <tr><td>Focus depth</td><td>1–3 in the bottom bar (local-graph radius)</td></tr>
       </table>`,
@@ -3837,6 +3838,20 @@ async function boot() {
       }
       if (k === "o") {
         flipCheck("#toggle-orphans");
+        return;
+      }
+      // a / d toggle the left (content) and right (research) panels, reusing
+      // the same corner buttons so state + persistence stay identical.
+      if (k === "a") {
+        if (!$("#reader").classList.contains("hidden"))
+          $("#reader-close").click();
+        else $("#reopen-content").click();
+        return;
+      }
+      if (k === "d") {
+        if (!$("#research").classList.contains("hidden"))
+          $("#research-close").click();
+        else $("#reopen-research").click();
         return;
       }
     }
