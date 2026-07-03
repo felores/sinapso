@@ -3750,7 +3750,7 @@ async function boot() {
     const btn = document.createElement("button");
     btn.id = "note-questions-btn";
     btn.textContent = "✦ research questions";
-    btn.title = "Generate web-research questions from this note";
+    btn.title = "Generate research questions from this note";
     btn.addEventListener("click", async () => {
       btn.disabled = true;
       btn.textContent = "✦ generating…"; // LLM path takes a few seconds (F021)
@@ -3761,10 +3761,6 @@ async function boot() {
         btn.remove();
         const h = document.createElement("h3");
         h.textContent = "Research questions";
-        const tag = document.createElement("span");
-        tag.className = "rel-tag";
-        tag.textContent = "web";
-        h.append(" ", tag);
         box.appendChild(h);
         if (!data.questions.length) {
           const p = document.createElement("p");
@@ -3773,16 +3769,37 @@ async function boot() {
           box.appendChild(p);
           return;
         }
+        // Each question can be answered two ways: semantically over the vault
+        // (qmd, local, free) or on the web (Exa deep research). Many questions
+        // are project/internal and only the vault has the answer, so the user
+        // picks the source per question (F036).
         for (const q of data.questions) {
           const row = document.createElement("div");
-          row.className = "gap-row";
-          row.title = "Run as web research (Exa)";
+          row.className = "gap-row question-row";
           const text = document.createElement("div");
           text.className = "gap-query";
           text.textContent = q;
           row.appendChild(text);
-          // Research questions are research: run deep synthesis (F020).
-          row.addEventListener("click", () => startWebResearch(q));
+          const actions = document.createElement("div");
+          actions.className = "question-actions";
+          const semBtn = document.createElement("button");
+          semBtn.className = "q-btn q-semantic";
+          semBtn.textContent = "semantic";
+          semBtn.title = "Answer from your vault (semantic search)";
+          semBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            void runSemanticQuery(q);
+          });
+          const webBtn = document.createElement("button");
+          webBtn.className = "q-btn q-web";
+          webBtn.textContent = "web";
+          webBtn.title = "Answer from the web (deep research)";
+          webBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            startWebResearch(q);
+          });
+          actions.append(semBtn, webBtn);
+          row.appendChild(actions);
           box.appendChild(row);
         }
       } catch {

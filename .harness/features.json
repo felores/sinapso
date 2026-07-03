@@ -1,7 +1,7 @@
 {
   "project": "solaris-optional-integrations",
   "created": "2026-07-02T04:37:20Z",
-  "updated": "2026-07-03T21:45:12Z",
+  "updated": "2026-07-03T21:49:38Z",
   "features": [
     {
       "id": "F001",
@@ -975,6 +975,30 @@
       "implemented_at": null,
       "verified_by": null,
       "verified_at": null
+    },
+    {
+      "id": "F036",
+      "priority": 36,
+      "category": "Semantic Layer",
+      "behavior": "Each note follow-up question (bottom of the reader) offers TWO source buttons: 'semantic' (answer from the vault via qmd /api/semantic-search) and 'web' (consent-gated deep research via Exa). Many questions are project/internal and only the vault has the answer, so the user picks the source per question. Results render in the shared #research column.",
+      "verification": {
+        "command": "npm run typecheck",
+        "expected": "typecheck clean; agent-browser: each generated question shows a semantic + a web button; semantic runs a vault search (SEMANTIC RESULTS), web routes through the consent gate."
+      },
+      "state": "passing",
+      "depends_on": [],
+      "files_touched": [
+        "web/src/main.ts",
+        "web/src/style.css"
+      ],
+      "confidence": "autonomous",
+      "context_note": "Reuse existing runSemanticQuery(q) (no egress) + startWebResearch(q) (consent-gated). Row is no longer whole-click; two .q-btn buttons with stopPropagation. Requested by Felo mid-flight (2026-07-03).",
+      "spec_ref": null,
+      "implemented_by": "claude-opus-4-8",
+      "implemented_at": "2026-07-03T21:49:38Z",
+      "verified_by": "npm run typecheck + agent-browser",
+      "verified_at": "2026-07-03T21:49:38Z",
+      "evidence": "typecheck clean. agent-browser: 5 questions each render [semantic, web]; clicking semantic ran /api/semantic-search and rendered SEMANTIC RESULTS (vault notes) in #research (reader force-docked left); clicking web routed through startWebResearch (consent-gated deep research). No egress on the semantic path."
     }
   ]
 }
