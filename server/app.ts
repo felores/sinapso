@@ -174,7 +174,6 @@ export function createApp(
         },
         consents: cfg.consents,
         defaultModel: cfg.defaultModel,
-        embedModel: cfg.embedModel,
         writeDestination: cfg.writeDestination,
       });
     } catch (e) {
@@ -191,7 +190,6 @@ export function createApp(
         ok: true,
         consents: cfg.consents,
         defaultModel: cfg.defaultModel,
-        embedModel: cfg.embedModel,
         writeDestination: cfg.writeDestination,
         exaConfigured: !!cfg.exaKey,
       });
@@ -463,15 +461,11 @@ export function createApp(
       return;
     }
     const flag = (v: unknown) => v === "1" || v === "true";
-    // embed uses the configured model; force (-f) rebuilds all vectors after a
-    // model switch so dimensions don't get mixed.
+    // force (-f) rebuilds all vectors from scratch; otherwise embed is incremental.
     const started = qmdMaint.start(
       bin,
       { update: flag(req.query.update), embed: flag(req.query.embed) },
-      {
-        embedModel: loadConfig(configPath).embedModel,
-        force: flag(req.query.force),
-      },
+      { force: flag(req.query.force) },
     );
     if (!started) {
       res.status(qmdMaint.running() ? 409 : 400).json({

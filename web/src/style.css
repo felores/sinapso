@@ -38,15 +38,15 @@ body > :not(#graph) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 28px;
+  gap: 20px;
   pointer-events: none;
   transition: opacity 0.6s ease;
 }
 #loading.done { opacity: 0; }
-#loading-bar { display: flex; gap: 7px; }
+#loading-bar { display: flex; gap: 6px; }
 #loading-bar span {
-  width: 42px;
-  height: 12px;
+  width: 29px;
+  height: 8px;
   border-radius: 3px;
   background: var(--accent);
   opacity: 0.22;
@@ -68,15 +68,15 @@ body > :not(#graph) {
 #loading-hint {
   text-align: center;
   color: var(--muted);
-  font-size: 17px;
+  font-size: 12px;
   line-height: 2.2;
 }
 #loading-hint kbd {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 14px;
+  padding: 1px 4px;
+  font-size: 10px;
 }
 
 /* ---------- top bar ---------- */
@@ -87,11 +87,19 @@ body > :not(#graph) {
   align-items: center;
   gap: 18px;
   padding: 10px 18px;
+  /* keep the row height even when the group + search both go absolute
+     (menu-centered + search-stacked), so the stacked search lands below it */
+  min-height: 54px;
   pointer-events: none;
   z-index: 10;
 }
 
-#brand { display: flex; align-items: baseline; gap: 10px; pointer-events: auto; }
+/* brand + menu are one unit ("Solaris <menu>"): they travel together, at the
+   left normally and centered on screen when the left panel is docked. z-index
+   keeps the whole group (and its open dropdowns) above the search field + mode
+   buttons, which sit later in the DOM. */
+#nav-group { display: flex; align-items: center; gap: 18px; pointer-events: auto; position: relative; z-index: 2; }
+#brand { display: flex; align-items: baseline; gap: 10px; }
 #brand-name { font-size: 22px; font-weight: 650; letter-spacing: 0.5px; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7); }
 #brand-stats { color: var(--muted); font-size: 13px; font-family: Consolas, monospace; }
 
@@ -164,21 +172,22 @@ body > :not(#graph) {
 .lang-dropdown { min-width: 120px; }
 .dropdown button.lang-chip { justify-content: flex-start; gap: 8px; }
 .lang-chip.active { color: var(--accent); }
-/* the flag glyph renders high in its line box; nudge it down to the text baseline
-   (on top of the menubar's 3px, ~7px total) */
 /* the flag is a glyph, not text: no shadow, and larger than the text labels.
-   Its box is pinned to the text labels' content height (15px) with inline-flex
-   centering so the bigger glyph overflows visually without growing the menubar row. */
+   Box height matches the text labels (25px, border-box) so the hover background
+   is the same size; inline-flex centers the bigger glyph inside without growing
+   the row. */
 #lang-label {
   display: inline-flex;
   align-items: center;
-  height: 15px;
+  justify-content: center;
+  height: 25px;
   font-size: 19px;
   line-height: 1;
   text-shadow: none;
-  position: relative;
-  top: 5px;
 }
+/* the flag emoji's ink sits high in its em box; drop it to the box's optical
+   middle without moving the (hover) background */
+#lang-label .flag-glyph { display: block; transform: translateY(2px); }
 
 /* ---------- modal ---------- */
 #modal-backdrop {
@@ -226,7 +235,7 @@ body > :not(#graph) {
 
 #search {
   pointer-events: auto;
-  width: 320px;
+  width: 280px;
   padding: 8px 12px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -237,7 +246,31 @@ body > :not(#graph) {
 }
 #search:focus { border-color: var(--accent); }
 
-#search-wrap { position: relative; pointer-events: auto; margin-left: auto; }
+/* --right-inset (set by layoutTopbar) keeps the row-1 search left of a docked
+   right panel instead of behind it; reset to 0 when nothing is docked right */
+#search-wrap { position: relative; pointer-events: auto; margin-left: auto; margin-right: var(--right-inset, 0); z-index: 1; top: 3px; }
+
+/* topbar reflow around docked panels (JS toggles these on #topbar; see
+   layoutTopbar). menu-centered centers the whole brand+menu group on screen
+   while the left panel is docked; search-stacked drops the search to a second
+   row directly below the menu, matching its horizontal position (left when the
+   menu is left, centered when the menu is centered). */
+#topbar.menu-centered #nav-group {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+#topbar.search-stacked #search-wrap {
+  position: absolute;
+  margin: 0;
+  top: 100%;
+  left: 18px; /* below the left-aligned menu */
+}
+#topbar.search-stacked.menu-centered #search-wrap {
+  left: 50%;
+  transform: translateX(-50%); /* below the centered menu */
+}
 
 #search-results {
   position: absolute;
@@ -544,6 +577,9 @@ body > :not(#graph) {
 }
 #reader.hidden { transform: translateX(120%); pointer-events: none; }
 #reader.dragging, #reader.resizing { transition: none; user-select: none; }
+/* used to flip the hidden reader's dock side (ctx-left) without the transform
+   transition sliding it across the visible screen (see setReaderCtxLeft) */
+#reader.no-anim { transition: none; }
 
 /* floating (undocked) mode: full border, shadow, rounded.
    z-index sits below all chrome (topbar 10, search-results 11, corner
@@ -1209,19 +1245,6 @@ body > :not(#graph) {
   font-size: 12px;
 }
 #research-error.hidden { display: none; }
-#research-input-row { margin: 8px 18px 14px; }
-#research-input {
-  flex: 1;
-  min-width: 0;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--fg);
-  padding: 5px 8px;
-  font-size: 12.5px;
-}
-#research-input:focus { outline: none; border-color: var(--accent); }
-#research-send.hidden, #research-stop.hidden { display: none; }
 #search-wrap.hidden { display: none; }
 #search.mode-active { border-color: var(--accent); }
 
@@ -1333,4 +1356,3 @@ body > :not(#graph) {
   border-radius: 6px;
 }
 #terminal-pane.hidden { display: none; }
-#research-input-row.hidden { display: none; }

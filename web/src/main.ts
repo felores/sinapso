@@ -398,7 +398,10 @@ const LANG_FLAG: Record<string, string> = { en: "🇬🇧", es: "🇪🇸" };
 function syncLangUI() {
   const code = i18n.getLang();
   const label = document.getElementById("lang-label");
-  if (label) label.textContent = LANG_FLAG[code] ?? code.toUpperCase();
+  // wrap the glyph so CSS can nudge only the flag (emoji ink sits high in its
+  // box) without moving the hover background
+  if (label)
+    label.innerHTML = `<span class="flag-glyph">${LANG_FLAG[code] ?? code.toUpperCase()}</span>`;
   document
     .querySelectorAll<HTMLElement>(".lang-chip")
     .forEach((c) => c.classList.toggle("active", c.dataset.lang === code));
@@ -2216,7 +2219,6 @@ async function boot() {
     };
     consents: { web: boolean };
     defaultModel: string | null;
-    embedModel: string | null;
   }
   const MODE_LIST = ["semantic", "web", "ingest"] as const;
   let integrations: IntegrationsStatus | null = null;
@@ -2364,27 +2366,8 @@ async function boot() {
         sel.value = "";
         ($("#llm-model") as HTMLInputElement).classList.add("hidden");
       }
-      // embedding-model selector (same default/preset/__custom shape)
-      const esel = $("#embed-model-select") as HTMLSelectElement;
-      const emodel = integrations.embedModel ?? "";
-      const ecustom = $("#embed-model-custom") as HTMLInputElement;
-      if ([...esel.options].some((o) => o.value === emodel)) {
-        esel.value = emodel;
-        ecustom.classList.add("hidden");
-      } else if (emodel) {
-        esel.value = "__custom";
-        ecustom.classList.remove("hidden");
-        ecustom.value = emodel;
-      } else {
-        esel.value = "";
-        ecustom.classList.add("hidden");
-      }
-      // "browse models" links show only while the custom option is active
+      // "browse models" link shows only while the custom option is active
       $("#llm-model-help").classList.toggle("hidden", sel.value !== "__custom");
-      $("#embed-model-help").classList.toggle(
-        "hidden",
-        esel.value !== "__custom",
-      );
     }
     // Live-validate the OpenRouter key for free (GET /key); Exa has no free
     // check, so it stays at "key set" until Web mode actually runs.
@@ -2676,15 +2659,11 @@ async function boot() {
       maintMaxPending = 0;
       bar.classList.add("hidden");
       fill.style.width = "0";
-      const dirtyHint =
-        localStorage.getItem("akasha-qmd-model-dirty") === "1"
-          ? " · model changed — click Re-embed"
-          : "";
       $("#qmd-maint-status").textContent = m.error
         ? `error: ${m.error}`
         : pending
-          ? `${pending} pending${stale}${dirtyHint}`
-          : `index up to date${stale}${dirtyHint}`;
+          ? `${pending} pending${stale}`
+          : `index up to date${stale}`;
     }
   }
   async function startMaint(update: boolean, embed: boolean, force = false) {
@@ -2705,46 +2684,13 @@ async function boot() {
         "could not start — check the server log";
     }
   }
-  // Three explicit jobs. A model switch needs the full re-embed; a dirty flag
-  // only drives the status hint (which button to click), set on model change
-  // and cleared when the full re-embed runs.
-  function markModelDirty() {
-    localStorage.setItem("akasha-qmd-model-dirty", "1");
-  }
   // update: re-index changed notes (BM25). embed: new/changed chunks only.
-  // re-embed: rebuild ALL embeddings (qmd embed -f) — after a model change.
+  // re-embed: rebuild ALL embeddings from scratch (qmd embed -f).
   $("#qmd-update").addEventListener("click", () => startMaint(true, false));
   $("#qmd-embed").addEventListener("click", () => startMaint(false, true));
-  $("#qmd-re-embed").addEventListener("click", () => {
-    localStorage.removeItem("akasha-qmd-model-dirty");
-    void startMaint(false, true, true);
-  });
-  const embedSelect = $("#embed-model-select") as HTMLSelectElement;
-  const embedCustom = $("#embed-model-custom") as HTMLInputElement;
-  embedSelect.addEventListener("change", () => {
-    const custom = embedSelect.value === "__custom";
-    $("#embed-model-help").classList.toggle("hidden", !custom);
-    if (custom) {
-      embedCustom.classList.remove("hidden");
-      embedCustom.focus();
-      return;
-    }
-    embedCustom.classList.add("hidden");
-    postConfig({ embedModel: embedSelect.value || null })
-      .then(markModelDirty)
-      .catch(() => refreshIntegrations());
-  });
-  embedCustom.addEventListener("keydown", async (e) => {
-    if (e.key !== "Enter") return;
-    const v = embedCustom.value.trim();
-    try {
-      await postConfig({ embedModel: v || null });
-      markModelDirty();
-      embedCustom.placeholder = "model saved ✓";
-    } catch {
-      embedCustom.placeholder = "save failed — retry";
-    }
-  });
+  $("#qmd-re-embed").addEventListener("click", () =>
+    startMaint(false, true, true),
+  );
 
   // One-time prompt (R6): qmd installed but nothing covers this vault.
   function maybePromptSetup() {
@@ -2881,35 +2827,76 @@ async function boot() {
   let researchHistory: ResearchEntry[] = [];
   let historyIdx = -1; // position in researchHistory (0 = newest); -1 = none
   let currentEntryId: string | null = null; // id of the shown entry (for move/trash)
-  const researchInput = $("#research-input") as HTMLInputElement;
-
-  // Docked research owns the bottom search bar (hidden). Detached (floating),
-  // it's a side window, so the search field + mode buttons stay usable.
-  function syncSearchWrap() {
+  // Reflow the topbar around docked panels (they overlay it: panel z-index 20 >
+  // topbar 10). The menu centers on screen only while the LEFT (content) panel
+  // is docked; the search bar drops to a centered second row when the right side
+  // is covered by a panel or it would collide with the menu, and returns to the
+  // right when there is room. Re-run by a MutationObserver on the two panels'
+  // class attributes + window resize (see the topbar-reflow wiring below).
+  function layoutTopbar() {
+    const reader = $("#reader");
     const research = $("#research");
-    const owns =
+    const readerDocked =
+      !reader.classList.contains("hidden") &&
+      !reader.classList.contains("floating");
+    const researchDocked =
       !research.classList.contains("hidden") &&
       !research.classList.contains("floating");
-    $("#search-wrap").classList.toggle("hidden", owns);
+    const leftDocked = readerDocked && reader.classList.contains("ctx-left");
+    // width of whatever is docked on the RIGHT (research, or a non-ctx-left
+    // reader) so the search sits to its left instead of behind it
+    const rightPanelW = researchDocked
+      ? research.offsetWidth
+      : readerDocked && !reader.classList.contains("ctx-left")
+        ? reader.offsetWidth
+        : 0;
+
+    const topbar = $("#topbar");
+    topbar.style.setProperty("--right-inset", `${rightPanelW}px`);
+    topbar.classList.toggle("menu-centered", leftDocked);
+
+    // The search sits on row 1 (inset left of any right panel) and drops to a
+    // second row directly below the brand+menu group whenever the group would
+    // collide with it. The stacked search follows the group's alignment (CSS:
+    // left when normal, centered when menu-centered).
+    const PAD = 18,
+      GAP = 18;
+    const vw = window.innerWidth;
+    const groupW = $("#nav-group").offsetWidth;
+    const groupRight = leftDocked ? vw / 2 + groupW / 2 : PAD + groupW;
+    const searchLeft = vw - PAD - rightPanelW - $("#search-wrap").offsetWidth;
+    const collides = groupRight + GAP > searchLeft;
+    topbar.classList.toggle("search-stacked", collides);
+  }
+
+  // Flip the reader's left dock. When the reader is HIDDEN, suppress the
+  // transition so changing the hidden transform (translateX ±120%) doesn't
+  // animate the panel across the visible screen (it would pass through 0%).
+  function setReaderCtxLeft(on: boolean) {
+    const reader = $("#reader");
+    if (reader.classList.contains("hidden")) {
+      reader.classList.add("no-anim");
+      reader.classList.toggle("ctx-left", on);
+      void reader.offsetWidth; // commit before re-enabling transitions
+      reader.classList.remove("no-anim");
+    } else {
+      reader.classList.toggle("ctx-left", on);
+    }
   }
 
   function openResearch(mode: ModeName) {
     researchMode = mode;
     $("#research").classList.remove("hidden");
-    syncSearchWrap(); // docked column owns the bottom bar; floating leaves it
-    $("#reader").classList.add("ctx-left"); // open note = working context
+    setReaderCtxLeft(true); // open note = working context on the left
     $("#research-title").textContent = i18n.t(`research.${mode}`);
-    $("#research-input-row").classList.remove("hidden");
     researchError(null);
-    researchInput.placeholder = i18n.t(`research.ph.${mode}`);
   }
 
   function closeResearch() {
     researchMode = null;
     $("#research").classList.add("hidden");
-    $("#search-wrap").classList.remove("hidden");
     // reader returns to the right unless the user pinned it left
-    if (!readerLeftPinned) $("#reader").classList.remove("ctx-left");
+    if (!readerLeftPinned) setReaderCtxLeft(false);
   }
   $("#research-close").addEventListener("click", closeResearch);
 
@@ -2948,7 +2935,6 @@ async function boot() {
       const rDockKey = rGeom.floating ? "dock.dock" : "dock.undock";
       dockBtn.dataset.i18nTitle = rDockKey;
       dockBtn.title = i18n.t(rDockKey);
-      syncSearchWrap(); // floating frees the bottom search bar; docked reclaims it
       if (rGeom.floating) {
         rGeom.width = cl(rGeom.width, 300, window.innerWidth - 40);
         rGeom.height = cl(
@@ -3084,18 +3070,6 @@ async function boot() {
     else if (mode === "web") void startWebResearch(query);
     else if (mode === "ingest") void runIngest(query);
   }
-
-  // Follow-ups from inside the column route to the active mode.
-  const submitResearchInput = () => {
-    const q = researchInput.value.trim();
-    if (!q || !researchMode) return;
-    researchInput.value = "";
-    runModeQuery(researchMode, q);
-  };
-  $("#research-send").addEventListener("click", submitResearchInput);
-  researchInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") submitResearchInput();
-  });
 
   // ---- research history: shared renderers + navigation ----
   function renderSemanticInto(
@@ -3294,19 +3268,27 @@ async function boot() {
   });
   // Corner buttons: reopen the last content note / the last research result.
   $("#reopen-content").addEventListener("click", async () => {
-    // Toggle: if the content panel is open, close it (clearSelection also
-    // deselects the node), otherwise reopen the last note. Mirrors #reopen-research.
-    if (!$("#reader").classList.contains("hidden")) {
+    const reader = $("#reader");
+    const dockedLeft =
+      !reader.classList.contains("hidden") &&
+      reader.classList.contains("ctx-left") &&
+      !reader.classList.contains("floating");
+    // Already docked on the left → close it (clearSelection deselects the node).
+    if (dockedLeft) {
       clearSelection();
       return;
     }
-    if (!readerHistory.length) await loadReaderHistory();
-    if (!readerHistory.length) return;
-    // The left button docks the content panel to the LEFT edge and keeps it
-    // there (persists even if research later opens/closes on the right).
+    // Otherwise dock the content panel on the LEFT edge and keep it there
+    // (persists even if research later opens/closes on the right): reopen it
+    // there if closed, or slide it over from the right if it's open.
+    const wasHidden = reader.classList.contains("hidden");
+    if (wasHidden) {
+      if (!readerHistory.length) await loadReaderHistory();
+      if (!readerHistory.length) return;
+    }
     readerLeftPinned = true;
-    $("#reader").classList.add("ctx-left");
-    openReaderHistoryAt(0);
+    setReaderCtxLeft(true);
+    if (wasHidden) openReaderHistoryAt(0);
   });
   $("#reopen-research").addEventListener("click", async () => {
     // Toggle: close the right panel if it's open, otherwise reopen last research.
@@ -3718,10 +3700,8 @@ async function boot() {
   const refreshDynamicChrome = () => {
     updateSearchField();
     renderModes();
-    if (researchMode) {
+    if (researchMode)
       $("#research-title").textContent = i18n.t(`research.${researchMode}`);
-      researchInput.placeholder = i18n.t(`research.ph.${researchMode}`);
-    }
   };
   syncLangUI();
   for (const chip of document.querySelectorAll<HTMLElement>(".lang-chip")) {
@@ -3732,6 +3712,22 @@ async function boot() {
       closeMenus();
     });
   }
+
+  // ---- topbar reflow around docked panels ----
+  // Any dock/undock/open/close flips a class on #reader or #research, so observe
+  // both and relayout; resize covers the pure collision case. A trailing pass
+  // re-measures once the dock/slide transition (~0.25s) has settled the width.
+  let relayoutT = 0;
+  const relayout = () => {
+    layoutTopbar();
+    clearTimeout(relayoutT);
+    relayoutT = window.setTimeout(layoutTopbar, 300);
+  };
+  const topbarObs = new MutationObserver(relayout);
+  for (const id of ["#reader", "#research"])
+    topbarObs.observe($(id), { attributes: true, attributeFilter: ["class"] });
+  window.addEventListener("resize", layoutTopbar);
+  relayout();
 
   // ---- modal ----
   const showModal = (title: string, html: string) => {
@@ -3958,10 +3954,7 @@ async function boot() {
         el.isContentEditable);
     if (e.key === "/" && !typing) {
       e.preventDefault();
-      // While the research column is open it owns the interaction.
-      if (!$("#research").classList.contains("hidden"))
-        ($("#research-input") as HTMLInputElement).focus();
-      else searchBox.focus();
+      searchBox.focus();
       return;
     }
     if (e.key === "Escape" && typing && el !== searchBox) {

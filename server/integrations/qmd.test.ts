@@ -496,28 +496,23 @@ describe("createQmdMaintenance", () => {
     expect(m.start("/qmd", {})).toBe(false);
   });
 
-  it("passes QMD_EMBED_MODEL + -f when embedding with a model and force", async () => {
-    const spawns: { args: string[]; env?: Record<string, string> }[] = [];
-    const run: Runner = async (_cmd, args, _t, env) => {
-      spawns.push({ args, env });
+  it("passes -f when force is set (full re-embed)", async () => {
+    const spawns: { args: string[] }[] = [];
+    const run: Runner = async (_cmd, args) => {
+      spawns.push({ args });
       return { ok: true, stdout: "", stderr: "" };
     };
     const m = createQmdMaintenance(run);
-    m.start(
-      "/qmd",
-      { embed: true },
-      { embedModel: "hf:x/y/z.gguf", force: true },
-    );
+    m.start("/qmd", { embed: true }, { force: true });
     await new Promise((r) => setTimeout(r, 10));
     const embed = spawns.find((s) => s.args[0] === "embed")!;
     expect(embed.args).toEqual(["embed", "-f"]);
-    expect(embed.env).toEqual({ QMD_EMBED_MODEL: "hf:x/y/z.gguf" });
   });
 
-  it("embeds incrementally with no model/force (no env, no -f)", async () => {
-    const spawns: { args: string[]; env?: Record<string, string> }[] = [];
-    const run: Runner = async (_cmd, args, _t, env) => {
-      spawns.push({ args, env });
+  it("embeds incrementally with no force (no -f)", async () => {
+    const spawns: { args: string[] }[] = [];
+    const run: Runner = async (_cmd, args) => {
+      spawns.push({ args });
       return { ok: true, stdout: "", stderr: "" };
     };
     const m = createQmdMaintenance(run);
@@ -525,7 +520,6 @@ describe("createQmdMaintenance", () => {
     await new Promise((r) => setTimeout(r, 10));
     const embed = spawns.find((s) => s.args[0] === "embed")!;
     expect(embed.args).toEqual(["embed"]);
-    expect(embed.env).toBeUndefined();
   });
 });
 
@@ -559,50 +553,19 @@ describe("qmd maintenance endpoints", () => {
   });
 });
 
-describe("qmd embed-model wiring (F025)", () => {
+describe("qmd force re-embed wiring", () => {
   const freshVault = () => mkdtempSync(join(tmpdir(), "solaris-embed-"));
-  const MODEL =
-    "hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf";
 
-  it("persists embedModel via the guarded config endpoint and reflects it in status", async () => {
-    const v = freshVault();
-    const app = makeApp(
-      { collections: { solaris: v }, vsearchOut: "[]" },
-      v,
-    ).app;
-    // unguarded config write is rejected
-    expect(
-      (
-        await request(app)
-          .post("/api/integrations/config")
-          .send({ embedModel: MODEL })
-      ).status,
-    ).toBe(403);
-    const token = (await request(app).get("/api/session")).body.token;
-    await request(app)
-      .post("/api/integrations/config")
-      .set(TOKEN_HEADER, token)
-      .send({ embedModel: MODEL });
-    const st = await request(app).get("/api/integrations");
-    expect(st.body.embedModel).toBe(MODEL);
-    rmSync(v, { recursive: true, force: true });
-  });
-
-  it("passes the configured model + -f to the embed spawn on force", async () => {
+  it("passes -f to the embed spawn when force=1", async () => {
     const v = freshVault();
     const inst = makeApp({ collections: { solaris: v }, vsearchOut: "[]" }, v);
     const token = (await request(inst.app).get("/api/session")).body.token;
-    await request(inst.app)
-      .post("/api/integrations/config")
-      .set(TOKEN_HEADER, token)
-      .send({ embedModel: MODEL });
     await request(inst.app)
       .post("/api/qmd/maintenance?embed=1&force=1")
       .set(TOKEN_HEADER, token);
     await new Promise((r) => setTimeout(r, 10));
     const embed = inst.fake.spawns.find((s) => s.args[0] === "embed")!;
     expect(embed.args).toEqual(["embed", "-f"]);
-    expect(embed.env).toEqual({ QMD_EMBED_MODEL: MODEL });
     rmSync(v, { recursive: true, force: true });
   });
 });

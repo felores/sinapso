@@ -10,6 +10,7 @@
   <div id="graph"></div>
 
   <header id="topbar">
+    <div id="nav-group">
     <div id="brand">
       <span id="brand-name">Solaris</span>
     </div>
@@ -28,6 +29,9 @@
           <button id="mi-obsidian" data-i18n="file.obsidian">Open Selected in Obsidian <span class="mi-hint">Ctrl+O</span></button>
           <hr />
           <button id="mi-clear-history" data-i18n="file.clearHistory">Clear History <span class="mi-hint" data-i18n="hint.researchNotes">research + notes</span></button>
+          <hr />
+          <button id="mi-shortcuts" data-i18n="help.shortcuts">Keyboard &amp; Mouse Controls</button>
+          <button id="mi-about" data-i18n="help.about">About Solaris</button>
         </div>
       </div>
       <div class="menu">
@@ -100,34 +104,23 @@
           <div class="mi-group" id="mi-integrations">
             <div class="integ-row" id="integ-markitdown"><b data-i18n="integ.ingestion">Ingestion</b><span class="integ-status"></span><button class="integ-install hidden" data-tool="markitdown" title="Install markitdown; existing installs are never touched" data-i18n="integ.install">install</button></div>
 
+            <div class="integ-row" id="integ-qmd"><b data-i18n="integ.semantics">Semantics</b><span class="integ-status"></span><button class="integ-install hidden" data-tool="qmd" title="Install qmd; existing installs are never touched" data-i18n="integ.install">install</button></div>
+            <button id="qmd-enable" class="hidden" data-i18n="integ.enableSemantic">enable semantic search</button>
+            <div id="qmd-maint" class="hidden">
+              <div class="qmd-maint-btns">
+                <button id="qmd-update" title="Re-index changed notes for keyword search (qmd update)" data-i18n="qmd.update">update</button>
+                <button id="qmd-embed" title="Embed new / changed notes only (qmd embed)" data-i18n="qmd.embed">embed</button>
+                <button id="qmd-re-embed" title="Rebuild ALL embeddings from scratch (qmd embed -f)" data-i18n="qmd.reembed">re-embed</button>
+              </div>
+              <div id="qmd-maint-bar" class="hidden"><span></span></div>
+              <div id="qmd-maint-status" class="mi-hint"></div>
+            </div>
+
             <div class="integ-row" id="integ-exa"><b data-i18n="integ.web">Web Research</b><span class="integ-status"></span></div>
             <input type="password" id="exa-key" placeholder="Exa API key — paste + Enter" data-i18n-ph="ph.exaKey" autocomplete="off" />
             <div class="integ-help">
               <a href="https://dashboard.exa.ai/api-keys" target="_blank" rel="noopener" data-i18n="integ.getKey">Get a key <svg class="ext-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/></svg></a>
               <a href="https://dashboard.exa.ai/billing" target="_blank" rel="noopener" data-i18n="integ.billing">Billing <svg class="ext-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/></svg></a>
-            </div>
-
-            <div class="integ-row" id="integ-qmd"><b data-i18n="integ.semantics">Semantics</b><span class="integ-status"></span><button class="integ-install hidden" data-tool="qmd" title="Install qmd; existing installs are never touched" data-i18n="integ.install">install</button></div>
-            <button id="qmd-enable" class="hidden" data-i18n="integ.enableSemantic">enable semantic search</button>
-            <div id="qmd-maint" class="hidden">
-              <label class="ctl embed-model-row" data-i18n="integ.embedModel">embedding model
-                <select id="embed-model-select">
-                  <option value="">EmbeddingGemma 300M · lighter</option>
-                  <option value="hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf">Qwen3 0.6B · premium · heavier</option>
-                  <option value="__custom">custom…</option>
-                </select>
-              </label>
-              <input type="text" id="embed-model-custom" class="hidden" placeholder="hf:org/repo/file.gguf + Enter" data-i18n-ph="ph.embedCustom" autocomplete="off" spellcheck="false" />
-              <div class="integ-help hidden" id="embed-model-help">
-                <a href="https://huggingface.co/models?library=gguf&pipeline_tag=sentence-similarity&sort=trending" target="_blank" rel="noopener" data-i18n="integ.findEmbed">Find embedding models <svg class="ext-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/></svg></a>
-              </div>
-              <div class="qmd-maint-btns">
-                <button id="qmd-update" title="Re-index changed notes for keyword search (qmd update)" data-i18n="qmd.update">update</button>
-                <button id="qmd-embed" title="Embed new / changed notes only (qmd embed)" data-i18n="qmd.embed">embed</button>
-                <button id="qmd-re-embed" title="Rebuild ALL embeddings from scratch (qmd embed -f) — needed after changing the model" data-i18n="qmd.reembed">re-embed</button>
-              </div>
-              <div id="qmd-maint-bar" class="hidden"><span></span></div>
-              <div id="qmd-maint-status" class="mi-hint"></div>
             </div>
 
             <div class="integ-row" id="integ-openrouter"><b data-i18n="integ.llm">LLM Provider</b><span class="integ-status"></span></div>
@@ -154,13 +147,6 @@
           </div>
         </div>
       </div>
-      <div class="menu">
-        <span class="menu-label" data-i18n="menu.help">Help</span>
-        <div class="dropdown">
-          <button id="mi-shortcuts" data-i18n="help.shortcuts">Keyboard &amp; Mouse Controls</button>
-          <button id="mi-about" data-i18n="help.about">About Solaris</button>
-        </div>
-      </div>
       <div class="menu" id="menu-lang">
         <span class="menu-label" id="lang-label" data-i18n-title="lang.menu" title="Language">🇬🇧</span>
         <div class="dropdown lang-dropdown">
@@ -169,6 +155,7 @@
         </div>
       </div>
     </nav>
+    </div>
 
     <div id="search-wrap">
       <div id="modes">
@@ -279,10 +266,6 @@
     </div>
     <div id="research-error" class="hidden"></div>
     <div id="research-body"></div>
-    <div class="filter-row filter-new" id="research-input-row">
-      <input id="research-input" type="text" placeholder="follow up…" data-i18n-ph="ph.researchInput" autocomplete="off" spellcheck="false" />
-      <button class="filter-pm send-btn" id="research-send" title="Send" data-i18n-title="research.send"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
-    </div>
   </aside>
 
   <aside id="reader" class="hidden">

@@ -37,7 +37,7 @@ export const realRunner: Runner = (cmd, args, timeoutMs, env) =>
       args,
       {
         timeout: timeoutMs ?? 10_000,
-        // Extra env is merged over the inherited process env (e.g. QMD_EMBED_MODEL).
+        // Optional extra env, merged over the inherited process env.
         ...(env ? { env: { ...process.env, ...env } } : {}),
       },
       (err, stdout, stderr) =>

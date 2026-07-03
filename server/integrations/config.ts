@@ -23,9 +23,6 @@ export interface SolarisConfig {
   openrouterKey: string | null;
   consents: { web: boolean };
   defaultModel: string | null;
-  /** qmd embedding model override (hf:org/repo/file.gguf); null = qmd default.
-   *  Not a secret — safe to return in API responses. */
-  embedModel: string | null;
   /** Vault-relative destination folder for created notes (R12). */
   writeDestination: string;
   /** Addon install markers (qmd/markitdown), managed by the installer. */
@@ -37,7 +34,6 @@ export interface ConfigPatch {
   openrouterKey?: string | null;
   consents?: Partial<SolarisConfig["consents"]>;
   defaultModel?: string | null;
-  embedModel?: string | null;
   writeDestination?: string;
   addons?: Record<string, string>;
 }
@@ -48,7 +44,6 @@ export function defaultConfig(): SolarisConfig {
     openrouterKey: null,
     consents: { web: false },
     defaultModel: null,
-    embedModel: null,
     writeDestination: "inbox",
     addons: {},
   };
@@ -76,8 +71,6 @@ function merge(base: SolarisConfig, patch: unknown): SolarisConfig {
   }
   if (typeof p.defaultModel === "string" || p.defaultModel === null)
     out.defaultModel = p.defaultModel;
-  if (typeof p.embedModel === "string" || p.embedModel === null)
-    out.embedModel = p.embedModel;
   if (typeof p.writeDestination === "string" && p.writeDestination)
     out.writeDestination = p.writeDestination;
   if (typeof p.addons === "object" && p.addons !== null) {
