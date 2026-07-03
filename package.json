@@ -1,7 +1,7 @@
 {
   "name": "solaris",
   "version": "1.0.1",
-  "description": "Solaris \u2014 your Obsidian vault or Open Knowledge Format bundle as a navigable 3D universe.",
+  "description": "Solaris — your Obsidian vault or Open Knowledge Format bundle as a navigable 3D universe.",
   "type": "module",
   "main": "desktop/dist/main.cjs",
   "bin": {
@@ -50,16 +50,19 @@
     "prepublishOnly": "npm run typecheck && npm run build && npm run build:cli"
   },
   "dependencies": {
+    "better-sqlite3": "^12.11.1",
     "dompurify": "3.3.1",
     "exa-js": "2.16.0",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "sqlite-vec": "^0.1.9"
   },
   "devDependencies": {
-    "3d-force-graph": "^1.77.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.0",
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",
     "@types/three": "^0.184.1",
+    "3d-force-graph": "^1.77.0",
     "concurrently": "^9.0.0",
     "electron": "^42.4.0",
     "electron-builder": "^26.0.0",

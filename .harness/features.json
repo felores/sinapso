@@ -1,7 +1,7 @@
 {
   "project": "solaris-optional-integrations",
   "created": "2026-07-02T04:37:20Z",
-  "updated": "2026-07-03T16:03:29Z",
+  "updated": "2026-07-03T21:23:53Z",
   "features": [
     {
       "id": "F001",
@@ -54,7 +54,7 @@
       "confidence": "needs-review",
       "context_note": "Follow #filters-btn/#settings-btn toggle pattern and akasha-* localStorage namespace; menubar click-outside gotcha: global handler closes menus only when click lands outside any .menu. Frontend stays framework-free imperative (KTD9).",
       "spec_ref": "docs/plans/2026-07-01-002-feat-optional-integrations-qmd-exa-opencode-plan.md#u2-mode-selector-chrome--integrations-settings-ui",
-      "evidence": "typecheck + vite build green, 32/32 tests still pass. DEFERRED HUMAN REVIEW: M1 manual checklist (AE1/AE5 tooltips, mode exclusivity, key round-trip) pending — browser smoke planned after F004",
+      "evidence": "typecheck + vite build green, 32/32 tests still pass. DEFERRED HUMAN REVIEW: M1 manual checklist (AE1/AE5 tooltips, mode exclusivity, key round-trip) pending \u2014 browser smoke planned after F004",
       "implemented_by": "claude-fable-5",
       "implemented_at": "2026-07-02T04:50:00Z",
       "verified_by": "harness-progress verify (npm run typecheck && npm run build, exit 0)",
@@ -306,7 +306,7 @@
       "confidence": "needs-review",
       "context_note": "Follow existing panel patterns, reader-pane loading states, menubar click-outside gotcha for popovers. Diff rendering for edit proposals must be readable in the chat panel.",
       "spec_ref": "docs/plans/2026-07-01-002-feat-optional-integrations-qmd-exa-opencode-plan.md#u11-agent-chat-ui-connect-onboarding-and-permission-modes",
-      "evidence": "typecheck+build+101 tests green. Live browser smoke on scratch vault with REAL opencode: agent consent modal (egress + Zen training caveat), accept -> real locked-down serve spawn -> session created -> SSE stream open (reconnect banner wired to EventSource open/error). Full-access select guarded by standing-consent confirm; model input round-trips config. Proposal render/approve/edit/reject UI wired to the F010 routes (store paths fully unit-tested). DEFERRED HUMAN REVIEW: live F4/F5 with a real model turn (spends credits) — propose -> approve -> node+edge after rescan",
+      "evidence": "typecheck+build+101 tests green. Live browser smoke on scratch vault with REAL opencode: agent consent modal (egress + Zen training caveat), accept -> real locked-down serve spawn -> session created -> SSE stream open (reconnect banner wired to EventSource open/error). Full-access select guarded by standing-consent confirm; model input round-trips config. Proposal render/approve/edit/reject UI wired to the F010 routes (store paths fully unit-tested). DEFERRED HUMAN REVIEW: live F4/F5 with a real model turn (spends credits) \u2014 propose -> approve -> node+edge after rescan",
       "implemented_by": "claude-fable-5",
       "implemented_at": "2026-07-02T07:45:00Z",
       "verified_by": "harness-progress verify (typecheck+build+test) + live browser smoke (no model spend)",
@@ -362,7 +362,7 @@
         "web/src/style.css"
       ],
       "confidence": "needs-review",
-      "context_note": "Menubar gotcha: global click handler closes menus only when click lands outside any .menu — controls inside the dropdown keep it open. Follow #mi-controls (View menu) structure.",
+      "context_note": "Menubar gotcha: global click handler closes menus only when click lands outside any .menu \u2014 controls inside the dropdown keep it open. Follow #mi-controls (View menu) structure.",
       "spec_ref": "user follow-up 2026-07-02 (post-plan iteration)",
       "evidence": "typecheck+build+107 tests green. Browser check: Tools dropdown carries #mi-integrations, settings panel back to display-only, dropdown stays open on interaction, per-tool install buttons hidden when installed, statuses render (qmd 2.6.3, opencode 1.17.13, exa no key)",
       "implemented_by": "claude-fable-5",
@@ -374,7 +374,7 @@
       "id": "F014",
       "priority": 14,
       "category": "Agent (OpenCode)",
-      "behavior": "Agent model selector: GET /api/agent/models returns the OpenCode Zen provider's free models (cost.input+output === 0) from the running instance via client.config.providers(), plus the currently configured model. The Tools-menu integrations block gets a combobox: a select listing the free models plus a 'custom model…' option revealing a text input for provider/model entry; a typed value that matches a listed option selects it. Selection persists via defaultModel in config (no hardcoded model names).",
+      "behavior": "Agent model selector: GET /api/agent/models returns the OpenCode Zen provider's free models (cost.input+output === 0) from the running instance via client.config.providers(), plus the currently configured model. The Tools-menu integrations block gets a combobox: a select listing the free models plus a 'custom model\u2026' option revealing a text input for provider/model entry; a typed value that matches a listed option selects it. Selection persists via defaultModel in config (no hardcoded model names).",
       "verification": {
         "command": "npm test && npm run typecheck && npm run build",
         "expected": "Route test with fake opencode client returns only cost-0 zen models; typed custom value round-trips config; gates green"
@@ -502,7 +502,7 @@
       "confidence": "needs-review",
       "context_note": "Reader geometry engine (applyGeom/localStorage akasha-reader) must not fight the forced-left state: use a CSS class override on the docked state only, never mutate saved geometry. Menubar click-outside gotcha unchanged.",
       "spec_ref": "user follow-up 2026-07-02 (search-first column redesign)",
-      "evidence": "typecheck+build+121 tests green. Playwright on real vault: mode changes placeholder+accent; no dropdown while a mode is active; semantic Enter -> column with 11 results, click swaps note, column persists; search bar hides and reader force-docks LEFT (needed !important over the geometry engine's inline inset); close restores search bar + right reader; web Enter (mocked) -> column results with save button; agent Enter -> real session, note context notice, user bubble, stop button; '/' targets column input; Escape order includes the column; shortcut suppression verified while focused. Fixed en route: MCP snippet line-number/@@ decoration stripped. NOTE: test overwrote the stored Exa key with a fake; cleared to null — Felo must re-enter his key if he had one",
+      "evidence": "typecheck+build+121 tests green. Playwright on real vault: mode changes placeholder+accent; no dropdown while a mode is active; semantic Enter -> column with 11 results, click swaps note, column persists; search bar hides and reader force-docks LEFT (needed !important over the geometry engine's inline inset); close restores search bar + right reader; web Enter (mocked) -> column results with save button; agent Enter -> real session, note context notice, user bubble, stop button; '/' targets column input; Escape order includes the column; shortcut suppression verified while focused. Fixed en route: MCP snippet line-number/@@ decoration stripped. NOTE: test overwrote the stored Exa key with a fake; cleared to null \u2014 Felo must re-enter his key if he had one",
       "implemented_by": "claude-fable-5",
       "implemented_at": "2026-07-02T11:55:00Z",
       "verified_by": "gates exit 0 + playwright full-flow verification",
@@ -590,7 +590,7 @@
       "confidence": "autonomous",
       "context_note": "SDK: client.session.prompt({path:{id}, body:{parts, format:{type:'json_schema', schema}}}) -> result.data.info.structured_output (verify in sdk.gen types). Reuse one utility session per server run. Zen free models = zero cost.",
       "spec_ref": "user decisions 2026-07-02 (AskUserQuestion round 2)",
-      "evidence": "129/129 tests + typecheck + build green. LLM path via the sandboxed bridge: utility session reused, prompt carries note excerpt + the note's own phantom gaps, reply parsed as a bare JSON array (pinned SDK/binary 1.17.x predates the format/structured-output API — grounded, not assumed), 25s timeout; consent-off -> templates with zero LLM calls; unreadable note -> templates; UI button shows generating state. DEFERRED: live model turn quality check (spends Zen-free tokens only)",
+      "evidence": "129/129 tests + typecheck + build green. LLM path via the sandboxed bridge: utility session reused, prompt carries note excerpt + the note's own phantom gaps, reply parsed as a bare JSON array (pinned SDK/binary 1.17.x predates the format/structured-output API \u2014 grounded, not assumed), 25s timeout; consent-off -> templates with zero LLM calls; unreadable note -> templates; UI button shows generating state. DEFERRED: live model turn quality check (spends Zen-free tokens only)",
       "implemented_by": "claude-fable-5",
       "implemented_at": "2026-07-02T13:20:00Z",
       "verified_by": "gates exit 0",
@@ -600,7 +600,7 @@
       "id": "F022",
       "priority": 22,
       "category": "Agent (OpenCode)",
-      "behavior": "Embedded terminal in a SPLIT research column (user revision 2026-07-02): the research column divides horizontally — research content (semantic/web results) in the upper pane, an xterm.js terminal running the full opencode TUI in the lower pane, with a draggable horizontal divider to resize the split (persisted). The terminal spawns via node-pty (cwd=vault, the USER'S own config — no lockdown); transport is SSE for output + token-guarded POSTs for input/resize; PTY killed on column close/disconnect. The search-field agent query is typed into the TUI after boot. node-pty missing -> clean 503 with guidance. The sandboxed bridge remains as the headless engine (LLM questions, model selector). Docs re-scope: terminal writes are under opencode's own permissions, outside the Solaris journal/propose guarantees.",
+      "behavior": "Embedded terminal in a SPLIT research column (user revision 2026-07-02): the research column divides horizontally \u2014 research content (semantic/web results) in the upper pane, an xterm.js terminal running the full opencode TUI in the lower pane, with a draggable horizontal divider to resize the split (persisted). The terminal spawns via node-pty (cwd=vault, the USER'S own config \u2014 no lockdown); transport is SSE for output + token-guarded POSTs for input/resize; PTY killed on column close/disconnect. The search-field agent query is typed into the TUI after boot. node-pty missing -> clean 503 with guidance. The sandboxed bridge remains as the headless engine (LLM questions, model selector). Docs re-scope: terminal writes are under opencode's own permissions, outside the Solaris journal/propose guarantees.",
       "verification": {
         "command": "npm test && npm run typecheck && npm run build",
         "expected": "terminal route tests with a faked pty factory: spawn cwd=vault, input requires token, SSE relays output, close kills pty; UI gates green; manual: real TUI session in the column"
@@ -621,7 +621,7 @@
         "CLAUDE.md"
       ],
       "confidence": "needs-review",
-      "context_note": "REVISED: split pane, not full-column takeover — divider drag like the reader resize handles; persist ratio in localStorage akasha-terminal-split. node-pty is a native dep (optionalDependency; degrade cleanly). xterm = @xterm/xterm + @xterm/addon-fit. Chat UI/proposal review UI retired from the column; proposal server routes stay (headless bridge uses them).",
+      "context_note": "REVISED: split pane, not full-column takeover \u2014 divider drag like the reader resize handles; persist ratio in localStorage akasha-terminal-split. node-pty is a native dep (optionalDependency; degrade cleanly). xterm = @xterm/xterm + @xterm/addon-fit. Chat UI/proposal review UI retired from the column; proposal server routes stay (headless bridge uses them).",
       "spec_ref": "user decisions 2026-07-02 (AskUserQuestion round 2)",
       "evidence": "Removed by design decision: the embedded-terminal / split research column was an OpenCode-era feature; OpenCode was dropped from the architecture (post-OpenCode CLAUDE.md). No terminal in the current product.",
       "implemented_by": "claude-fable-5",
@@ -633,7 +633,7 @@
       "id": "F023",
       "priority": 23,
       "category": "Install & Docs",
-      "behavior": "markitdown integration: detection row + per-tool install (uv tool install 'markitdown[all]' when uv exists, else pip3 --user, else instructions); POST /api/ingest {source: file path or URL, title?} (token-guarded) runs markitdown and saves the markdown through the guarded write to inbox/ with source/via/ingested frontmatter, collision-safe; File menu gains 'Ingest Document…' modal with the saved id + rescan affordance. Errors surface markitdown's stderr cleanly.",
+      "behavior": "markitdown integration: detection row + per-tool install (uv tool install 'markitdown[all]' when uv exists, else pip3 --user, else instructions); POST /api/ingest {source: file path or URL, title?} (token-guarded) runs markitdown and saves the markdown through the guarded write to inbox/ with source/via/ingested frontmatter, collision-safe; File menu gains 'Ingest Document\u2026' modal with the saved id + rescan affordance. Errors surface markitdown's stderr cleanly.",
       "verification": {
         "command": "npm test && npm run typecheck && npm run build",
         "expected": "install/ingest tests with faked runners: detection, install branches (uv/pip/instructions), URL and file ingest -> guarded create with frontmatter, failure surfaces stderr, token required. Manual: real PDF -> note in inbox/ -> rescan shows node"
@@ -654,7 +654,7 @@
       "confidence": "needs-review",
       "context_note": "markitdown is a Python uv/pip tool; detect on PATH + ~/.local/bin. Reading files OUTSIDE the vault is intentional (import); writes stay guarded. URL ingest = user-initiated fetch, mention in docs.",
       "spec_ref": "user decisions 2026-07-02 (AskUserQuestion round 2)",
-      "evidence": "136/136 tests + typecheck + build green. Detection covers ~/.local/bin; installer: uv preferred, pip3 --user fallback, guided instructions otherwise (AE7 respected); ingestDocument: file + URL, frontmatter source/via/ingested, guarded write, 404/502/422 paths tested; File -> Ingest Document… modal wired. LIVE: real markitdown converted https://example.com into inbox/example.com.md on the scratch vault",
+      "evidence": "136/136 tests + typecheck + build green. Detection covers ~/.local/bin; installer: uv preferred, pip3 --user fallback, guided instructions otherwise (AE7 respected); ingestDocument: file + URL, frontmatter source/via/ingested, guarded write, 404/502/422 paths tested; File -> Ingest Document\u2026 modal wired. LIVE: real markitdown converted https://example.com into inbox/example.com.md on the scratch vault",
       "implemented_by": "claude-fable-5",
       "implemented_at": "2026-07-02T13:35:00Z",
       "verified_by": "gates exit 0 + live ingest",
@@ -682,7 +682,7 @@
       "confidence": "autonomous",
       "context_note": "Mirror the existing config fields (defaultModel) in merge/defaultConfig; embedModel is NOT a secret so it may be returned by the API. Runner env is additive (4th optional param), backward-compatible with fake runners. QMD_EMBED_MODEL format = hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf.",
       "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#phase-0.4",
-      "evidence": "132 tests green (+3: config embedModel persist/clear; embed carries QMD_EMBED_MODEL+-f on force; embed incremental has no env/-f); typecheck clean | REVERTED 2026-07-03: the embedding-model selector + Qwen option were removed — qmd ignores QMD_EMBED_MODEL and reads models.embed from ~/.config/qmd/index.yml, so the switch was inert. The re-embed (qmd embed -f) button remains.",
+      "evidence": "132 tests green (+3: config embedModel persist/clear; embed carries QMD_EMBED_MODEL+-f on force; embed incremental has no env/-f); typecheck clean | REVERTED 2026-07-03: the embedding-model selector + Qwen option were removed \u2014 qmd ignores QMD_EMBED_MODEL and reads models.embed from ~/.config/qmd/index.yml, so the switch was inert. The re-embed (qmd embed -f) button remains.",
       "implemented_by": "claude-opus-4-8",
       "implemented_at": "2026-07-03T11:00:00Z",
       "verified_by": "npm test && npm run typecheck",
@@ -708,7 +708,7 @@
       "confidence": "autonomous",
       "context_note": "Reused the existing guarded /api/integrations/config endpoint (updateConfig) instead of a new one (ponytail); embedModel is not a secret so /api/integrations returns it plainly.",
       "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#phase-0.4",
-      "evidence": "134 tests green (+2: guarded config persist/reflect of embedModel; embed spawn carries QMD_EMBED_MODEL + -f via the maintenance endpoint on force) | REVERTED 2026-07-03: the embedding-model selector + Qwen option were removed — qmd ignores QMD_EMBED_MODEL and reads models.embed from ~/.config/qmd/index.yml, so the switch was inert. The re-embed (qmd embed -f) button remains.",
+      "evidence": "134 tests green (+2: guarded config persist/reflect of embedModel; embed spawn carries QMD_EMBED_MODEL + -f via the maintenance endpoint on force) | REVERTED 2026-07-03: the embedding-model selector + Qwen option were removed \u2014 qmd ignores QMD_EMBED_MODEL and reads models.embed from ~/.config/qmd/index.yml, so the switch was inert. The re-embed (qmd embed -f) button remains.",
       "implemented_by": "claude-opus-4-8",
       "implemented_at": "2026-07-03T11:05:00Z",
       "verified_by": "npm test",
@@ -735,7 +735,7 @@
       "confidence": "autonomous",
       "context_note": "Mirror the LLM follow-up-model selector (default/preset/__custom + hidden text input). Persist dirty flag in localStorage akasha-qmd-model-dirty. Reuse the maintenance poller + apiToken() from the just-shipped Phase M code.",
       "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#phase-0.4",
-      "evidence": "typecheck clean; agent-browser LIVE: selector renders 3 options (default/Qwen3/custom); selecting Qwen3 persisted embedModel to config, set the dirty flag, and relabeled the button to 're-embed (full)'. Real config reset to null after the test. | REVERTED 2026-07-03: the embedding-model selector + Qwen option were removed — qmd ignores QMD_EMBED_MODEL and reads models.embed from ~/.config/qmd/index.yml, so the switch was inert. The re-embed (qmd embed -f) button remains.",
+      "evidence": "typecheck clean; agent-browser LIVE: selector renders 3 options (default/Qwen3/custom); selecting Qwen3 persisted embedModel to config, set the dirty flag, and relabeled the button to 're-embed (full)'. Real config reset to null after the test. | REVERTED 2026-07-03: the embedding-model selector + Qwen option were removed \u2014 qmd ignores QMD_EMBED_MODEL and reads models.embed from ~/.config/qmd/index.yml, so the switch was inert. The re-embed (qmd embed -f) button remains.",
       "implemented_by": "claude-opus-4-8",
       "implemented_at": "2026-07-03T11:12:00Z",
       "verified_by": "npm run typecheck + agent-browser live check",
@@ -761,7 +761,7 @@
       "confidence": "autonomous",
       "context_note": "Neutral EN/ES chips NOT country flags (decided). hydrate must preserve .mi-hint child spans (tag them separately). Mirror the existing .menu/.dropdown markup for the language menu. See docs/plans/...#i18n (0.1) implementation notes.",
       "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#0.1",
-      "evidence": "i18n.ts (t/getLang/setLang/hydrate) + EN/ES dicts; language menu after Help with flag label + English/Español chips. agent-browser: EN<->ES swaps menubar/search/settings and persists (localStorage akasha-lang) across reload; typecheck clean; 134 tests pass. User later chose country flags over neutral chips.",
+      "evidence": "i18n.ts (t/getLang/setLang/hydrate) + EN/ES dicts; language menu after Help with flag label + English/Espa\u00f1ol chips. agent-browser: EN<->ES swaps menubar/search/settings and persists (localStorage akasha-lang) across reload; typecheck clean; 134 tests pass. User later chose country flags over neutral chips.",
       "implemented_by": "claude-opus-4-8[1m]",
       "implemented_at": "2026-07-03T13:16:21Z",
       "verified_by": "interactive verify (npm run typecheck && npm test && agent-browser toggle/audit)",
@@ -798,7 +798,7 @@
       "id": "F029",
       "priority": 29,
       "category": "Docs",
-      "behavior": "DESIGN.md at repo root captures the design system so visual work needs no archaeology: THEMES CSS-variable model + --accent; panel anatomy (flush header divider, 18px inset, 45px header row, 25px .reader-icon, .reader-actions-right, dock/float geometry engine); z-index ladder (graph<panels 20<floating 5<chrome<menus 50<modal 100); CSS gotchas (.dropdown button is display:flex so center via justify-content not text-align; .mi-group button:not(.checked) forces padding-left:26px so scope over it); .ext-icon external-link convention; interaction conventions (mode exclusivity, search-first, web consent gate, keyboard map a/d + r/g/l/u/o + Ctrl±).",
+      "behavior": "DESIGN.md at repo root captures the design system so visual work needs no archaeology: THEMES CSS-variable model + --accent; panel anatomy (flush header divider, 18px inset, 45px header row, 25px .reader-icon, .reader-actions-right, dock/float geometry engine); z-index ladder (graph<panels 20<floating 5<chrome<menus 50<modal 100); CSS gotchas (.dropdown button is display:flex so center via justify-content not text-align; .mi-group button:not(.checked) forces padding-left:26px so scope over it); .ext-icon external-link convention; interaction conventions (mode exclusivity, search-first, web consent gate, keyboard map a/d + r/g/l/u/o + Ctrl\u00b1).",
       "verification": {
         "command": "test -f DESIGN.md",
         "expected": "DESIGN.md exists at repo root; a contributor can restyle a panel from it alone"
@@ -826,7 +826,7 @@
         "command": "npm test",
         "expected": "new server/integrations/qmd-vectors.test.ts passes: KNN over a fixture index returns the expected neighbors; dimension is read from the schema (a 1024-dim fixture is not treated as 768); a malformed/absent index disables the layer (no throw)."
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": [],
       "files_touched": [
         "server/integrations/qmd-vectors.ts",
@@ -834,13 +834,13 @@
         "package.json"
       ],
       "confidence": "needs-review",
-      "context_note": "Adds native deps (better-sqlite3 + sqlite-vec) — the plan chose direct-read over the SDK/daemon (§4). Quarantine ALL sqlite coupling here behind a schema guard + graceful 'semantic layer unavailable' fallback (constraint §2). Read dim from vectors_vec `float[N]`, never hardcode 768 (embeddinggemma today; a model switch changes it). Join content_vectors(hash,seq,pos,model,total_chunks) -> documents(id,path,title,hash,active). Read-only open; no egress.",
+      "context_note": "Adds native deps (better-sqlite3 + sqlite-vec) \u2014 the plan chose direct-read over the SDK/daemon (\u00a74). Quarantine ALL sqlite coupling here behind a schema guard + graceful 'semantic layer unavailable' fallback (constraint \u00a72). Read dim from vectors_vec `float[N]`, never hardcode 768 (embeddinggemma today; a model switch changes it). Join content_vectors(hash,seq,pos,model,total_chunks) -> documents(id,path,title,hash,active). Read-only open; no egress.",
       "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#0.3",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "npm test: 136/136 pass incl 4 new qmd-vectors tests (KNN neighbors, dim read from float[N] schema incl 1024-dim, absent+malformed index disable the layer without throwing). Real index smoke: dim=768, 8671 in-vault docs, KNN semantically coherent.",
+      "implemented_by": "claude-opus-4-8",
+      "implemented_at": "2026-07-03T21:23:53Z",
+      "verified_by": "npm test",
+      "verified_at": "2026-07-03T21:23:53Z"
     },
     {
       "id": "F031",
@@ -889,7 +889,7 @@
         "server/app.ts"
       ],
       "confidence": "needs-review",
-      "context_note": "Default = Links (don't surprise on first load — decided §4). 'Drawn != simulated': semantic edges always dashed even when only their pull is used; a toggle hides lines but keeps physics. Cache positions per arrangement + tween (reuse the warmup-then-freeze pattern). Perf: +10-15k edges at 4k nodes -> server precompute + freeze; Hybrid is heaviest, measure. Follow the existing View-menu control + localStorage pattern.",
+      "context_note": "Default = Links (don't surprise on first load \u2014 decided \u00a74). 'Drawn != simulated': semantic edges always dashed even when only their pull is used; a toggle hides lines but keeps physics. Cache positions per arrangement + tween (reuse the warmup-then-freeze pattern). Perf: +10-15k edges at 4k nodes -> server precompute + freeze; Hybrid is heaviest, measure. Follow the existing View-menu control + localStorage pattern.",
       "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#2",
       "evidence": null,
       "implemented_by": null,
@@ -942,7 +942,7 @@
         "server/integrations/write.test.ts"
       ],
       "confidence": "needs-review",
-      "context_note": "PREVIEW-THEN-CONFIRM, never auto-write (decided — it mutates the vault). Insertion MUST go through server/integrations/write.ts (the SINGLE sanctioned write path) — never add a second writer (AGENTS.md). Journaled to data/changes.jsonl. Works without Phase 1 (live vsearch), so depends_on is empty. Keep the path-traversal + consent tests green (release-blocking).",
+      "context_note": "PREVIEW-THEN-CONFIRM, never auto-write (decided \u2014 it mutates the vault). Insertion MUST go through server/integrations/write.ts (the SINGLE sanctioned write path) \u2014 never add a second writer (AGENTS.md). Journaled to data/changes.jsonl. Works without Phase 1 (live vsearch), so depends_on is empty. Keep the path-traversal + consent tests green (release-blocking).",
       "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#4",
       "evidence": null,
       "implemented_by": null,
