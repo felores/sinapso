@@ -1146,8 +1146,7 @@ async function boot() {
       });
     }
 
-    // Reuse cached positions (tween/quick-settle) if we have them; otherwise
-    // let the sim settle into this arrangement from the current layout, once.
+    // Reuse cached positions if we have them; otherwise settle once.
     const cached = await loadArrangementLayout(mode);
     if (cached) {
       for (const n of data.nodes) {
@@ -1158,12 +1157,20 @@ async function boot() {
           n.z = p[2];
         }
       }
-      graph.warmupTicks(0).cooldownTicks(60);
+      // Restore the settled equilibrium EXACTLY. graph.graphData() reheats the
+      // sim (alpha=1); with a short cooldown the charge force puffs the layout
+      // out before it can re-settle. cooldownTicks(0) runs no ticks, so the
+      // cached positions stay put — and we leave layoutSaved alone so
+      // onEngineStop can't overwrite the good cache with a perturbed one.
+      graph.warmupTicks(0).cooldownTicks(0);
+      graph.graphData({ nodes: data.nodes, links });
+      // No engine tick fires at cooldown 0: sync the link buffers by hand.
+      requestAnimationFrame(() => updateLinkPositions());
     } else {
       graph.warmupTicks(60).cooldownTicks(220);
+      layoutSaved = false; // a fresh settle: persist it
+      graph.graphData({ nodes: data.nodes, links });
     }
-    layoutSaved = false; // let onEngineStop persist this arrangement
-    graph.graphData({ nodes: data.nodes, links });
   }
 
   graph.onEngineTick(updateLinkPositions);
