@@ -1297,6 +1297,20 @@ body > :not(#graph) {
 #orphan-link .gap-query {
   margin-bottom: 8px;
 }
+/* F035: matched-passage highlight when opening a semantic hit. The Custom
+   Highlight API paints via ::highlight() (only color / background / decoration
+   are honored); .passage-hl is the DOM-wrap fallback. */
+::highlight(passage) {
+  background-color: color-mix(in srgb, var(--accent) 34%, transparent);
+  color: inherit;
+}
+.passage-hl {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
 #note-questions-btn {
   width: 100%;
   background: none;

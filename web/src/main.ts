@@ -1812,12 +1812,12 @@ async function boot() {
     );
   }
 
-  function select(n: GNode) {
+  function select(n: GNode, highlightSnippet?: string) {
     selected = n;
     focusSet = bfs(n.id, focusDepth);
     flyTo(n);
     repaint();
-    openReader(n);
+    openReader(n, false, highlightSnippet);
   }
 
   function clearSelection() {
@@ -1829,12 +1829,101 @@ async function boot() {
   }
 
   // --- reader panel ---
-  async function openReader(n: GNode, fromHistory = false) {
+  // F035: find a matched passage (from a semantic snippet) in the rendered note
+  // and wrap it in a <mark> + scroll to it. Works over the already-sanitized DOM
+  // via Range surgery (no innerHTML), so the DOMPurify guarantee is untouched.
+  // Whitespace is normalized both sides; shorter needles are tried when the full
+  // snippet spans element boundaries (surroundContents throws on partial nodes).
+  function highlightPassage(container: HTMLElement, snippet: string): boolean {
+    // Normalize to lowercase alphanumerics + single spaces on BOTH sides, so
+    // markdown markers in the raw snippet (`_italics_`, `code`, punctuation)
+    // that vanish once rendered don't defeat the match.
+    const norm = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]+/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    // Build the normalized note text with a per-kept-char origin map.
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let hay = "";
+    const origin: Array<{ node: Text; offset: number }> = [];
+    let lastSpace = true;
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      const t = node as Text;
+      for (let i = 0; i < t.data.length; i++) {
+        const ch = t.data[i];
+        if (/[a-z0-9]/i.test(ch)) {
+          hay += ch.toLowerCase();
+          origin.push({ node: t, offset: i });
+          lastSpace = false;
+        } else if (/\s/.test(ch)) {
+          if (!lastSpace) {
+            hay += " ";
+            origin.push({ node: t, offset: i });
+            lastSpace = true;
+          }
+        } // other chars (punctuation / markdown markers) are dropped
+      }
+    }
+    const full = norm(snippet);
+    for (const needle of [full, full.slice(0, 90), full.slice(0, 45)]) {
+      if (needle.length < 12) continue;
+      const idx = hay.indexOf(needle);
+      if (idx < 0) continue;
+      const start = origin[idx];
+      const end = origin[Math.min(idx + needle.length - 1, origin.length - 1)];
+      if (!start || !end) continue;
+      const range = document.createRange();
+      range.setStart(start.node, start.offset);
+      range.setEnd(end.node, end.offset + 1);
+      const scrollTarget = start.node.parentElement ?? container;
+      // Prefer the CSS Custom Highlight API: it paints a multi-node range with
+      // no DOM surgery (surroundContents throws when a passage crosses element
+      // boundaries like <em>/<code>), so the sanitized DOM is left untouched.
+      const hl = (
+        window as unknown as {
+          Highlight?: new (r: Range) => unknown;
+          CSS?: { highlights?: Map<string, unknown> };
+        }
+      ).Highlight;
+      const store = (
+        window as unknown as { CSS?: { highlights?: Map<string, unknown> } }
+      ).CSS?.highlights;
+      if (hl && store) {
+        store.set("passage", new hl(range));
+        scrollTarget.scrollIntoView({ block: "center", behavior: "smooth" });
+        return true;
+      }
+      // Fallback: wrap when the range stays inside one element.
+      try {
+        const mark = document.createElement("mark");
+        mark.className = "passage-hl";
+        range.surroundContents(mark);
+        mark.scrollIntoView({ block: "center", behavior: "smooth" });
+        return true;
+      } catch {
+        // crossed element boundaries and no Highlight API: try a shorter needle
+      }
+    }
+    return false;
+  }
+
+  async function openReader(
+    n: GNode,
+    fromHistory = false,
+    highlightSnippet?: string,
+  ) {
     const reader = $("#reader");
     $("#reader-path").textContent = n.phantom
       ? i18n.t("reader.unwritten")
       : n.id;
     reader.classList.remove("hidden");
+    // Drop any previous passage highlight (its Range points at the old note).
+    (
+      window as unknown as { CSS?: { highlights?: Map<string, unknown> } }
+    ).CSS?.highlights?.delete("passage");
     const body = $("#reader-body");
     if (n.phantom) {
       body.innerHTML = `<p class="muted">This note doesn't exist yet. ${
@@ -1868,6 +1957,9 @@ async function boot() {
         a.target = "_blank";
         a.rel = "noopener noreferrer";
       }
+      // F035: on a SEMANTIC hit, land on the matched passage instead of the top.
+      // Runs on the sanitized DOM (no innerHTML), so DOMPurify stays intact.
+      if (highlightSnippet) highlightPassage(body, highlightSnippet);
       // Fixed-order footer: related notes (async) above research questions.
       const relatedSlot = document.createElement("div");
       const orphanSlot = document.createElement("div");
@@ -2457,7 +2549,7 @@ async function boot() {
     if (snippetText)
       (row.querySelector(".snippet") as HTMLElement).textContent = snippetText;
     row.addEventListener("click", () => {
-      select(n);
+      select(n, snippetText); // snippet present only for semantic hits (F035)
       results.innerHTML = "";
       searchBox.value = "";
     });
@@ -3096,7 +3188,7 @@ async function boot() {
         snip.className = "rel-snippet";
         snip.textContent = res.snippet;
         row.append(title, snip);
-        row.addEventListener("click", () => select(node));
+        row.addEventListener("click", () => select(node, res.snippet));
         box.appendChild(row);
       }
     } catch {
@@ -3418,7 +3510,7 @@ async function boot() {
       snip.className = "rel-snippet";
       snip.textContent = r.snippet;
       row.append(title, snip);
-      row.addEventListener("click", () => select(node));
+      row.addEventListener("click", () => select(node, r.snippet));
       body.appendChild(row);
     }
   }

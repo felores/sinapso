@@ -1,7 +1,7 @@
 {
   "project": "solaris-optional-integrations",
   "created": "2026-07-02T04:37:20Z",
-  "updated": "2026-07-03T22:04:01Z",
+  "updated": "2026-07-03T22:15:10Z",
   "features": [
     {
       "id": "F001",
@@ -959,7 +959,7 @@
         "command": "npm run typecheck",
         "expected": "typecheck clean; agent-browser: opening a semantic hit lands on / highlights the relevant passage in the reader; a normal node-click open still starts at the top (unchanged)."
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": [
         "F030"
       ],
@@ -970,11 +970,11 @@
       "confidence": "autonomous",
       "context_note": "Only for SEMANTIC hits; normal opens must stay unchanged. Use content_vectors.pos (char offset) or the vsearch `@@ -n,n @@` line range. Keep openReader's DOMPurify sanitize intact when injecting the highlight.",
       "spec_ref": "docs/plans/2026-07-03-003-qmd-semantic-layer-and-i18n-plan.md#5",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "typecheck clean; 145 tests pass. agent-browser: a semantic-search hit (claude-md-guide) opens the reader scrolled to + highlighting the matched passage ('Note: this post is also applicable to AGENTS.md...'), which spans <em>/<code> boundaries; painted via the CSS Custom Highlight API (no DOM mutation -> DOMPurify intact). Snippet vs rendered text matched by alnum-normalizing both sides (raw markdown markers stripped). A normal node/search open shows no highlight and stays at scrollTop 0 (unchanged). Wired for all snippet-bearing semantic paths (semantic search, related notes).",
+      "implemented_by": "claude-opus-4-8",
+      "implemented_at": "2026-07-03T22:15:10Z",
+      "verified_by": "npm run typecheck + agent-browser",
+      "verified_at": "2026-07-03T22:15:10Z"
     },
     {
       "id": "F036",
