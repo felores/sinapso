@@ -3307,6 +3307,13 @@ async function boot() {
     topbar.style.setProperty("--right-inset", `${rightPanelW}px`);
     topbar.classList.toggle("menu-centered", leftDocked);
 
+    // Push the bottom corner buttons into the visible gap between the panels:
+    // left buttons clear a ctx-left reader, right buttons clear a right panel.
+    const leftPanelW = leftDocked ? reader.offsetWidth : 0;
+    const root = document.documentElement;
+    root.style.setProperty("--btn-left-inset", `${leftPanelW}px`);
+    root.style.setProperty("--btn-right-inset", `${rightPanelW}px`);
+
     // The search sits on row 1 (inset left of any right panel) and drops to a
     // second row directly below the brand+menu group whenever the group would
     // collide with it. The stacked search follows the group's alignment (CSS:
@@ -4246,9 +4253,10 @@ async function boot() {
   }
 
   // ---- topbar reflow around docked panels ----
-  // Any dock/undock/open/close flips a class on #reader or #research, so observe
-  // both and relayout; resize covers the pure collision case. A trailing pass
-  // re-measures once the dock/slide transition (~0.25s) has settled the width.
+  // Any dock/undock/open/close flips a class on #reader or #research, and a
+  // width resize changes their inline style — observe both so the topbar inset
+  // AND the bottom corner buttons follow. A trailing pass re-measures once the
+  // dock/slide transition (~0.25s) has settled the width.
   let relayoutT = 0;
   const relayout = () => {
     layoutTopbar();
@@ -4257,7 +4265,10 @@ async function boot() {
   };
   const topbarObs = new MutationObserver(relayout);
   for (const id of ["#reader", "#research"])
-    topbarObs.observe($(id), { attributes: true, attributeFilter: ["class"] });
+    topbarObs.observe($(id), {
+      attributes: true,
+      attributeFilter: ["class", "style"],
+    });
   window.addEventListener("resize", layoutTopbar);
   relayout();
 

@@ -395,11 +395,15 @@ body > :not(#graph) {
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
+  /* slide in/out of the way as the docked panels open/close/resize */
+  transition: left 0.2s ease, right 0.2s ease;
 }
-#reopen-content { left: 18px; }
-#filters-btn { left: 60px; }
-#settings-btn { right: 60px; }
-#reopen-research { right: 18px; }
+/* --btn-left-inset / --btn-right-inset (set by layoutTopbar) = the width of the
+   panel docked on that side, so the corner buttons stay in the visible gap. */
+#reopen-content { left: calc(18px + var(--btn-left-inset, 0px)); }
+#filters-btn { left: calc(60px + var(--btn-left-inset, 0px)); }
+#settings-btn { right: calc(60px + var(--btn-right-inset, 0px)); }
+#reopen-research { right: calc(18px + var(--btn-right-inset, 0px)); }
 #filters-btn:hover,
 #settings-btn:hover,
 #reopen-content:hover,
