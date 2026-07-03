@@ -634,11 +634,12 @@ body > :not(#graph) {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   z-index: 5;
 }
-/* Floating panels aren't full-height, so a translate alone can leave them
-   peeking at the screen edge on tall/resized windows. Fade + pointer-events
-   guarantees they fully disappear (kills the phantom empty window). */
+/* Floating panels fade out IN PLACE (no translate). opacity:0 + pointer-events
+   already hide them fully; the old translateY(120%) slid the panel down toward a
+   screen corner, which read as an alarming "minimize" (esp. when floated on the
+   left -> bottom-left). transform:none overrides the base .hidden translateX. */
 #reader.floating.hidden {
-  transform: translateY(120%);
+  transform: none;
   opacity: 0;
   pointer-events: none;
 }
@@ -1229,7 +1230,7 @@ body > :not(#graph) {
 #research.hidden { transform: translateX(120%); opacity: 0; pointer-events: none; }
 #research.dragging, #research.resizing { transition: none; }
 #research.floating.hidden {
-  transform: translateY(120%);
+  transform: none; /* fade in place, no slide-to-corner (see #reader.floating.hidden) */
   opacity: 0;
   pointer-events: none;
 }
