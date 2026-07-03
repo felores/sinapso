@@ -563,8 +563,8 @@ async function boot() {
   // --- view state ---
   const pillarOn: Record<string, boolean> = {};
   for (const p of data.meta.pillars) pillarOn[p] = true;
-  let showPhantoms = false;
-  let showOrphans = true;
+  let showPhantoms = localStorage.getItem("akasha-phantoms") === "1"; // default off
+  let showOrphans = localStorage.getItem("akasha-orphans") !== "0"; // default on
   let minWeight = 1; // hide links mentioned fewer than N times
   let hoverNode: GNode | null = null;
   let selected: GNode | null = null;
@@ -572,7 +572,11 @@ async function boot() {
   // research-driven ctx-left, this persists after research closes.
   let readerLeftPinned = false;
   let focusSet: Set<string> | null = null; // depth-limited neighborhood of selected
-  let focusDepth = 2;
+  let focusDepth = [1, 2, 3].includes(
+    Number(localStorage.getItem("akasha-depth")),
+  )
+    ? Number(localStorage.getItem("akasha-depth"))
+    : 2;
 
   // --- node filters: an ordered list of show/ignore rules (topmost wins) ---
   type Filter = { mode: "show" | "ignore"; pattern: string };
@@ -728,7 +732,7 @@ async function boot() {
     0.3, // threshold
   );
   graph.postProcessingComposer().addPass(bloom);
-  let glowOn = true;
+  let glowOn = localStorage.getItem("akasha-glow") !== "0"; // default on
   bloom.enabled = QUALITY[quality].bloom;
 
   // Starfield shells far behind the graph: a faint base field for the dark
@@ -1331,7 +1335,7 @@ async function boot() {
   // Every node carries a text sprite; a per-frame loop fades each label by
   // its distance to the camera, so names appear as you approach, matching
   // Obsidian's behavior in 3D. Selection/hover force labels on.
-  let labelsOn = true;
+  let labelsOn = localStorage.getItem("akasha-labels") !== "0"; // default on
   let labelDist = 700; // world units at which a label has fully faded out
   let labelSize = 4;
   const sprites = new Map<string, SpriteText>();
@@ -2311,19 +2315,27 @@ async function boot() {
   }
 
   // --- controls ---
-  ($("#toggle-phantoms") as HTMLInputElement).addEventListener(
-    "change",
-    (e) => {
-      showPhantoms = (e.target as HTMLInputElement).checked;
-      refreshVisibility();
-    },
-  );
-  ($("#toggle-orphans") as HTMLInputElement).addEventListener("change", (e) => {
-    showOrphans = (e.target as HTMLInputElement).checked;
+  // Each toggle reflects its persisted state on boot (the state vars are read
+  // from localStorage above) and writes back on change, so preferences stick.
+  const phantomsToggle = $("#toggle-phantoms") as HTMLInputElement;
+  phantomsToggle.checked = showPhantoms;
+  phantomsToggle.addEventListener("change", () => {
+    showPhantoms = phantomsToggle.checked;
+    localStorage.setItem("akasha-phantoms", showPhantoms ? "1" : "0");
     refreshVisibility();
   });
-  ($("#toggle-glow") as HTMLInputElement).addEventListener("change", (e) => {
-    glowOn = (e.target as HTMLInputElement).checked;
+  const orphansToggle = $("#toggle-orphans") as HTMLInputElement;
+  orphansToggle.checked = showOrphans;
+  orphansToggle.addEventListener("change", () => {
+    showOrphans = orphansToggle.checked;
+    localStorage.setItem("akasha-orphans", showOrphans ? "1" : "0");
+    refreshVisibility();
+  });
+  const glowToggle = $("#toggle-glow") as HTMLInputElement;
+  glowToggle.checked = glowOn;
+  glowToggle.addEventListener("change", () => {
+    glowOn = glowToggle.checked;
+    localStorage.setItem("akasha-glow", glowOn ? "1" : "0");
     bloom.enabled = glowOn && QUALITY[quality].bloom;
   });
   const gfxSel = $("#gfx") as HTMLSelectElement;
@@ -2342,8 +2354,11 @@ async function boot() {
     localStorage.setItem("akasha-nodes", nodeStyle);
     rebuildNodes();
   });
-  ($("#toggle-labels") as HTMLInputElement).addEventListener("change", (e) => {
-    labelsOn = (e.target as HTMLInputElement).checked;
+  const labelsToggle = $("#toggle-labels") as HTMLInputElement;
+  labelsToggle.checked = labelsOn;
+  labelsToggle.addEventListener("change", () => {
+    labelsOn = labelsToggle.checked;
+    localStorage.setItem("akasha-labels", labelsOn ? "1" : "0");
   });
 
   // ---- filters panel ----
@@ -2480,10 +2495,18 @@ async function boot() {
     apply: (v: number) => void,
   ) => {
     const el = $(`#${id}`) as HTMLInputElement;
+    const key = `akasha-${id}`;
+    // Restore a persisted value on boot (apply it so the graph reflects it).
+    const saved = localStorage.getItem(key);
+    if (saved !== null) el.value = saved;
+    const v0 = Number(el.value);
+    $(`#${id}-val`).textContent = fmt(v0);
+    apply(v0);
     el.addEventListener("input", () => {
       const v = Number(el.value);
       $(`#${id}-val`).textContent = fmt(v);
       apply(v);
+      localStorage.setItem(key, el.value);
     });
   };
   bindRange("label-distance", String, (v) => (labelDist = v));
@@ -2534,8 +2557,11 @@ async function boot() {
     minWeight = v;
     refreshVisibility();
   });
-  ($("#depth") as HTMLSelectElement).addEventListener("change", (e) => {
+  const depthSel = $("#depth") as HTMLSelectElement;
+  depthSel.value = String(focusDepth); // reflect the persisted choice on boot
+  depthSel.addEventListener("change", (e) => {
     focusDepth = Number((e.target as HTMLSelectElement).value);
+    localStorage.setItem("akasha-depth", String(focusDepth));
     if (selected) {
       focusSet = bfs(selected.id, focusDepth);
       repaint();
