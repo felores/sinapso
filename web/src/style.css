@@ -19,11 +19,64 @@ html, body {
 }
 
 #graph { position: fixed; inset: 0; }
+/* The library's built-in control hint ("Left-click: rotate ...") flashes at
+   the bottom during graph init; our own loading overlay covers it. Kill it. */
+.scene-nav-info { display: none !important; }
 
 /* Ctrl +/- interface zoom: scale every UI layer (chrome, panels, reader,
    research) but never the 3D canvas, which has its own scroll-zoom. */
 body > :not(#graph) {
   zoom: var(--ui-zoom, 1);
+}
+
+/* ---------- loading overlay (until the constellation settles) ---------- */
+#loading {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+#loading.done { opacity: 0; }
+#loading-bar { display: flex; gap: 7px; }
+#loading-bar span {
+  width: 42px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--accent);
+  opacity: 0.22;
+  /* animate opacity (compositor thread) so the wave keeps moving even while
+     the main thread is blocked by the graph warm-up. */
+  will-change: opacity;
+  animation: load-wave 1.4s ease-in-out infinite;
+}
+#loading-bar span:nth-child(2) { animation-delay: 0.12s; }
+#loading-bar span:nth-child(3) { animation-delay: 0.24s; }
+#loading-bar span:nth-child(4) { animation-delay: 0.36s; }
+#loading-bar span:nth-child(5) { animation-delay: 0.48s; }
+#loading-bar span:nth-child(6) { animation-delay: 0.6s; }
+#loading-bar span:nth-child(7) { animation-delay: 0.72s; }
+@keyframes load-wave {
+  0%, 100% { opacity: 0.22; }
+  45% { opacity: 1; }
+}
+#loading-hint {
+  text-align: center;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 2.2;
+}
+#loading-hint kbd {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 14px;
 }
 
 /* ---------- top bar ---------- */
@@ -250,20 +303,50 @@ body > :not(#graph) {
 #reset-colors:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ---------- bottom corners (filters / settings + counts) ---------- */
-#filters-btn {
+/* icon-only corner buttons, matching the search-section mode buttons.
+   Outer corners = panel reopen (content left / research right); inner = filters/settings. */
+#filters-btn,
+#settings-btn,
+#reopen-content,
+#reopen-research {
   position: fixed;
   bottom: 14px;
-  left: 18px;
   z-index: 12;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: var(--panel);
-  color: var(--fg);
+  color: var(--muted);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px 10px;
-  font-size: 13px;
+  border-radius: 8px;
   cursor: pointer;
 }
-#filters-btn:hover { border-color: var(--accent); }
+#reopen-content { left: 18px; }
+#filters-btn { left: 60px; }
+#settings-btn { right: 60px; }
+#reopen-research { right: 18px; }
+#filters-btn:hover,
+#settings-btn:hover,
+#reopen-content:hover,
+#reopen-research:hover {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+#filters-btn svg,
+#settings-btn svg,
+#reopen-content svg,
+#reopen-research svg {
+  display: block;
+}
+#reader-nav {
+  display: inline-flex;
+  gap: 2px;
+}
+#reader-nav.hidden {
+  display: none;
+}
 
 #brand-stats {
   position: fixed;
@@ -273,21 +356,6 @@ body > :not(#graph) {
   z-index: 12;
   pointer-events: none;
 }
-
-#settings-btn {
-  position: fixed;
-  bottom: 14px;
-  right: 18px;
-  z-index: 12;
-  background: var(--panel);
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px 10px;
-  font-size: 13px;
-  cursor: pointer;
-}
-#settings-btn:hover { border-color: var(--accent); }
 
 /* controls now live inside the View menu dropdown */
 .dropdown label.ctl {
@@ -497,18 +565,29 @@ body > :not(#graph) {
 
 #reader-head {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 16px 18px 10px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 18px 10px;
   border-bottom: 1px solid var(--border);
 }
-#reader-head h2 { margin: 0 0 4px; font-size: 19px; }
-#reader-path { color: var(--muted); font-size: 12px; font-family: Consolas, monospace; word-break: break-all; }
+/* path sits between the history buttons and the right-hand action group,
+   filling the leftover width on a single line */
+#reader-path {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
-#reader-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+/* actions row: back/forward left, path middle, the rest right */
+#reader-actions { display: flex; gap: 6px; width: 100%; align-items: center; }
+.reader-actions-right { margin-left: auto; display: flex; gap: 6px; }
 #reader-actions button,
-#research-close {
+#research-head button {
   background: #21262d;
   color: var(--fg);
   border: 1px solid var(--border);
@@ -518,18 +597,19 @@ body > :not(#graph) {
   cursor: pointer;
 }
 #reader-actions button:hover,
-#research-close:hover { border-color: var(--accent); }
+#research-head button:hover:not(:disabled) { border-color: var(--accent); }
 #reader-actions .reader-icon,
-#research-close {
-  width: 32px;
-  height: 32px;
+#research-head .reader-icon {
+  width: 22px;
+  height: 22px;
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
 }
-#reader-actions .reader-icon svg { display: block; }
+#reader-actions .reader-icon svg,
+#research-head .reader-icon svg { display: block; }
 
 #reader-body {
   padding: 14px 18px 30px;
@@ -918,21 +998,55 @@ body > :not(#graph) {
   font-size: 13px;
 }
 #research.hidden { display: none; }
+/* detached (floating) research window; position/size set inline by JS */
+#research.floating {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+#research.floating #research-head { cursor: grab; }
+#research.floating.dragging { user-select: none; }
+#research.floating.dragging #research-head { cursor: grabbing; }
+/* resize grips: west edge for width (docked + floating), corner for floating */
+#research-resize-w {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: ew-resize;
+  z-index: 3;
+}
+#research-resize-w:hover { background: linear-gradient(270deg, transparent, rgba(125, 145, 180, 0.25)); }
+#research-resize-corner {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  z-index: 3;
+  display: none;
+  background:
+    linear-gradient(135deg, transparent 50%, var(--muted) 50%, var(--muted) 58%, transparent 58%,
+      transparent 70%, var(--muted) 70%, var(--muted) 78%, transparent 78%) no-repeat;
+  opacity: 0.6;
+}
+#research.floating #research-resize-corner { display: block; }
 #research-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
   margin-bottom: 8px;
 }
-/* history navigation: older/newer/trash + position, grouped left of close */
+/* history navigation sits at the LEFT of the title, matching the content panel */
 #research-nav {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 1px;
-  margin-left: auto;
-  margin-right: 6px;
+  gap: 4px;
 }
-#research-nav.hidden {
+#research-nav.hidden,
+#research-trash.hidden {
   display: none;
 }
 #research-pos {
@@ -941,27 +1055,9 @@ body > :not(#graph) {
   min-width: 30px;
   text-align: center;
 }
-#research-nav button {
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 2px 5px;
-  border-radius: 5px;
-  font-size: 16px;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-}
-#research-nav button:hover:not(:disabled) {
-  color: var(--accent);
-}
-#research-nav button:disabled {
-  opacity: 0.3;
+#research-head button:disabled {
+  opacity: 0.35;
   cursor: default;
-}
-#research-nav button svg {
-  display: block;
 }
 #research-head h3 {
   margin: 0;

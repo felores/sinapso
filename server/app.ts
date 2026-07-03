@@ -54,6 +54,11 @@ import {
   listEntries,
   saveEntry,
 } from "./integrations/research-history.js";
+import {
+  clearReaderHistory,
+  listReaderOpens,
+  logReaderOpen,
+} from "./integrations/reader-history.js";
 import { installAddons, type InstallableTool } from "./integrations/install.js";
 import {
   chatCompletion,
@@ -556,6 +561,15 @@ export function createApp(
     res.status(ok ? 200 : 404).json({ ok });
   });
 
+  // Reader (content-panel) history: ordered log of opened notes, app-local.
+  app.get("/api/reader-history", (_req, res) => {
+    res.json({ entries: listReaderOpens(dataDir) });
+  });
+  app.delete("/api/reader-history", guarded, (_req, res) => {
+    clearReaderHistory(dataDir);
+    res.json({ ok: true });
+  });
+
   // ---- Guarded vault writes (U7): the single sanctioned write path ----
   const writeDeps = () => ({ vaultRoot, dataDir: dirname(graphPath) });
   const writeFail = (res: express.Response, e: unknown, what: string) => {
@@ -853,7 +867,11 @@ export function createApp(
 
     // Return the note's raw markdown content
     try {
-      res.json({ id, markdown: readFileSync(full, "utf-8") });
+      const markdown = readFileSync(full, "utf-8");
+      // Log the open for the reader history, unless this is a history-nav
+      // re-open (?nolog=1) which must not reorder the log.
+      if (req.query.nolog !== "1") logReaderOpen(dataDir, id);
+      res.json({ id, markdown });
     } catch (e) {
       console.error(`Failed to read note ${id}:`, e);
       res.status(500).json({ error: "read failed" });

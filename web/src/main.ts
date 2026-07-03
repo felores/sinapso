@@ -393,6 +393,20 @@ const $ = <T extends HTMLElement>(sel: string) =>
   document.querySelector(sel) as T;
 
 // ===== BOOT & INITIALIZATION =====
+// The loading overlay (index.html) is up from first paint; fade it out once
+// the constellation has settled. A short minimum keeps it from flashing on
+// instant (cached-layout) loads.
+const loadStart = performance.now();
+function hideLoading() {
+  const el = document.getElementById("loading");
+  if (!el || el.classList.contains("done")) return;
+  const wait = Math.max(0, 700 - (performance.now() - loadStart));
+  window.setTimeout(() => {
+    el.classList.add("done");
+    window.setTimeout(() => el.remove(), 700);
+  }, wait);
+}
+
 async function boot() {
   // Fetch graph data (scanned vault topology) and cached layout (node positions from previous session)
   // Layout cache is keyed by content fingerprint; if vault unchanged, positions are reused
@@ -531,6 +545,9 @@ async function boot() {
   let minWeight = 1; // hide links mentioned fewer than N times
   let hoverNode: GNode | null = null;
   let selected: GNode | null = null;
+  // The left corner button pins the content panel to the left edge; unlike the
+  // research-driven ctx-left, this persists after research closes.
+  let readerLeftPinned = false;
   let focusSet: Set<string> | null = null; // depth-limited neighborhood of selected
   let focusDepth = 2;
 
@@ -881,6 +898,7 @@ async function boot() {
     updateLinkPositions();
     saveLayout();
     dbg.settled = true;
+    hideLoading(); // constellation has settled
   });
   graph.onNodeDrag(() => updateLinkPositions());
   // Cached-layout boots never tick the engine; draw the buffer directly.
@@ -888,7 +906,10 @@ async function boot() {
     updateLinkPositions();
     updateLinkColors();
     applyNodeColors();
+    if (cachedPositions) hideLoading(); // instant load: nothing to settle
   }, 0);
+  // Safety net: never leave the loader up if the engine stays silent.
+  window.setTimeout(hideLoading, 12000);
 
   // Persist the settled layout so the next load skips the physics warm-up.
   let layoutSaved = !!cachedPositions;
@@ -1521,12 +1542,12 @@ async function boot() {
     focusSet = null;
     repaint();
     $("#reader").classList.add("hidden");
+    readerLeftPinned = false; // closing the panel drops the left pin
   }
 
   // --- reader panel ---
-  async function openReader(n: GNode) {
+  async function openReader(n: GNode, fromHistory = false) {
     const reader = $("#reader");
-    $("#reader-title").textContent = n.title;
     $("#reader-path").textContent = n.phantom
       ? "unwritten — linked but not yet created"
       : n.id;
@@ -1540,7 +1561,9 @@ async function boot() {
     }
     body.innerHTML = '<p class="muted">loading…</p>';
     try {
-      const res = await fetch(`/api/note?id=${encodeURIComponent(n.id)}`);
+      const res = await fetch(
+        `/api/note?id=${encodeURIComponent(n.id)}${fromHistory ? "&nolog=1" : ""}`,
+      );
       const { markdown } = await res.json();
       // Strip a leading OKF/YAML frontmatter block so it isn't rendered raw
       // (the node title/type already came from it via the scanner).
@@ -1568,6 +1591,9 @@ async function boot() {
       body.append(relatedSlot, questionsSlot);
       void appendRelated(n, relatedSlot);
       appendNoteQuestions(n, questionsSlot);
+      // A fresh open (not history nav) is logged server-side; sync the reader
+      // history so the panel's prev/next and the corner button reflect it.
+      if (!fromHistory) void refreshReaderHistory();
     } catch {
       body.innerHTML = '<p class="muted">could not load note</p>';
     }
@@ -2701,10 +2727,20 @@ async function boot() {
   let currentEntryId: string | null = null; // id of the shown entry (for move/trash)
   const researchInput = $("#research-input") as HTMLInputElement;
 
+  // Docked research owns the bottom search bar (hidden). Detached (floating),
+  // it's a side window, so the search field + mode buttons stay usable.
+  function syncSearchWrap() {
+    const research = $("#research");
+    const owns =
+      !research.classList.contains("hidden") &&
+      !research.classList.contains("floating");
+    $("#search-wrap").classList.toggle("hidden", owns);
+  }
+
   function openResearch(mode: ModeName) {
     researchMode = mode;
     $("#research").classList.remove("hidden");
-    $("#search-wrap").classList.add("hidden"); // the column owns the interaction
+    syncSearchWrap(); // docked column owns the bottom bar; floating leaves it
     $("#reader").classList.add("ctx-left"); // open note = working context
     $("#research-title").textContent =
       mode === "semantic"
@@ -2726,9 +2762,168 @@ async function boot() {
     researchMode = null;
     $("#research").classList.add("hidden");
     $("#search-wrap").classList.remove("hidden");
-    $("#reader").classList.remove("ctx-left"); // reader returns to the right
+    // reader returns to the right unless the user pinned it left
+    if (!readerLeftPinned) $("#reader").classList.remove("ctx-left");
   }
   $("#research-close").addEventListener("click", closeResearch);
+
+  // Research panel: attach (docked right) / detach (floating, draggable window).
+  {
+    const research = $("#research");
+    const rGeom = (JSON.parse(
+      localStorage.getItem("akasha-research") ?? "null",
+    ) as {
+      floating: boolean;
+      left: number;
+      top: number;
+      width: number;
+      height: number;
+      dockW: number;
+    } | null) ?? {
+      floating: false,
+      left: 90,
+      top: 80,
+      width: 420,
+      height: 0,
+      dockW: 400,
+    };
+    const cl = (v: number, lo: number, hi: number) =>
+      Math.max(lo, Math.min(hi, v));
+    const DOCK =
+      '<svg viewBox="0 0 16 16" width="15" height="15"><rect x="1.5" y="1.5" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="4" width="3.5" height="8" fill="currentColor"/></svg>';
+    const UNDOCK =
+      '<svg viewBox="0 0 16 16" width="15" height="15"><rect x="1.5" y="1.5" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="5" y="5" width="6" height="6" fill="currentColor"/></svg>';
+    const dockBtn = $("#research-dock");
+    const persistR = () =>
+      localStorage.setItem("akasha-research", JSON.stringify(rGeom));
+    function applyRGeom() {
+      research.classList.toggle("floating", rGeom.floating);
+      dockBtn.innerHTML = rGeom.floating ? DOCK : UNDOCK;
+      dockBtn.title = rGeom.floating ? "Dock to right edge" : "Undock (float)";
+      syncSearchWrap(); // floating frees the bottom search bar; docked reclaims it
+      if (rGeom.floating) {
+        rGeom.width = cl(rGeom.width, 300, window.innerWidth - 40);
+        rGeom.height = cl(
+          rGeom.height || Math.round(window.innerHeight * 0.72),
+          240,
+          window.innerHeight - 24,
+        );
+        rGeom.left = cl(rGeom.left, 12, window.innerWidth - 120);
+        rGeom.top = cl(rGeom.top, 0, window.innerHeight - 48);
+        Object.assign(research.style, {
+          left: rGeom.left + "px",
+          top: rGeom.top + "px",
+          width: rGeom.width + "px",
+          height: rGeom.height + "px",
+          right: "auto",
+          bottom: "auto",
+        });
+      } else {
+        // Docked: keep the resizable width, let CSS own the rest.
+        rGeom.dockW = cl(rGeom.dockW || 400, 300, window.innerWidth - 80);
+        Object.assign(research.style, {
+          left: "",
+          top: "",
+          width: rGeom.dockW + "px",
+          height: "",
+          right: "",
+          bottom: "",
+        });
+      }
+    }
+    applyRGeom();
+    dockBtn.addEventListener("click", () => {
+      rGeom.floating = !rGeom.floating;
+      applyRGeom();
+      persistR();
+    });
+    $("#research-head").addEventListener("pointerdown", (e: PointerEvent) => {
+      if (!rGeom.floating || (e.target as HTMLElement).closest("button"))
+        return;
+      e.preventDefault();
+      const sx = e.clientX;
+      const sy = e.clientY;
+      const l0 = rGeom.left;
+      const t0 = rGeom.top;
+      const el = e.currentTarget as HTMLElement;
+      el.setPointerCapture(e.pointerId);
+      research.classList.add("dragging");
+      const move = (ev: PointerEvent) => {
+        rGeom.left = l0 + (ev.clientX - sx);
+        rGeom.top = t0 + (ev.clientY - sy);
+        applyRGeom();
+      };
+      const up = () => {
+        el.removeEventListener("pointermove", move);
+        el.removeEventListener("pointerup", up);
+        research.classList.remove("dragging");
+        persistR();
+      };
+      el.addEventListener("pointermove", move);
+      el.addEventListener("pointerup", up);
+    });
+
+    // west edge grip: resize width (docked shrinks the docked width; floating
+    // moves the left edge while the right side stays put).
+    $("#research-resize-w").addEventListener(
+      "pointerdown",
+      (e: PointerEvent) => {
+        e.preventDefault();
+        const sx = e.clientX;
+        const w0 = rGeom.floating ? rGeom.width : rGeom.dockW || 400;
+        const l0 = rGeom.left;
+        const el = e.currentTarget as HTMLElement;
+        el.setPointerCapture(e.pointerId);
+        research.classList.add("dragging");
+        const move = (ev: PointerEvent) => {
+          const dx = ev.clientX - sx;
+          if (rGeom.floating) {
+            rGeom.width = w0 - dx;
+            rGeom.left = l0 + dx;
+          } else {
+            rGeom.dockW = cl(w0 - dx, 300, window.innerWidth - 80);
+          }
+          applyRGeom();
+        };
+        const up = () => {
+          el.removeEventListener("pointermove", move);
+          el.removeEventListener("pointerup", up);
+          research.classList.remove("dragging");
+          persistR();
+        };
+        el.addEventListener("pointermove", move);
+        el.addEventListener("pointerup", up);
+      },
+    );
+
+    // corner grip (floating only): both dimensions
+    $("#research-resize-corner").addEventListener(
+      "pointerdown",
+      (e: PointerEvent) => {
+        e.preventDefault();
+        const sx = e.clientX;
+        const sy = e.clientY;
+        const w0 = rGeom.width;
+        const h0 = rGeom.height;
+        const el = e.currentTarget as HTMLElement;
+        el.setPointerCapture(e.pointerId);
+        research.classList.add("dragging");
+        const move = (ev: PointerEvent) => {
+          rGeom.width = w0 + (ev.clientX - sx);
+          rGeom.height = h0 + (ev.clientY - sy);
+          applyRGeom();
+        };
+        const up = () => {
+          el.removeEventListener("pointermove", move);
+          el.removeEventListener("pointerup", up);
+          research.classList.remove("dragging");
+          persistR();
+        };
+        el.addEventListener("pointermove", move);
+        el.addEventListener("pointerup", up);
+      },
+    );
+  }
 
   function researchError(msg: string | null) {
     const el = $("#research-error");
@@ -2825,8 +3020,12 @@ async function boot() {
   }
 
   function updateHistoryNav() {
-    $("#research-nav").classList.toggle("hidden", researchHistory.length === 0);
-    if (!researchHistory.length) return;
+    const empty = researchHistory.length === 0;
+    $("#research-nav").classList.toggle("hidden", empty);
+    // Trash now lives in the right-hand group, outside #research-nav, so hide it
+    // on its own when there's nothing to delete.
+    $("#research-trash").classList.toggle("hidden", empty);
+    if (empty) return;
     historyIdx = Math.max(0, Math.min(historyIdx, researchHistory.length - 1));
     ($("#research-prev") as HTMLButtonElement).disabled =
       historyIdx >= researchHistory.length - 1;
@@ -2863,12 +3062,16 @@ async function boot() {
     updateHistoryNav();
   }
 
-  async function clearResearchHistory() {
+  async function clearAllHistory() {
     await apiDelete("/api/research/history");
+    await apiDelete("/api/reader-history");
     researchHistory = [];
     historyIdx = -1;
     currentEntryId = null;
+    readerHistory = [];
+    readerIdx = -1;
     updateHistoryNav();
+    updateReaderNav();
     if (!$("#research").classList.contains("hidden")) closeResearch();
   }
 
@@ -2893,6 +3096,71 @@ async function boot() {
     showHistoryEntry(researchHistory[historyIdx]);
   });
   void loadHistory();
+
+  // ---- reader (content-panel) history: paging + reopen ----
+  let readerHistory: Array<{ id: string; ts: string }> = [];
+  let readerIdx = -1;
+  async function loadReaderHistory() {
+    try {
+      readerHistory =
+        (await fetch("/api/reader-history").then((r) => r.json())).entries ??
+        [];
+    } catch {
+      readerHistory = [];
+    }
+  }
+  async function refreshReaderHistory() {
+    await loadReaderHistory();
+    readerIdx = 0;
+    updateReaderNav();
+  }
+  function updateReaderNav() {
+    // Only worth showing once there's something to page back to.
+    $("#reader-nav").classList.toggle("hidden", readerHistory.length <= 1);
+    if (readerHistory.length <= 1) return;
+    readerIdx = Math.max(0, Math.min(readerIdx, readerHistory.length - 1));
+    ($("#reader-prev") as HTMLButtonElement).disabled =
+      readerIdx >= readerHistory.length - 1;
+    ($("#reader-next") as HTMLButtonElement).disabled = readerIdx <= 0;
+  }
+  function openReaderHistoryAt(idx: number) {
+    const entry = readerHistory[idx];
+    const node = entry && byId.get(entry.id);
+    if (!node) return;
+    readerIdx = idx;
+    // Select the node in the graph and fly the camera to it, so paging through
+    // history moves the constellation the same way a click would.
+    selected = node;
+    focusSet = bfs(node.id, focusDepth);
+    flyTo(node);
+    repaint();
+    void openReader(node, true); // fromHistory: navigation, not a new open
+    updateReaderNav();
+  }
+  $("#reader-prev").addEventListener("click", () => {
+    if (readerIdx < readerHistory.length - 1)
+      openReaderHistoryAt(readerIdx + 1);
+  });
+  $("#reader-next").addEventListener("click", () => {
+    if (readerIdx > 0) openReaderHistoryAt(readerIdx - 1);
+  });
+  // Corner buttons: reopen the last content note / the last research result.
+  $("#reopen-content").addEventListener("click", async () => {
+    if (!readerHistory.length) await loadReaderHistory();
+    if (!readerHistory.length) return;
+    // The left button docks the content panel to the LEFT edge and keeps it
+    // there (persists even if research later opens/closes on the right).
+    readerLeftPinned = true;
+    $("#reader").classList.add("ctx-left");
+    openReaderHistoryAt(0);
+  });
+  $("#reopen-research").addEventListener("click", async () => {
+    if (!researchHistory.length) await loadHistory();
+    if (!researchHistory.length) return;
+    historyIdx = 0;
+    showHistoryEntry(researchHistory[0]);
+  });
+  void loadReaderHistory();
 
   async function runSemanticQuery(query: string) {
     openResearch("semantic");
@@ -3331,7 +3599,7 @@ async function boot() {
   });
   $("#mi-clear-history").addEventListener("click", () => {
     closeMenus();
-    void clearResearchHistory();
+    void clearAllHistory();
   });
 
   // Ingest a document or URL via markitdown (F023): switch to Ingest mode
