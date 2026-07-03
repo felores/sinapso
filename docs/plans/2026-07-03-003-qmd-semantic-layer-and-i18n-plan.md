@@ -49,16 +49,30 @@ Strategic fit: QMD is 100% local, no egress. Everything here keeps Solaris's
   slides across the screen; removed the redundant research follow-up input; loading
   graphic resized; Tools order = Ingestion / Semantics / Web Research / LLM Provider.
 
-**RESUME HERE → Phase 0.3 (vector reader) is the entry point.** Nothing semantic is
-built yet. The core semantic layer is queued as **F030–F035** in
-`.harness/features.json` (all self-contained). Order (see §3 Sequencing):
-- **F030 (0.3)** `server/integrations/qmd-vectors.ts` read-only sqlite-vec reader —
-  **gates F031–F033, F035.** Dimension from schema (768 today), not hardcoded.
-- **F031 (Phase 1)** mutual-KNN semantic edge set → `data/semantic.json` (dep F030).
-- **F032 (Phase 2)** arrangement modes Links/Semantic/Hybrid, Links default (dep F031).
-- **F033 (Phase 3)** semantic-cluster grouping/color, ⟂ layout (dep F031).
-- **F034 (Phase 4)** orphan link suggestions, preview-then-confirm via `write.ts` (no dep).
-- **F035 (Phase 5)** passage-level reader (dep F030).
+**COMPLETE → the full semantic layer (F030–F035) SHIPPED to `main` 2026-07-03**
+(commit `7b3c487`). All 36 features passing; typecheck clean; 145 tests. What landed:
+- **F030 (0.3)** `server/integrations/qmd-vectors.ts` read-only sqlite-vec reader
+  (better-sqlite3 + sqlite-vec, lazy-required, schema-guarded, dim read from
+  `float[N]`). Reconciles qmd paths → graph ids via `store_collections`.
+- **F031 (Phase 1)** `server/integrations/semantic.ts` mutual-KNN edge set →
+  `data/semantic.json`; `GET /api/semantic` builds-once-caches by graph fingerprint.
+  2078 edges over the real vault.
+- **F032 (Phase 2)** arrangement modes Links/Semantic/Hybrid (`web/`): dashed semantic
+  buffer + hide-lines toggle (keeps pull); per-arrangement position cache via
+  `/api/layout?arrangement=`.
+- **F033 (Phase 3)** `group by: semantic cluster` — deterministic label propagation,
+  coloring ⟂ layout. (LLM cluster labels = deferred optional; free top-tag naming used.)
+- **F034 (Phase 4)** orphan link suggestions: `guardedAppendLink` in `write.ts`,
+  `POST /api/gaps/link`, reader preview-then-confirm card. Journaled, token-guarded.
+- **F035 (Phase 5)** passage-level reader: semantic hits highlight the matched passage
+  via the CSS Custom Highlight API (DOMPurify intact); normal opens unchanged.
+- **F036 (added mid-flight, Felo request)** per-question Web vs Semantic research
+  buttons in the reader (reuses `runSemanticQuery` / `startWebResearch`).
+
+**Follow-ups / known ceilings** (not blockers): Electron packaging must
+`electron-rebuild` better-sqlite3 (the module degrades to "unavailable" if not — no
+crash); F031 is a full rebuild keyed by fingerprint, not per-note incremental (revisit
+if build time grows); F033 LLM cluster labels remain the optional enhancement.
 
 ### Decisions locked this session (do NOT re-litigate)
 - **Embedding model: SINGLE model — EmbeddingGemma 300M (qmd's default). The Qwen

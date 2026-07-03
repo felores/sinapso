@@ -156,3 +156,31 @@ features.json F030-F035 + plan #0.3/#1-5:**
 
 **RESUME POINT: F030 (vector reader).** Full detail: plan "Status & resume point" +
 features.json. typecheck clean, 132 tests green at session end.
+
+## Session 2026-07-03 (afternoon) — semantic layer end to end
+
+Built and shipped the **entire semantic layer F030–F035 + F036** in one autonomous
+run. All 36 features passing; typecheck clean; 145 tests (was 132).
+
+- **F030** `qmd-vectors.ts` read-only sqlite-vec reader (better-sqlite3 + sqlite-vec,
+  lazy-required, schema-guarded, dim from `float[N]`). Real index: dim 768, 8671 vault
+  docs, KNN semantically coherent. commit `5793773`.
+- **F031** `semantic.ts` mutual-KNN edges → `data/semantic.json`; `GET /api/semantic`
+  builds-once-caches by fingerprint (2078 edges, cold 14.6s → cached 14ms). `0b0a819`.
+- **F032** arrangement Links/Semantic/Hybrid + dashed buffer + hide-lines toggle +
+  per-arrangement layout cache. `74f17db`.
+- **F036** per-question Web/Semantic research buttons (Felo request mid-flight). `0c1dd8a`.
+- **F033** `group by: semantic cluster` — deterministic label propagation, ⟂ layout;
+  identical clusters across reload. `5469726`.
+- **F034** orphan link suggestions: `guardedAppendLink` + `POST /api/gaps/link` +
+  reader preview-then-confirm card. 8 new write-path tests. `e294566`.
+- **F035** passage-level reader: semantic hit highlights matched passage via CSS Custom
+  Highlight API (DOMPurify intact); normal opens unchanged. `7b3c487`.
+
+Deps added: better-sqlite3 + sqlite-vec (+ @types). Every feature verified via
+agent-browser against the real 4k-node vault. Investigated a reported perf regression
+(30s blank load / black stripe) — not reproducible on a clean single server; root cause
+was stale dev-server pileup on ports 5173/5174/5175, cleaned up.
+
+**All planned semantic work COMPLETE.** Follow-ups (non-blocking): electron-rebuild
+better-sqlite3 for the desktop shell; F031 per-note incremental; F033 optional LLM labels.
