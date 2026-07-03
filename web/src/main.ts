@@ -2738,15 +2738,6 @@ async function boot() {
       embedCustom.placeholder = "save failed — retry";
     }
   });
-  const refreshRescanBox = $("#qmd-refresh-rescan") as HTMLInputElement;
-  refreshRescanBox.checked =
-    localStorage.getItem("akasha-qmd-refresh-rescan") === "1";
-  refreshRescanBox.addEventListener("change", () => {
-    localStorage.setItem(
-      "akasha-qmd-refresh-rescan",
-      refreshRescanBox.checked ? "1" : "0",
-    );
-  });
 
   // One-time prompt (R6): qmd installed but nothing covers this vault.
   function maybePromptSetup() {
@@ -3736,12 +3727,10 @@ async function boot() {
       '<p class="muted">Re-reading the vault and rebuilding the graph…</p>',
     );
     try {
-      // Opt-in (B): refresh the qmd index too. Fire the guarded job first so it
-      // runs server-side and survives the reload below; progress shows on return.
-      if (
-        localStorage.getItem("akasha-qmd-refresh-rescan") === "1" &&
-        qmdStatus.state === "ready"
-      ) {
+      // When qmd covers this vault, always refresh its index on rescan (embed is
+      // incremental — only changed chunks). Fire the guarded job first so it runs
+      // server-side and survives the reload below; progress shows on return.
+      if (qmdStatus.state === "ready") {
         await fetch("/api/qmd/maintenance?update=1&embed=1", {
           method: "POST",
           headers: { "x-solaris-token": await apiToken() },
