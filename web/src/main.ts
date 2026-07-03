@@ -130,7 +130,7 @@ const THEMES: Record<string, ThemeDef> = {
   midnight: {
     label: "Midnight",
     bloom: true,
-    bg: "#070a10",
+    bg: "#03050a", // darker deep-space background (only the 3D backdrop)
     linkBase: "#6b7687",
     linkOut: "#161b26",
     linkLit: "#7fb4e8",
@@ -143,7 +143,7 @@ const THEMES: Record<string, ThemeDef> = {
       border: "rgba(120,150,190,0.35)",
     },
     css: {
-      "--bg": "#070a10",
+      "--bg": "#03050a",
       "--panel": "rgba(13,17,23,0.88)",
       "--border": "#30363d",
       "--fg": "#e6edf3",
