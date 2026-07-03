@@ -797,6 +797,7 @@ async function boot() {
   function applyTheme(k: string) {
     theme = THEMES[k] ? k : "midnight";
     localStorage.setItem("akasha-theme", theme);
+    document.documentElement.dataset.theme = theme; // lets CSS target a theme
     const t = T();
     for (const [prop, val] of Object.entries(t.css)) {
       document.documentElement.style.setProperty(prop, val);
