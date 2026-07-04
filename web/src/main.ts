@@ -3203,7 +3203,7 @@ async function boot() {
   > = {
     gemini: {
       label: "Gemini Live",
-      keyUrl: "https://aistudio.google.com/apikey",
+      keyUrl: "https://aistudio.google.com/api-keys",
       // native-audio voices (common 8 first, then the rest of the 30)
       voices: [
         "Aoede",
@@ -3240,7 +3240,7 @@ async function boot() {
     },
     openai: {
       label: "OpenAI Realtime",
-      keyUrl: "https://platform.openai.com/api-keys",
+      keyUrl: "https://platform.openai.com/settings/organization/api-keys",
       voices: [
         "marin",
         "cedar",
@@ -3256,7 +3256,7 @@ async function boot() {
     },
     xai: {
       label: "xAI Grok",
-      keyUrl: "https://console.x.ai",
+      keyUrl: "https://console.x.ai/",
       voices: ["eve", "ara", "rex", "sal", "leo"],
     },
   };
@@ -3279,12 +3279,13 @@ async function boot() {
     }
     voiceNameSel.value = v?.voice ?? spec.voices[0];
     const keyed = !!v?.keys[provider as "gemini" | "openai" | "xai"];
-    voiceKeyInput.placeholder = keyed
-      ? `${spec.label} key saved ✓ — paste to replace`
-      : `${spec.label} API key — paste + Enter`;
+    voiceKeyInput.placeholder = i18n.t(
+      keyed ? "ph.voiceKeySaved" : "ph.voiceKey",
+      { provider: spec.label },
+    );
     ($("#voice-key-link") as HTMLAnchorElement).href = spec.keyUrl;
     const status = $("#integ-voice .integ-status");
-    status.textContent = keyed ? "ready" : "needs key";
+    status.textContent = i18n.t(keyed ? "voice.ready" : "voice.needsKey");
     status.classList.toggle("ok", keyed);
   }
 
@@ -3314,7 +3315,7 @@ async function boot() {
       voiceKeyInput.value = "";
       await refreshIntegrations();
     } catch {
-      voiceKeyInput.placeholder = "save failed — retry";
+      voiceKeyInput.placeholder = i18n.t("ph.voiceKeyFail");
     } finally {
       voiceKeyInput.disabled = false;
     }
@@ -4649,6 +4650,7 @@ async function boot() {
   const refreshDynamicChrome = () => {
     updateSearchField();
     renderModes();
+    renderVoiceConfig(); // voice placeholder + status are JS-written too
     if (researchMode)
       $("#research-title").textContent = i18n.t(`research.${researchMode}`);
   };
