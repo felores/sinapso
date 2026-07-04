@@ -129,3 +129,45 @@ describe("server: /api/note-grep literal scan + guard", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("server: /api/tree folder structure", () => {
+  const V = mkdtempSync(join(tmpdir(), "solaris-tree-"));
+  const gp = join(V, "graph.json");
+  writeFileSync(
+    gp,
+    JSON.stringify({
+      meta: { vaultName: "t", vaultPath: V, notes: 4, excludes: [] },
+      nodes: [
+        { id: "root.md", title: "Root", phantom: false },
+        { id: "saas/a.md", title: "A", phantom: false },
+        { id: "saas/b.md", title: "B", phantom: false },
+        { id: "saas/climatia/reuniones/m1.md", title: "M1", phantom: false },
+        { id: "phantom:x.md", title: "X", phantom: true },
+      ],
+      links: [],
+    }),
+  );
+  const { app: treeApp } = createApp(gp);
+  afterAll(() => rmSync(V, { recursive: true, force: true }));
+
+  it("root lists top-level folders (with counts) and root notes, excluding phantoms", async () => {
+    const res = await request(treeApp).get("/api/tree");
+    expect(res.status).toBe(200);
+    expect(res.body.subfolders).toContainEqual({ path: "saas", count: 3 });
+    expect(res.body.notes).toContainEqual({ id: "root.md", title: "Root" });
+    // phantom node is never surfaced as a folder or a note
+    expect(JSON.stringify(res.body)).not.toContain("phantom");
+  });
+
+  it("drills into a subfolder", async () => {
+    const res = await request(treeApp).get("/api/tree?path=saas");
+    expect(res.body.subfolders).toContainEqual({
+      path: "saas/climatia",
+      count: 1,
+    });
+    expect(res.body.noteCount).toBe(2);
+    expect(res.body.notes.map((n: { id: string }) => n.id)).toEqual(
+      expect.arrayContaining(["saas/a.md", "saas/b.md"]),
+    );
+  });
+});

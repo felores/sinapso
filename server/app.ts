@@ -1467,6 +1467,35 @@ export function createApp(
     }
   });
 
+  // GET /api/tree?path=: the vault's folder organization (whole graph, not just
+  // qmd collections). Returns the direct subfolders (with note counts) and
+  // notes inside `path` (root if omitted). Pure string work over node ids
+  // (vault-relative paths), so no file access / traversal surface.
+  app.get("/api/tree", (req, res) => {
+    const raw = String(req.query.path ?? "").replace(/^\/+|\/+$/g, "");
+    const prefix = raw ? raw + "/" : "";
+    const subfolders = new Map<string, number>();
+    const notes: Array<{ id: string; title: string }> = [];
+    for (const n of graph.nodes) {
+      if (n.phantom || !n.id.startsWith(prefix)) continue;
+      const rest = n.id.slice(prefix.length);
+      const slash = rest.indexOf("/");
+      if (slash === -1) notes.push({ id: n.id, title: n.title });
+      else {
+        const sub = rest.slice(0, slash);
+        subfolders.set(sub, (subfolders.get(sub) ?? 0) + 1);
+      }
+    }
+    res.json({
+      path: raw,
+      subfolders: [...subfolders.entries()]
+        .map(([name, count]) => ({ path: prefix + name, count }))
+        .sort((a, b) => b.count - a.count),
+      noteCount: notes.length,
+      notes: notes.slice(0, 40),
+    });
+  });
+
   const reload = () => {
     graph = JSON.parse(readFileSync(graphPath, "utf-8"));
     vaultRoot = graph.meta.vaultPath;
