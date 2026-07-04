@@ -31,6 +31,8 @@ const SYSTEM_PROMPT = `You are the voice assistant inside Solaris, a 3D visualiz
 Speak briefly and conversationally, in the SAME language they speak. Refer to notes by their title; don't read raw file paths or line numbers aloud unless asked.
 
 Answer anything about THEIR OWN notes/vault from the tools — never from your own memory. Choose the tool by intent:
+- When they point at what's on screen ("this note", "what I'm reading", "esto", "lo que tengo abierto", "the research I just did") → current_view FIRST to see the open note + recent research, then answer (use the open note's path with the tools below for specifics).
+- To OPEN something on their screen: open_note (a note by path) or open_last_note ("open the last note", "reopen what I was reading", even if nothing is open now); open_last_research reopens their last search. These also return a preview so you immediately know what's in it — say something about it, don't just confirm.
 - To ANSWER a question from their notes ("what does it say about X", "what did I write on Y", "según mis notas…") → search_passages. It returns the exact paragraphs. This is your default for content.
 - To find WHICH notes exist on a topic ("do I have anything on X", "list/which of my notes about Y") → search_vault.
 - To go deeper into ONE note you already found, reuse its path: search_passages with 'note' to look inside just that note or book; grep_note for an exact word, name, number, or quote; read_passage to expand around a passage you already have.
@@ -40,6 +42,12 @@ Always use a real note path taken from a previous result — never invent one. I
 // Tool declarations mirror the vault HTTP endpoints. Descriptions guide WHEN to
 // call; results are injected back and the model narrates them.
 const VOICE_TOOLS: FunctionDeclaration[] = [
+  {
+    name: "current_view",
+    description:
+      "What the user is looking at RIGHT NOW: the note open in the reader (its title + path) and their recent research. Call this FIRST whenever they refer to what's on screen — 'this note', 'what I'm reading', 'this', 'the one open', 'the research I just did', 'esto', 'lo que tengo abierto', 'lo que busqué'. Then use the open note's path with the other tools to answer specifics.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
   {
     name: "search_vault",
     description:
@@ -112,9 +120,100 @@ const VOICE_TOOLS: FunctionDeclaration[] = [
       required: ["note", "query"],
     },
   },
+  {
+    name: "open_note",
+    description:
+      "Open a note in the reader so it appears on the user's screen, and get a preview of what's in it. Give 'note' (a path from a previous result, or one the user named). Use when they ask to open / show / pull up a note: 'open X', 'show me that note', 'abre X', 'muéstrame esa nota'.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        note: {
+          type: Type.STRING,
+          description: "Relative path of the note to open.",
+        },
+      },
+      required: ["note"],
+    },
+  },
+  {
+    name: "open_last_note",
+    description:
+      "Reopen the most recently viewed note in the reader (even if nothing is open now) and get a preview of it — the voice equivalent of the reader's history button. Use for 'open the last note', 'reopen what I was reading', 'abre la última nota'. No arguments.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "open_last_research",
+    description:
+      "Reopen the most recent research result in the research panel and get its question + answer. Use for 'open the last research', 'show my last search', 'abre la última investigación'. No arguments.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
 ];
 
 type Args = Record<string, unknown>;
+
+// ---- shared context helpers (reused by current_view + the open_* tools) ----
+
+function stripFrontmatter(md: string): string {
+  return md.startsWith("---") ? md.replace(/^---\n[\s\S]*?\n---\n?/, "") : md;
+}
+
+/** First `words` words of a note's body (frontmatter stripped) + a title, so
+ * the agent gets the gist of an opened note without ingesting the whole file.
+ * Short notes come back whole; long ones are flagged `truncated`. */
+async function notePreview(
+  base: string,
+  path: string,
+  words = 250,
+): Promise<Record<string, unknown>> {
+  try {
+    const u = new URL(`${base}/api/note`);
+    u.searchParams.set("id", path);
+    const r = await fetch(u);
+    if (!r.ok) return { error: `note not found: ${path}` };
+    const { markdown } = (await r.json()) as { markdown?: string };
+    const body = stripFrontmatter(markdown ?? "").trim();
+    const tokens = body.split(/\s+/).filter(Boolean);
+    const h1 = body.match(/^#\s+(.+)$/m);
+    return {
+      path,
+      title: (h1?.[1] ?? path.split("/").pop() ?? path).replace(/\.md$/i, ""),
+      truncated: tokens.length > words,
+      preview: tokens.slice(0, words).join(" "),
+    };
+  } catch {
+    return { error: `could not read ${path}` };
+  }
+}
+
+interface ResearchHist {
+  id: string;
+  mode: string;
+  query: string;
+  answer?: { content: string } | null;
+}
+
+async function researchEntries(base: string): Promise<ResearchHist[]> {
+  try {
+    const d = (await (await fetch(`${base}/api/research/history`)).json()) as {
+      entries?: ResearchHist[];
+    };
+    return d.entries ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** id (relative path) of the most recently opened note, or null. */
+async function lastReaderNoteId(base: string): Promise<string | null> {
+  try {
+    const d = (await (await fetch(`${base}/api/reader-history`)).json()) as {
+      entries?: Array<{ id: string }>;
+    };
+    return d.entries?.[0]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /** Execute a tool by calling this server's own loopback endpoints (no Origin
  * header → passes localOnly; read-only, so no token needed). Returns a compact
@@ -229,6 +328,48 @@ async function bridge(
       browser.send(JSON.stringify(obj));
   };
 
+  // Tool router: query tools hit loopback endpoints; the view/open tools read
+  // the server-side histories and (for opens) tell the browser to update the
+  // reader/research panels, returning a preview so the agent is grounded.
+  const runTool = async (
+    name: string,
+    args: Args,
+  ): Promise<Record<string, unknown>> => {
+    if (name === "current_view") {
+      const noteId = await lastReaderNoteId(base);
+      return {
+        openNote: noteId ? await notePreview(base, noteId) : null,
+        recentResearch: (await researchEntries(base))
+          .slice(0, 6)
+          .map((e) => ({ mode: e.mode, query: e.query })),
+      };
+    }
+    if (name === "open_note") {
+      const path = String(args.note ?? "");
+      const preview = await notePreview(base, path);
+      if (!preview.error)
+        send({ type: "action", action: "open_note", note: path });
+      return preview;
+    }
+    if (name === "open_last_note") {
+      const path = await lastReaderNoteId(base);
+      if (!path) return { error: "no notes have been opened yet" };
+      send({ type: "action", action: "open_note", note: path });
+      return await notePreview(base, path);
+    }
+    if (name === "open_last_research") {
+      const entry = (await researchEntries(base))[0];
+      if (!entry) return { error: "no research yet" };
+      send({ type: "action", action: "open_research", id: entry.id });
+      return {
+        mode: entry.mode,
+        query: entry.query,
+        answer: entry.answer?.content ?? null,
+      };
+    }
+    return callTool(base, name, args);
+  };
+
   const cfg = loadConfig(opts.configPath);
   const provider = cfg.voice.provider ?? "gemini";
   if (provider !== "gemini") {
@@ -284,7 +425,7 @@ async function bridge(
         console.log(
           `[voice] tool ${fc.name}(${JSON.stringify(fc.args ?? {})})`,
         );
-        const response = await callTool(base, fc.name ?? "", fc.args ?? {});
+        const response = await runTool(fc.name ?? "", fc.args ?? {});
         functionResponses.push({ id: fc.id, name: fc.name, response });
       }
       session.sendToolResponse({ functionResponses });

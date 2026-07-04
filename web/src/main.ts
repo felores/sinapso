@@ -3326,6 +3326,17 @@ async function boot() {
           console.warn("[voice]", msg);
           voiceToggle.title = msg;
         },
+        onAction: (action, p) => {
+          // the agent drives the panels: open a note in the reader, or reopen
+          // a stored research entry — same code paths as clicking the UI.
+          if (action === "open_note") {
+            const n = byId.get(String(p.note ?? ""));
+            if (n) select(n);
+          } else if (action === "open_research") {
+            const entry = researchHistory.find((r) => r.id === p.id);
+            if (entry) showHistoryEntry(entry);
+          }
+        },
       });
     } catch {
       voiceSession = null;

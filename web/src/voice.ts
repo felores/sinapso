@@ -11,6 +11,8 @@ export interface VoiceHandlers {
   onReady?: () => void; // provider session is live
   onClose?: () => void; // session ended (any reason)
   onError?: (message: string) => void;
+  // the agent asked the UI to do something (open a note / research panel)
+  onAction?: (action: string, payload: Record<string, unknown>) => void;
 }
 
 export interface VoiceSession {
@@ -134,7 +136,12 @@ export async function startVoice(
       `${proto}://${location.host}/api/voice/ws?token=${encodeURIComponent(token)}`,
     );
     ws.onmessage = (e) => {
-      let m: { type?: string; data?: string; message?: string };
+      let m: {
+        type?: string;
+        data?: string;
+        message?: string;
+        action?: string;
+      };
       try {
         m = JSON.parse(e.data);
       } catch {
@@ -148,6 +155,8 @@ export async function startVoice(
         clearPlayback();
       } else if (m.type === "ready") {
         handlers.onReady?.();
+      } else if (m.type === "action" && m.action) {
+        handlers.onAction?.(m.action, m as Record<string, unknown>);
       } else if (m.type === "error") {
         handlers.onError?.(m.message ?? "voice error");
         cleanup();
