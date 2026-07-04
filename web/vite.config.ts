@@ -21,7 +21,9 @@ export default defineConfig({
       // Use 127.0.0.1, not "localhost": the server binds IPv4 only, and
       // "localhost" prefers IPv6 (::1) on macOS — a stray IPv6 listener on
       // this port would then hijack the proxy and hang requests.
-      "/api": "http://127.0.0.1:5175",
+      // ws:true so the voice relay's WebSocket (/api/voice/ws) is proxied too;
+      // scoped to /api, so Vite's own HMR socket is untouched.
+      "/api": { target: "http://127.0.0.1:5175", ws: true },
     },
   },
   build: {

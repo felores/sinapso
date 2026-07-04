@@ -36,6 +36,7 @@ import DOMPurify from "dompurify";
 import * as THREE from "three";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import * as i18n from "./i18n";
+import { startVoice, type VoiceSession } from "./voice";
 
 // ===== DATA STRUCTURES =====
 // GNode: A knowledge note (file) in the vault
@@ -3263,6 +3264,8 @@ async function boot() {
   const voiceProviderSel = $("#voice-provider") as HTMLSelectElement;
   const voiceNameSel = $("#voice-name") as HTMLSelectElement;
   const voiceKeyInput = $("#voice-key") as HTMLInputElement;
+  const voiceToggle = $("#voice-toggle") as HTMLButtonElement;
+  let voiceSession: VoiceSession | null = null;
 
   function renderVoiceConfig() {
     const v = integrations?.voice;
@@ -3287,7 +3290,49 @@ async function boot() {
     const status = $("#integ-voice .integ-status");
     status.textContent = i18n.t(keyed ? "voice.ready" : "voice.needsKey");
     status.classList.toggle("ok", keyed);
+    // The search-bar toggle is enabled only once a key exists (mirrors the mode
+    // buttons); don't touch it while a session is live.
+    if (!voiceSession) {
+      voiceToggle.disabled = !keyed;
+      voiceToggle.title = i18n.t(keyed ? "voice.toggle" : "voice.configure");
+    }
   }
+
+  // ---- search-bar Connect button: start/stop a realtime voice session ----
+  function setVoiceActive(on: boolean) {
+    voiceToggle.classList.toggle("active", on);
+    voiceToggle.setAttribute("aria-pressed", String(on));
+    voiceToggle.title = i18n.t(on ? "voice.stop" : "voice.toggle");
+  }
+  voiceToggle.addEventListener("click", async () => {
+    if (voiceSession) {
+      voiceSession.stop(); // onClose resets the button + config-driven state
+      return;
+    }
+    voiceToggle.disabled = true;
+    voiceToggle.title = i18n.t("voice.connecting");
+    try {
+      voiceSession = await startVoice(await apiToken(), {
+        onReady: () => {
+          voiceToggle.disabled = false;
+          setVoiceActive(true);
+        },
+        onClose: () => {
+          voiceSession = null;
+          setVoiceActive(false);
+          renderVoiceConfig(); // restore enabled/title from config
+        },
+        onError: (msg) => {
+          console.warn("[voice]", msg);
+          voiceToggle.title = msg;
+        },
+      });
+    } catch {
+      voiceSession = null;
+      setVoiceActive(false);
+      voiceToggle.disabled = false;
+    }
+  });
 
   voiceProviderSel.addEventListener("change", async () => {
     const provider = voiceProviderSel.value;

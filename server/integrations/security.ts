@@ -24,6 +24,23 @@ function hostnameOf(hostHeader: string): string {
   return hostHeader.split(":")[0];
 }
 
+/** True unless a *present* Host header names a non-loopback host (mirrors
+ * localOnly: an absent Host is allowed). Reused by the voice WS upgrade guard. */
+export function isLocalHost(hostHeader: string | undefined): boolean {
+  if (!hostHeader) return true;
+  return LOCAL_HOSTS.has(hostnameOf(hostHeader).toLowerCase());
+}
+
+/** True unless a *present* Origin is non-loopback (absent Origin allowed). */
+export function isLocalOrigin(origin: string | undefined): boolean {
+  if (!origin) return true;
+  try {
+    return LOCAL_HOSTS.has(new URL(origin).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 export const localOnly: RequestHandler = (req, res, next) => {
   const host = req.headers.host;
   if (host && !LOCAL_HOSTS.has(hostnameOf(host).toLowerCase())) {

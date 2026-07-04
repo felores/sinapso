@@ -18,6 +18,7 @@
 
 import express from "express";
 import MiniSearch from "minisearch";
+import type { Server } from "node:http";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 import { scanVault } from "../scanner/scan.js";
@@ -96,6 +97,7 @@ import {
   guardedEdit,
   WriteError,
 } from "./integrations/write.js";
+import { attachVoiceRelay } from "./integrations/voice.js";
 
 interface GraphFile {
   meta: {
@@ -121,6 +123,8 @@ export interface AkashaApp {
   /** Re-read graph.json (after a rescan / vault switch). */
   reload(): void;
   meta(): GraphFile["meta"];
+  /** Attach the voice WebSocket relay to the http.Server from app.listen(). */
+  attachVoice(server: Server): void;
 }
 
 /** Response of GET /api/semantic (F031). */
@@ -1510,5 +1514,7 @@ export function createApp(
     app.use(express.static(staticDir));
   }
 
-  return { app, reload, meta: () => graph.meta };
+  const attachVoice = (server: Server) =>
+    attachVoiceRelay(server, { sessionToken, configPath });
+  return { app, reload, meta: () => graph.meta, attachVoice };
 }

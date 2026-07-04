@@ -28,10 +28,14 @@ if (!existsSync(GRAPH_PATH)) {
 }
 
 // Create server and bind to localhost
-const { app, meta } = createApp(GRAPH_PATH, resolve(ROOT, "web", "dist"));
-app.listen(PORT, "127.0.0.1", () => {
+const { app, meta, attachVoice } = createApp(
+  GRAPH_PATH,
+  resolve(ROOT, "web", "dist"),
+);
+const server = app.listen(PORT, "127.0.0.1", () => {
   const m = meta();
   console.log(
     `Solaris: http://localhost:${PORT}  (vault: ${m.vaultName}, ${m.notes} notes)`,
   );
 });
+attachVoice(server); // voice-mode WebSocket relay (opt-in, key-gated)

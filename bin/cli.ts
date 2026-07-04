@@ -94,7 +94,7 @@ console.log(
 
 // Create Express server with graph API endpoints
 const webDist = resolve(__dirname, "..", "web", "dist");
-const { app } = createApp(graphPath, webDist);
+const { app, attachVoice } = createApp(graphPath, webDist);
 
 // Start server on localhost (not exposed publicly)
 const listener = app.listen(args.port, "127.0.0.1", () => {
@@ -113,3 +113,4 @@ const listener = app.listen(args.port, "127.0.0.1", () => {
     exec(cmd);
   }
 });
+attachVoice(listener); // voice-mode WebSocket relay (opt-in, key-gated)
