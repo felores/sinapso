@@ -3972,9 +3972,21 @@ async function boot() {
       line?: number;
       snippet: string;
     }>,
+    query?: string,
   ) {
+    // The query/question is the first thing on the page so a saved semantic
+    // result reads as "this is what I asked" before the matching passages.
+    if (query) {
+      const q = document.createElement("h2");
+      q.className = "research-query";
+      q.textContent = query;
+      body.appendChild(q);
+    }
     if (!results.length) {
-      body.innerHTML = '<p class="muted">no matching passages</p>';
+      body.insertAdjacentHTML(
+        "beforeend",
+        '<p class="muted">no matching passages</p>',
+      );
       return;
     }
     // Bucket passages by note id, preserving first-seen (score) order.
@@ -4031,9 +4043,16 @@ async function boot() {
     },
     query: string,
   ) {
+    // The query/question leads the page, same as semantic results.
+    if (query) {
+      const q = document.createElement("h2");
+      q.className = "research-query";
+      q.textContent = query;
+      body.appendChild(q);
+    }
     if (data.answer) body.appendChild(renderAnswer(data.answer, query));
     if (!data.results.length && !data.answer) {
-      body.innerHTML = '<p class="muted">no results</p>';
+      body.insertAdjacentHTML("beforeend", '<p class="muted">no results</p>');
       return;
     }
     if (data.results.length && data.answer) {
@@ -4093,7 +4112,7 @@ async function boot() {
         },
         entry.query,
       );
-    else renderSemanticInto(body, (entry.results ?? []) as never);
+    else renderSemanticInto(body, (entry.results ?? []) as never, entry.query);
     updateHistoryNav();
   }
 
@@ -4252,7 +4271,7 @@ async function boot() {
           '<p class="muted">semantic search is not set up for this vault (Tools → Integrations)</p>';
         return;
       }
-      renderSemanticInto(body, data.results ?? []);
+      renderSemanticInto(body, data.results ?? [], query);
       if (data.historyId) await noteQueryPersisted(data.historyId);
     } catch {
       body.innerHTML = "";
@@ -4439,8 +4458,10 @@ async function boot() {
         }
         const rescanBtn = document.createElement("button");
         rescanBtn.className = "web-save";
-        rescanBtn.textContent = "rescan to see it";
-        rescanBtn.addEventListener("click", () => rescan(false));
+        rescanBtn.textContent = "rescan & fly to the note";
+        // Same path as ingest: stash the id so the post-rescan reload flies the
+        // camera to the freshly created note instead of just reloading.
+        rescanBtn.addEventListener("click", () => openAfterIngest(data.id));
         save.after(rescanBtn);
       } catch {
         save.disabled = false;

@@ -1044,6 +1044,17 @@ body > :not(#graph) {
   overflow: hidden;
 }
 
+/* The query/question, shown first so a saved result (semantic or web) names itself. */
+.research-query {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--fg);
+  padding: 2px 8px 8px;
+  margin: 0 0 6px;
+  border-bottom: 1px solid var(--border);
+}
+
 /* Passage results grouped under their note (A). */
 .sem-group { margin-bottom: 6px; }
 .sem-note {
