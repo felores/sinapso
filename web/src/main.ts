@@ -2367,14 +2367,67 @@ async function boot() {
     () => selected && openInObsidian(selected),
   );
   graph.onNodeRightClick((n: GNode) => openInObsidian(n));
+
+  // ---- tap-to-select: a click that survives a shaky hand ----
+  // The drag stack treats the tiniest mouse move (even 1px) as a drag: it both
+  // nudges the node and swallows the click (clickAfterDrag=false), so a
+  // slightly unsteady press never opens the note. Own the gesture instead — a
+  // short, near-still press is a tap (select / double-tap → Obsidian) and its
+  // accidental nudge is undone so the node never moves. Longer/farther presses
+  // stay real drags and reposition as before.
+  const TAP_MS = 250; // pressed shorter than this...
+  const TAP_PX = 6; //   ...and moved less than this on screen = a tap
   let lastClick = 0;
   let lastClickId = "";
-  graph.onNodeClick((n: GNode) => {
+  function tapNode(n: GNode) {
     const now = Date.now();
     if (n.id === lastClickId && now - lastClick < 350) openInObsidian(n);
     else select(n);
     lastClick = now;
     lastClickId = n.id;
+  }
+  graph.onNodeClick(() => {}); // taps dispatch from the pointer handlers below
+  const canvas = graph.renderer().domElement;
+  let downT = 0;
+  let downX = 0;
+  let downY = 0;
+  let downNode: GNode | null = null;
+  let downPos: { x: number; y: number; z: number } | null = null;
+  canvas.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) {
+      downNode = null;
+      return;
+    }
+    downT = performance.now();
+    downX = e.clientX;
+    downY = e.clientY;
+    downNode = hoverNode;
+    downPos =
+      hoverNode?.x !== undefined &&
+      hoverNode.y !== undefined &&
+      hoverNode.z !== undefined
+        ? { x: hoverNode.x, y: hoverNode.y, z: hoverNode.z }
+        : null;
+  });
+  // Release can land off-canvas (pointer capture during a drag), so listen wide.
+  window.addEventListener("pointerup", (e) => {
+    const n = downNode;
+    downNode = null;
+    if (!n) return;
+    const tap =
+      performance.now() - downT < TAP_MS &&
+      Math.hypot(e.clientX - downX, e.clientY - downY) < TAP_PX;
+    if (!tap) return; // a deliberate drag: leave the reposition alone
+    if (downPos) {
+      // undo DragControls' micro-nudge so a tap never shifts the note
+      n.x = downPos.x;
+      n.y = downPos.y;
+      n.z = downPos.z;
+      const obj = (n as unknown as { __threeObj?: THREE.Object3D }).__threeObj;
+      obj?.position.set(downPos.x, downPos.y, downPos.z);
+      updateLinkPositions();
+    }
+    tapNode(n);
   });
 
   // --- topbar stats ---
