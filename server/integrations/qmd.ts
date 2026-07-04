@@ -30,6 +30,8 @@ export interface QmdHit {
   score?: number;
   title?: string;
   snippet?: string;
+  /** 1-based line where the passage/chunk starts, when qmd reports it. */
+  line?: number;
 }
 
 export interface NodeResult {
@@ -163,6 +165,54 @@ export function hitsToNodes(
     out.push({
       id,
       title,
+      score: h.score ?? 0,
+      snippet: cleanSnippet(h.snippet),
+    });
+  }
+  return out;
+}
+
+export interface PassageResult {
+  file: string;
+  title: string;
+  /** 1-based start line of the passage (0 when qmd did not report one). */
+  line: number;
+  score: number;
+  snippet: string;
+}
+
+/**
+ * Chunk-level variant of hitsToNodes: keeps EVERY passage (no per-note
+ * dedup), does NOT require the note to be a graph node, and preserves the
+ * line position — so a caller can answer from within a long note instead of
+ * loading the whole file. Still vault-confined (R5) and collection-filtered
+ * (R8). Pass `note` (a vault-relative path) to keep only that note's passages.
+ */
+export function hitsToPassages(
+  hits: QmdHit[],
+  cols: QmdCollection[],
+  vaultRoot: string,
+  enabled?: Set<string>,
+  note?: string,
+): PassageResult[] {
+  const byName = new Map(cols.map((c) => [c.name, resolve(c.path)]));
+  const vr = resolve(vaultRoot);
+  const out: PassageResult[] = [];
+  for (const h of hits) {
+    const m = h.file.match(/^qmd:\/\/([^/]+)\/(.+)$/);
+    if (!m) continue;
+    const [, coll, rel] = m;
+    if (enabled && !enabled.has(coll)) continue;
+    const base = byName.get(coll);
+    if (!base) continue; // hit from a non-covering collection
+    const abs = resolve(base, rel);
+    if (abs !== vr && !abs.startsWith(vr + sep)) continue;
+    const id = relative(vr, abs);
+    if (note && id !== note) continue;
+    out.push({
+      file: id,
+      title: h.title ?? id,
+      line: typeof h.line === "number" ? h.line : 0,
       score: h.score ?? 0,
       snippet: cleanSnippet(h.snippet),
     });

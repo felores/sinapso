@@ -37,6 +37,7 @@ import {
   coveringCollections,
   createQmdSetup,
   hitsToNodes,
+  hitsToPassages,
   listCollections,
   vsearch,
   type QmdCollection,
@@ -471,6 +472,44 @@ export function createApp(
     return { status: 200, body: { state: "ready", results } };
   }
 
+  // Chunk-level variant of semanticQuery for /api/passages: returns the top
+  // matching PASSAGES (with line positions), not one snippet per note, so a
+  // caller can answer from within a long note without loading the whole file.
+  // Optional `note` scopes to a single vault-relative path (over-fetch, then
+  // filter, so one doc still yields several passages).
+  async function passagesQuery(
+    queryText: string,
+    collectionsParam: unknown,
+    note: string | undefined,
+    limit: number,
+  ): Promise<{ status: number; body: object }> {
+    const bin = await qmdBin();
+    if (!bin) return { status: 503, body: { error: "qmd not installed" } };
+    if (qmdSetup.state() === "indexing")
+      return { status: 200, body: { state: "indexing", results: [] } };
+    if (qmdSetup.state() === "ready") colCache = null;
+    const covering = coveringCollections(await collections(bin), vaultRoot);
+    if (!covering.length)
+      return { status: 200, body: { state: "uncovered", results: [] } };
+    const enabled =
+      typeof collectionsParam === "string" && collectionsParam
+        ? new Set(collectionsParam.split(",").filter(Boolean))
+        : undefined;
+    const scopeNames = covering
+      .map((c) => c.name)
+      .filter((n) => !enabled || enabled.has(n));
+    const pool = note ? Math.max(limit * 6, 30) : limit;
+    const hits = await qmdSearch(bin, queryText, pool, scopeNames);
+    const results = hitsToPassages(
+      hits,
+      covering,
+      vaultRoot,
+      enabled,
+      note,
+    ).slice(0, limit);
+    return { status: 200, body: { state: "ready", results } };
+  }
+
   // GET /api/qmd/status: missing | uncovered | indexing | error | ready(+collections)
   app.get("/api/qmd/status", async (_req, res) => {
     try {
@@ -675,6 +714,40 @@ export function createApp(
     } catch (e) {
       console.error("semantic search failed:", e);
       res.status(500).json({ error: "semantic search failed" });
+    }
+  });
+
+  // GET /api/passages?q=&note=&collections=&limit=: chunk-level retrieval.
+  // Returns the top matching passages with line positions (multiple per note
+  // allowed), optionally scoped to one note so a client can answer from a
+  // single doc without loading the whole file. Read-only, vault-confined.
+  app.get("/api/passages", async (req, res) => {
+    try {
+      const q = String(req.query.q ?? "").trim();
+      if (!q) {
+        res.json({ state: "ready", results: [] });
+        return;
+      }
+      const note =
+        typeof req.query.note === "string" && req.query.note
+          ? req.query.note
+          : undefined;
+      const limit = Math.min(
+        Math.max(parseInt(String(req.query.limit ?? "8"), 10) || 8, 1),
+        20,
+      );
+      const r = await passagesQuery(q, req.query.collections, note, limit);
+      const results = (r.body as { results?: unknown[] }).results;
+      // Cross-vault passage searches (the research panel) join the semantic
+      // history; note-scoped ones (the reader's find-in-note) do not.
+      const historyId =
+        !note && r.status === 200 && Array.isArray(results) && results.length
+          ? saveEntry(dataDir, { mode: "semantic", query: q, results }).id
+          : undefined;
+      res.status(r.status).json({ ...r.body, historyId });
+    } catch (e) {
+      console.error("passages search failed:", e);
+      res.status(500).json({ error: "passages search failed" });
     }
   });
 
@@ -1201,6 +1274,105 @@ export function createApp(
       res.json({ id, markdown });
     } catch (e) {
       console.error(`Failed to read note ${id}:`, e);
+      res.status(500).json({ error: "read failed" });
+    }
+  });
+
+  // GET /api/note-lines?id=&from=&count=: read a line-range slice of a note so
+  // a client can expand around a passage without loading the whole file. Same
+  // path-traversal guard as /api/note; read-only. `count` capped at 400 lines.
+  app.get("/api/note-lines", (req, res) => {
+    const id = String(req.query.id ?? "");
+    if (!id || id.startsWith("phantom:")) {
+      res.status(404).json({ error: "note not found" });
+      return;
+    }
+    const full = resolve(vaultRoot, id);
+    const vaultBase = resolve(vaultRoot) + sep;
+    if (!full.startsWith(vaultBase) || !full.toLowerCase().endsWith(".md")) {
+      res.status(400).json({ error: "invalid note id" });
+      return;
+    }
+    if (!existsSync(full)) {
+      res.status(404).json({ error: "note not found" });
+      return;
+    }
+    const from = Math.max(parseInt(String(req.query.from ?? "1"), 10) || 1, 1);
+    const count = Math.min(
+      Math.max(parseInt(String(req.query.count ?? "60"), 10) || 60, 1),
+      400,
+    );
+    try {
+      const lines = readFileSync(full, "utf-8").split("\n");
+      const total = lines.length;
+      const start = Math.min(from - 1, total);
+      const slice = lines.slice(start, start + count);
+      res.json({
+        id,
+        from: start + 1,
+        to: start + slice.length,
+        total,
+        text: slice.join("\n"),
+      });
+    } catch (e) {
+      console.error(`Failed to read note lines ${id}:`, e);
+      res.status(500).json({ error: "read failed" });
+    }
+  });
+
+  // GET /api/note-grep?id=&q=&context=&ignore_case=&limit=: exhaustive literal
+  // keyword scan within ONE note — every match, with line numbers + a small
+  // context window — so a client can find exact terms/names/quotes that
+  // semantic search would miss. Same path guard as /api/note; literal
+  // substring match (no regex, so no ReDoS); read-only. context 0-10 (def 2),
+  // limit 1-100 (def 30).
+  app.get("/api/note-grep", (req, res) => {
+    const id = String(req.query.id ?? "");
+    if (!id || id.startsWith("phantom:")) {
+      res.status(404).json({ error: "note not found" });
+      return;
+    }
+    const full = resolve(vaultRoot, id);
+    const vaultBase = resolve(vaultRoot) + sep;
+    if (!full.startsWith(vaultBase) || !full.toLowerCase().endsWith(".md")) {
+      res.status(400).json({ error: "invalid note id" });
+      return;
+    }
+    if (!existsSync(full)) {
+      res.status(404).json({ error: "note not found" });
+      return;
+    }
+    const q = String(req.query.q ?? "");
+    if (!q) {
+      res.json({ id, q, count: 0, matches: [] });
+      return;
+    }
+    const ignoreCase = req.query.ignore_case === "1";
+    const ctx = Math.min(
+      Math.max(parseInt(String(req.query.context ?? "2"), 10) || 2, 0),
+      10,
+    );
+    const limit = Math.min(
+      Math.max(parseInt(String(req.query.limit ?? "30"), 10) || 30, 1),
+      100,
+    );
+    try {
+      const lines = readFileSync(full, "utf-8").split("\n");
+      const needle = ignoreCase ? q.toLowerCase() : q;
+      const matches: { line: number; text: string; snippet: string }[] = [];
+      for (let i = 0; i < lines.length && matches.length < limit; i++) {
+        const hay = ignoreCase ? lines[i].toLowerCase() : lines[i];
+        if (!hay.includes(needle)) continue;
+        const from = Math.max(i - ctx, 0);
+        matches.push({
+          line: i + 1,
+          text: lines[i],
+          snippet: lines.slice(from, i + ctx + 1).join("\n"),
+        });
+      }
+      res.json({ id, q, count: matches.length, matches });
+    } catch (e) {
+      console.error(`Failed to grep note ${id}:`, e);
       res.status(500).json({ error: "read failed" });
     }
   });

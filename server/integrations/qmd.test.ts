@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../app";
 import { TOKEN_HEADER } from "./security";
-import { coveringCollections, hitsToNodes } from "./qmd";
+import { coveringCollections, hitsToNodes, hitsToPassages } from "./qmd";
 import { createQmdMaintenance, parseQmdStatus } from "./qmd-maintenance";
 import type { Runner } from "./detect";
 
@@ -165,6 +165,61 @@ describe("hitsToNodes", () => {
       new Set(["d"]),
     );
     expect(out.map((r) => r.id)).toEqual(["sub/b.md"]);
+  });
+});
+
+describe("hitsToPassages", () => {
+  const cols = [{ name: "c", path: "/v/vault" }];
+  it("keeps every passage (no dedup) and preserves line positions", () => {
+    const out = hitsToPassages(
+      [
+        { file: "qmd://c/book.md", score: 0.9, line: 12, snippet: "12: alpha" },
+        { file: "qmd://c/book.md", score: 0.8, line: 40, snippet: "40: beta" },
+        { file: "qmd://c/other.md", score: 0.7, line: 3, snippet: "gamma" },
+      ],
+      cols,
+      "/v/vault",
+    );
+    expect(out.map((r) => [r.file, r.line])).toEqual([
+      ["book.md", 12],
+      ["book.md", 40],
+      ["other.md", 3],
+    ]);
+    expect(out[0].snippet).toBe("alpha"); // line-number prefix stripped
+  });
+  it("defaults line to 0 when qmd omits it, and does not require a graph node", () => {
+    const out = hitsToPassages(
+      [{ file: "qmd://c/loose.md", score: 0.5 }],
+      cols,
+      "/v/vault",
+    );
+    expect(out).toEqual([
+      { file: "loose.md", title: "loose.md", line: 0, score: 0.5, snippet: "" },
+    ]);
+  });
+  it("scopes to a single note when `note` is given", () => {
+    const out = hitsToPassages(
+      [
+        { file: "qmd://c/book.md", score: 0.9, line: 1 },
+        { file: "qmd://c/other.md", score: 0.8, line: 1 },
+      ],
+      cols,
+      "/v/vault",
+      undefined,
+      "book.md",
+    );
+    expect(out.map((r) => r.file)).toEqual(["book.md"]);
+  });
+  it("drops files outside the vault and non-covering collections", () => {
+    const out = hitsToPassages(
+      [
+        { file: "qmd://c/../escape.md", score: 1 },
+        { file: "qmd://unknown/x.md", score: 1 },
+      ],
+      cols,
+      "/v/vault",
+    );
+    expect(out).toEqual([]);
   });
 });
 

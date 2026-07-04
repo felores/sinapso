@@ -52,3 +52,80 @@ describe("server: /api/note path-traversal guard", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("server: /api/note-lines slice + guard", () => {
+  it("returns a line-range slice with range metadata", async () => {
+    const res = await request(app).get(
+      "/api/note-lines?id=real.md&from=1&count=1",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.text).toBe("# Real Note");
+    expect(res.body.from).toBe(1);
+    expect(res.body.to).toBe(1);
+  });
+
+  it("clamps an over-long count and reports total lines", async () => {
+    const res = await request(app).get(
+      "/api/note-lines?id=real.md&from=3&count=999",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(4);
+    expect(res.body.text).toContain("A real markdown note");
+  });
+
+  it("rejects parent-directory traversal", async () => {
+    const res = await request(app).get(
+      "/api/note-lines?id=../../etc/passwd&from=1",
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a non-.md path", async () => {
+    const res = await request(app).get("/api/note-lines?id=readme.txt");
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a phantom: id with 404", async () => {
+    const res = await request(app).get("/api/note-lines?id=phantom:x");
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("server: /api/note-grep literal scan + guard", () => {
+  it("finds every matching line with its 1-based line number", async () => {
+    const res = await request(app).get("/api/note-grep?id=real.md&q=markdown");
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    expect(res.body.matches[0].line).toBe(3);
+    expect(res.body.matches[0].text).toContain("markdown");
+  });
+
+  it("is case-sensitive by default, case-insensitive with ignore_case=1", async () => {
+    const sensitive = await request(app).get(
+      "/api/note-grep?id=real.md&q=Real",
+    );
+    expect(sensitive.body.count).toBe(1); // "# Real Note" only
+    const insensitive = await request(app).get(
+      "/api/note-grep?id=real.md&q=real&ignore_case=1",
+    );
+    expect(insensitive.body.count).toBe(2); // "Real" + "real"
+  });
+
+  it("returns count 0 for no match", async () => {
+    const res = await request(app).get("/api/note-grep?id=real.md&q=zzzznope");
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(0);
+  });
+
+  it("rejects parent-directory traversal", async () => {
+    const res = await request(app).get(
+      "/api/note-grep?id=../../etc/passwd&q=root",
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a phantom: id with 404", async () => {
+    const res = await request(app).get("/api/note-grep?id=phantom:x&q=a");
+    expect(res.status).toBe(404);
+  });
+});

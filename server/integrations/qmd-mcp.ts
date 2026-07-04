@@ -175,6 +175,7 @@ export function createQmdMcp(overrides: Partial<QmdMcpDeps> = {}) {
           score: typeof r.score === "number" ? r.score : 0,
           title: typeof r.title === "string" ? r.title : undefined,
           snippet: typeof r.snippet === "string" ? r.snippet : undefined,
+          line: typeof r.line === "number" ? r.line : undefined,
         });
       }
       return hits;
