@@ -1999,6 +1999,24 @@ async function boot() {
 
   $("#reader-close").addEventListener("click", clearSelection);
 
+  // Click the path in the header to copy it to the clipboard.
+  $("#reader-path").addEventListener("click", async () => {
+    if (!selected || selected.phantom) return;
+    try {
+      await navigator.clipboard.writeText(selected.id);
+      const tip = document.createElement("div");
+      tip.className = "copy-toast";
+      tip.textContent = i18n.t("reader.copied");
+      const r = ($("#reader-path") as HTMLElement).getBoundingClientRect();
+      tip.style.left = `${r.left + r.width / 2}px`;
+      tip.style.top = `${r.bottom + 6}px`;
+      document.body.append(tip);
+      setTimeout(() => tip.remove(), 1200);
+    } catch {
+      /* clipboard unavailable (no permission / insecure context) */
+    }
+  });
+
   // ---- reader panel: draggable (header) + resizable (edge/corner) ----
   // Docked = pinned to the right edge, full height, width adjustable.
   // Dragging the header undocks it into a floating window; double-click
@@ -2144,22 +2162,16 @@ async function boot() {
       });
     }
 
-    // header: drag to move (undocks on first drag), dbl-click to re-dock
+    // header: drag to move. Only acts when already floating; the dock
+    // button is the sole way to toggle dock state, so clicking the header
+    // row (incl. the path) never undocks.
     {
       let l0 = 0;
       let t0 = 0;
       const head = $("#reader-head");
       head.addEventListener("pointerdown", (e: PointerEvent) => {
         if ((e.target as HTMLElement).closest("button")) return; // buttons stay buttons
-        if (!geom.floating) {
-          // undock in place: adopt the current docked rect
-          const r = reader.getBoundingClientRect();
-          geom.floating = true;
-          geom.left = r.left;
-          geom.top = r.top;
-          geom.height = r.height - 24;
-          applyGeom();
-        }
+        if (!geom.floating) return; // docked: header drag is a no-op
         l0 = geom.left;
         t0 = geom.top;
         dragOp((dx, dy) => {
@@ -2167,12 +2179,6 @@ async function boot() {
           geom.top = t0 + dy;
           applyGeom();
         }, "dragging")(e);
-      });
-      head.addEventListener("dblclick", (e) => {
-        if ((e.target as HTMLElement).closest("button")) return;
-        geom.floating = false;
-        applyGeom();
-        persist();
       });
     }
 

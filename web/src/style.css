@@ -703,6 +703,28 @@ body > :not(#graph) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+}
+#reader-path:hover { color: var(--fg); }
+/* transient "Copied!" pill shown after clicking the reader path */
+.copy-toast {
+  position: fixed;
+  transform: translateX(-50%);
+  background: var(--accent);
+  color: #fff;
+  padding: 4px 9px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-family: inherit;
+  z-index: 1000;
+  pointer-events: none;
+  animation: copyToast 1.2s ease forwards;
+}
+@keyframes copyToast {
+  0% { opacity: 0; transform: translateX(-50%) translateY(-3px); }
+  15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* actions row: back/forward left, path middle, the rest right */
