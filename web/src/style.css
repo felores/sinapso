@@ -829,6 +829,14 @@ body > :not(#graph) {
   color: var(--fg);
 }
 
+/* 3d-force-graph wraps .nodeLabel HTML in .float-tooltip-kap, a dark
+   translucent box with its own padding. Neutralize it so only the themed
+   .tip is visible (otherwise it shows as an ugly halo around the tooltip). */
+.float-tooltip-kap {
+  background: transparent !important;
+  padding: 0 !important;
+}
+
 /* scrollbars */
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
