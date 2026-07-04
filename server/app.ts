@@ -79,7 +79,10 @@ import {
   requireToken,
 } from "./integrations/security.js";
 import { computeGaps, noteQuestions } from "./integrations/topology.js";
-import { openQmdVectors } from "./integrations/qmd-vectors.js";
+import {
+  openQmdVectors,
+  type QmdVectorsHandle,
+} from "./integrations/qmd-vectors.js";
 import {
   DEFAULT_K,
   DEFAULT_THRESHOLD,
@@ -337,6 +340,13 @@ export function createApp(
   let colCache: { at: number; cols: QmdCollection[] } | null = null;
   // Per-note related-notes cache (F015); invalidated by reload().
   const relatedCache = new Map<string, object>();
+  // Cached qmd vector handle for instant per-note KNN in /api/related.
+  // Rebuilt on reload() (vaultRoot may change); open() never throws.
+  let vectorsHandle: QmdVectorsHandle | null = null;
+  function qmdVectors(): QmdVectorsHandle {
+    if (!vectorsHandle) vectorsHandle = openQmdVectors({ vaultRoot });
+    return vectorsHandle;
+  }
   async function collections(bin: string): Promise<QmdCollection[]> {
     if (!colCache || Date.now() - colCache.at > 60_000) {
       colCache = { at: Date.now(), cols: await listCollections(qmdRun, bin) };
@@ -530,11 +540,41 @@ export function createApp(
         res.json(cached);
         return;
       }
+      // Primary (F030): instant KNN from the note's own mean-pooled doc vector.
+      // Higher recall than a title+excerpt vsearch query and ~0ms after first
+      // open (no process spawn). Falls back to live vsearch when the note has
+      // no vector (not embedded / excluded) or the sqlite layer is unavailable.
+      const qv = qmdVectors();
+      if (qv.available) {
+        const vec = qv.docVector(id);
+        if (vec) {
+          const titles = new Map(
+            graph.nodes.filter((n) => !n.phantom).map((n) => [n.id, n.title]),
+          );
+          const results = qv
+            .knn(vec, DEFAULT_K + 1) // self is usually #1, drops below
+            .filter((nb) => nb.id !== id && titles.has(nb.id))
+            .slice(0, 8)
+            .map((nb) => ({
+              id: nb.id,
+              title: titles.get(nb.id)!,
+              score: nb.score,
+              snippet: "",
+            }));
+          const out = { state: "ready", results };
+          if (relatedCache.size > 500) relatedCache.clear();
+          relatedCache.set(cacheKey, out);
+          res.json(out);
+          return;
+        }
+      }
+
+      // Fallback: live vsearch with title + body excerpt.
       const text = readFileSync(full, "utf-8");
-      const body = text.replace(/^---\n[\s\S]*?\n---\n?/, "");
+      const bodyText = text.replace(/^---\n[\s\S]*?\n---\n?/, "");
       const title = graph.nodes.find((n) => n.id === id)?.title ?? "";
       const r = await semanticQuery(
-        `${title}\n${body.slice(0, 600)}`,
+        `${title}\n${bodyText.slice(0, 600)}`,
         req.query.collections,
       );
       const b = r.body as { state?: string; results?: Array<{ id: string }> };
@@ -1181,6 +1221,7 @@ export function createApp(
     index = null; // rebuilt lazily against the new scan
     contents.clear();
     relatedCache.clear(); // related notes may change with the graph (F015)
+    vectorsHandle = null; // vectors reconcile against vaultRoot, rebuilt lazily
   };
 
   // POST /api/rescan: Trigger incremental rescan of the vault
