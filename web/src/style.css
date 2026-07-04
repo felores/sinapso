@@ -1059,7 +1059,6 @@ body > :not(#graph) {
   cursor: pointer;
 }
 .q-btn:hover { color: var(--accent); border-color: var(--accent); }
-.q-semantic { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .web-result {
   padding: 8px;
   border-top: 1px solid var(--border);
