@@ -1938,11 +1938,18 @@ async function boot() {
     ).CSS?.highlights?.delete("passage");
     const body = $("#reader-body");
     if (n.phantom) {
+      $("#reader-find").classList.add("hidden");
       body.innerHTML = `<p class="muted">This note doesn't exist yet. ${
         neighbors.get(n.id)?.size ?? 0
       } note(s) link to it.</p>`;
       return;
     }
+    // Real note: show the collapsed find affordance (just the icon) + reset (B).
+    $("#reader-find").classList.remove("hidden");
+    $("#reader-find").classList.remove("expanded");
+    ($("#reader-find-input") as HTMLInputElement).value = "";
+    clearFind();
+    resetFindBar();
     body.innerHTML = '<p class="muted">loading…</p>';
     try {
       const res = await fetch(
@@ -1987,6 +1994,168 @@ async function boot() {
       body.innerHTML = '<p class="muted">could not load note</p>';
     }
   }
+
+  // ---- B: find-in-note. Client-side literal find over the already-loaded
+  // reader body (the whole note is in the DOM, so no endpoint / no qmd): every
+  // match highlighted via the CSS Highlight API, IDE-style up/down nav. ----
+  let findRanges: Range[] = [];
+  let findIdx = 0;
+  const hlStore = () =>
+    (window as unknown as { CSS?: { highlights?: Map<string, unknown> } }).CSS
+      ?.highlights;
+  const HL = () =>
+    (window as unknown as { Highlight?: new (...r: Range[]) => unknown })
+      .Highlight;
+  const findCount = () => $("#reader-find-count");
+
+  function clearFind() {
+    const store = hlStore();
+    store?.delete("find");
+    store?.delete("find-current");
+    findRanges = [];
+    findIdx = 0;
+    findCount().textContent = "";
+  }
+
+  function focusFind() {
+    const store = hlStore();
+    const Ctor = HL();
+    if (!store || !Ctor || !findRanges.length) return;
+    const r = findRanges[findIdx];
+    store.set("find-current", new Ctor(r));
+    (r.startContainer.parentElement ?? $("#reader-body")).scrollIntoView({
+      block: "center",
+      behavior: "smooth",
+    });
+    findCount().textContent = `${findIdx + 1}/${findRanges.length}`;
+  }
+
+  function runFind(term: string) {
+    clearFind();
+    const store = hlStore();
+    const Ctor = HL();
+    // Fold to lowercase + strip diacritics so the query matches with or without
+    // accents (canción ↔ cancion, niño ↔ nino).
+    const fold = (s: string) =>
+      s.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, ""); // strip combining diacritics
+    const needle = fold(term.trim());
+    if (!needle || !store || !Ctor) return;
+    // Accent-folded text buffer + per-char origin over the body's text nodes.
+    // Each folded char maps back to its source char, so a match's range still
+    // spans whole source characters (accents included).
+    const walker = document.createTreeWalker(
+      $("#reader-body"),
+      NodeFilter.SHOW_TEXT,
+    );
+    let hay = "";
+    const origin: Array<{ node: Text; offset: number }> = [];
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      const t = node as Text;
+      for (let i = 0; i < t.data.length; i++) {
+        const f = fold(t.data[i]);
+        for (let k = 0; k < f.length; k++) {
+          hay += f[k];
+          origin.push({ node: t, offset: i });
+        }
+      }
+    }
+    const ranges: Range[] = [];
+    let from = 0;
+    while (ranges.length < 500) {
+      const idx = hay.indexOf(needle, from);
+      if (idx < 0) break;
+      const s = origin[idx];
+      const e = origin[idx + needle.length - 1];
+      if (s && e) {
+        const rg = document.createRange();
+        rg.setStart(s.node, s.offset);
+        rg.setEnd(e.node, e.offset + 1);
+        ranges.push(rg);
+      }
+      from = idx + needle.length;
+    }
+    findRanges = ranges;
+    if (!ranges.length) {
+      findCount().textContent = "0";
+      return;
+    }
+    store.set("find", new Ctor(...ranges));
+    findIdx = 0;
+    focusFind();
+  }
+
+  // Step through matches one at a time (IDE-style), wrapping around.
+  function stepFind(dir: number) {
+    if (!findRanges.length) return;
+    findIdx = (findIdx + dir + findRanges.length) % findRanges.length;
+    focusFind();
+  }
+
+  function expandFind() {
+    $("#reader-find").classList.add("expanded");
+    ($("#reader-find-input") as HTMLInputElement).focus();
+    showFindBar(); // searching → pin visible
+  }
+
+  function collapseFind() {
+    $("#reader-find").classList.remove("expanded");
+    ($("#reader-find-input") as HTMLInputElement).value = "";
+    clearFind();
+  }
+
+  {
+    const findInput = $("#reader-find-input") as HTMLInputElement;
+    $("#reader-find-toggle").addEventListener("click", () =>
+      $("#reader-find").classList.contains("expanded")
+        ? collapseFind()
+        : expandFind(),
+    );
+    findInput.addEventListener("input", () => runFind(findInput.value));
+    findInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (findRanges.length) stepFind(e.shiftKey ? -1 : 1);
+        else runFind(findInput.value);
+      } else if (e.key === "Escape") {
+        collapseFind();
+      }
+    });
+    $("#reader-find-prev").addEventListener("click", () => stepFind(-1));
+    $("#reader-find-next").addEventListener("click", () => stepFind(1));
+  }
+
+  // Hide-on-scroll-down / reveal-on-scroll-up: the sticky find row tracks the
+  // scroll delta (moves with the scroll, no self-animation), staying pinned
+  // visible while searching (expanded or non-empty). `findHide` = px slid up.
+  const findBarEl = $("#reader-find");
+  const scrollEl = $("#reader-scroll");
+  let lastFindScrollY = 0;
+  let findHide = 0;
+  const findSearching = () =>
+    findBarEl.classList.contains("expanded") ||
+    ($("#reader-find-input") as HTMLInputElement).value.trim() !== "";
+  function showFindBar() {
+    findHide = 0;
+    findBarEl.style.transform = "translateY(0)";
+  }
+  function resetFindBar() {
+    lastFindScrollY = 0;
+    showFindBar();
+  }
+  scrollEl.addEventListener(
+    "scroll",
+    () => {
+      const y = scrollEl.scrollTop;
+      const H = findBarEl.offsetHeight;
+      if (findSearching() || y <= 0) findHide = 0;
+      else
+        findHide = Math.min(Math.max(findHide + (y - lastFindScrollY), 0), H);
+      findBarEl.style.transform = `translateY(${-findHide}px)`;
+      lastFindScrollY = y;
+    },
+    { passive: true },
+  );
 
   $("#reader-body").addEventListener("click", (e) => {
     const a = (e.target as HTMLElement).closest("a.wiki") as HTMLElement | null;
@@ -3539,28 +3708,61 @@ async function boot() {
   }
 
   // ---- research history: shared renderers + navigation ----
+  // Renders passage results (from /api/passages) grouped under their note, so
+  // a long note's several hits read as one block. Also handles legacy history
+  // entries shaped {id,title,snippet} (no file/line) via the id ?? file fallback.
   function renderSemanticInto(
     body: HTMLElement,
-    results: Array<{ id: string; title: string; snippet: string }>,
+    results: Array<{
+      file?: string;
+      id?: string;
+      title: string;
+      line?: number;
+      snippet: string;
+    }>,
   ) {
     if (!results.length) {
-      body.innerHTML = '<p class="muted">no matching notes</p>';
+      body.innerHTML = '<p class="muted">no matching passages</p>';
       return;
     }
+    // Bucket passages by note id, preserving first-seen (score) order.
+    const groups = new Map<string, typeof results>();
     for (const r of results) {
-      const node = byId.get(r.id);
-      if (!node) continue;
-      const row = document.createElement("div");
-      row.className = "rel-row";
-      const title = document.createElement("span");
-      title.className = "rel-title";
+      const id = r.file ?? r.id;
+      if (!id || !byId.get(id)) continue;
+      let arr = groups.get(id);
+      if (!arr) {
+        arr = [];
+        groups.set(id, arr);
+      }
+      arr.push(r);
+    }
+    for (const [id, passages] of groups) {
+      const node = byId.get(id)!;
+      const group = document.createElement("div");
+      group.className = "sem-group";
+      const title = document.createElement("div");
+      title.className = "rel-title sem-note";
       title.textContent = node.title;
-      const snip = document.createElement("span");
-      snip.className = "rel-snippet";
-      snip.textContent = r.snippet;
-      row.append(title, snip);
-      row.addEventListener("click", () => select(node, r.snippet));
-      body.appendChild(row);
+      title.addEventListener("click", () => select(node, passages[0].snippet));
+      group.appendChild(title);
+      for (const p of passages) {
+        const row = document.createElement("div");
+        row.className = "rel-row sem-passage";
+        if (p.line) {
+          const ln = document.createElement("span");
+          ln.className = "sem-line";
+          ln.textContent = `L${p.line}`;
+          row.appendChild(ln);
+        }
+        const snip = document.createElement("span");
+        snip.className = "rel-snippet";
+        snip.textContent = p.snippet;
+        row.appendChild(snip);
+        row.addEventListener("click", () => select(node, p.snippet));
+        group.appendChild(row);
+      }
+      body.appendChild(group);
     }
   }
 
@@ -3778,10 +3980,15 @@ async function boot() {
       const data: {
         state: string;
         historyId?: string;
-        results?: Array<{ id: string; title: string; snippet: string }>;
-      } = await fetch(
-        `/api/semantic-search?q=${encodeURIComponent(query)}`,
-      ).then((r) => r.json());
+        results?: Array<{
+          file: string;
+          title: string;
+          line: number;
+          snippet: string;
+        }>;
+      } = await fetch(`/api/passages?q=${encodeURIComponent(query)}`).then(
+        (r) => r.json(),
+      );
       body.innerHTML = "";
       if (data.state === "indexing") {
         body.innerHTML =

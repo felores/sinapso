@@ -760,12 +760,18 @@ body > :not(#graph) {
 #reader-actions .reader-icon svg,
 #research-head .reader-icon svg { display: block; }
 
-#reader-body {
-  padding: 14px 18px 30px;
+#reader-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+}
+#reader-body {
+  padding: 4px 18px 30px;
   font-size: 14.5px;
   line-height: 1.65;
 }
+/* Keep the first heading tight to the find field (no airy top gap). */
+#reader-body > :first-child { margin-top: 0; }
 /* Images track the panel width: shrink to fit a narrow panel, scale back up
    as it widens (capped at natural size). height:auto keeps aspect ratio. */
 #reader-body img {
@@ -1007,6 +1013,26 @@ body > :not(#graph) {
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* Passage results grouped under their note (A). */
+.sem-group { margin-bottom: 6px; }
+.sem-note {
+  padding: 6px 8px 2px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sem-note:hover { color: var(--accent); }
+.sem-passage {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+}
+.sem-line {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
 }
 
 #qmd-enable.hidden { display: none; }
@@ -1405,6 +1431,96 @@ body > :not(#graph) {
   border-radius: 3px;
   padding: 0 1px;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* Find-in-note bar (B), between the reader header and body. */
+#reader-find.hidden { display: none; }
+#reader-find {
+  /* Sticky at the top of the scroll wrapper; JS translateY hides it on
+     scroll-down and reveals it on scroll-up (tracks the scroll delta). */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  /* The row is fully transparent (no fill, no blur) so it leaves no stripe on
+     the note — only the input field carries a background (below). A blur here
+     frosted the text behind it and read as a dark band, so it's gone. */
+  background: transparent;
+  will-change: transform;
+}
+/* Collapsed: only the magnifying-glass toggle shows; the field + counter +
+   up/down match nav appear once #reader-find gets .expanded. */
+#reader-find:not(.expanded) #reader-find-input,
+#reader-find:not(.expanded) #reader-find-nav {
+  display: none;
+}
+/* Counter + up/down arrows grouped in one solid-dark pill so they read as a
+   single control and don't blend into the note text behind them. */
+#reader-find-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 5px;
+}
+/* Discreet inline icons — no button chrome / white surface. */
+#reader-find button {
+  background: none;
+  border: none;
+  padding: 2px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 5px;
+}
+#reader-find button:hover { color: var(--accent); }
+#reader-find button svg { display: block; }
+/* The zoom toggle gets a solid dark squared button so it stands out from the
+   note text behind it while scrolling; the rest of the row stays transparent.
+   (2 ids to out-specify `#reader-find button`.) */
+#reader-find #reader-find-toggle {
+  /* Same surface as the header action buttons (back / obsidian / close). */
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  padding: 3px;
+}
+#reader-find-input {
+  flex: 1;
+  min-width: 0;
+  /* Solid fill on the field only (opaque so highlighted text never bleeds
+     through it) — the rest of the row stays fully transparent. */
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+}
+#reader-find-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+#reader-find-count {
+  font-size: 11px;
+  min-width: 2.8em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+::highlight(find) {
+  background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+::highlight(find-current) {
+  background-color: color-mix(in srgb, var(--accent) 52%, transparent);
+  color: inherit;
 }
 #note-questions-btn {
   width: 100%;
