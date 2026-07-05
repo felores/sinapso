@@ -419,6 +419,31 @@ function hideLoading() {
   }, wait);
 }
 
+// Exa's article text (and some agent docs) repeat the page title as the first
+// line, so the panel showed it twice (the h2 heading + the body's first line).
+// Drop a single leading line that duplicates the title, plain or as a markdown
+// heading; leave everything else untouched.
+function stripLeadingTitle(content: string, title: string): string {
+  const t = title.trim().toLowerCase();
+  if (!t) return content;
+  const lines = content.split("\n");
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === "") i++;
+  if (
+    i < lines.length &&
+    lines[i]
+      .replace(/^#{1,6}\s+/, "")
+      .trim()
+      .toLowerCase() === t
+  ) {
+    return lines
+      .slice(i + 1)
+      .join("\n")
+      .replace(/^\n+/, "");
+  }
+  return content;
+}
+
 // Open-in-new-tab glyph (lucide external-link), same as the Tools-menu links.
 // Appended to external anchors so they read as "opens a new tab".
 const EXT_ICON =
@@ -4152,6 +4177,7 @@ async function boot() {
       body.innerHTML = '<p class="muted">no article</p>';
       return;
     }
+    const cleanContent = stripLeadingTitle(art.content, art.title);
     const h = document.createElement("h2");
     h.className = "research-query";
     h.textContent = art.title || query;
@@ -4175,7 +4201,7 @@ async function boot() {
     const content = document.createElement("div");
     content.className = "article-body";
     body.appendChild(content);
-    void Promise.resolve(marked.parse(art.content)).then((html) => {
+    void Promise.resolve(marked.parse(cleanContent)).then((html) => {
       content.innerHTML = DOMPurify.sanitize(html);
     });
 
@@ -4196,7 +4222,7 @@ async function boot() {
           "",
           `# ${art.title}`,
           "",
-          art.content,
+          cleanContent,
           "",
           `[Source](${art.url})`,
           "",
@@ -4241,7 +4267,11 @@ async function boot() {
     const content = document.createElement("div");
     content.className = "article-body";
     body.appendChild(content);
-    void Promise.resolve(marked.parse(doc.content)).then((html) => {
+    // Strip a duplicated leading title for the panel only; the saved note keeps
+    // the agent's markdown (its H1 is a normal note heading).
+    void Promise.resolve(
+      marked.parse(stripLeadingTitle(doc.content, doc.title)),
+    ).then((html) => {
       content.innerHTML = DOMPurify.sanitize(html);
     });
 
