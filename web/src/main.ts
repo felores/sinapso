@@ -4076,6 +4076,10 @@ async function boot() {
   // is covered by a panel or it would collide with the menu, and returns to the
   // right when there is room. Re-run by a MutationObserver on the two panels'
   // class attributes + window resize (see the topbar-reflow wiring below).
+  // topbarRailOn persists across calls so the center-gap is measured against
+  // the panel's NATURAL width (rail shrink subtracted back out), breaking the
+  // rail-on → panel-shrinks → gap-grows → rail-off feedback flicker.
+  let topbarRailOn = false;
   function layoutTopbar() {
     const reader = $("#reader");
     const research = $("#research");
@@ -4113,8 +4117,13 @@ async function boot() {
     const vw = window.innerWidth;
     const groupW = $("#nav-group").offsetWidth;
     const searchWrapW = $("#search-wrap").offsetWidth;
-    const centerGap = vw - leftPanelW - rightPanelW;
+    // Measure the center gap against the panel's NATURAL width: when the rail
+    // was on last pass the panel is currently shrunk by 56px, so subtract that
+    // shrink back out or the gap reads larger and toggles the rail off (flicker).
+    const shrink = topbarRailOn ? 56 : 0;
+    const centerGap = vw - leftPanelW - rightPanelW - shrink;
     const rail = centerGap < Math.max(groupW, searchWrapW) + 2 * PAD;
+    topbarRailOn = rail;
     // Rail offset: a docked right panel shrinks by the rail width (CSS subtracts
     // --rail-w from --dock-w), and the corner buttons clear panel + rail.
     const railW = rail ? 56 : 0;
