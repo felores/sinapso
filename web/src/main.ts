@@ -4116,30 +4116,25 @@ async function boot() {
     const searchWrapW = $("#search-wrap").offsetWidth;
     const centerGap = vw - leftPanelW - rightPanelW;
     const rail = centerGap < Math.max(groupW, searchWrapW) + 2 * PAD;
+    // Search slides with the right panel's left edge (--right-inset).
     topbar.style.setProperty("--right-inset", `${rightPanelW}px`);
-    let slot: "center" | "right" | "" = "";
-    let menuCentered = false;
-    let stacked = false;
-    let searchStacked = false;
-    if (!rail) {
-      if (leftPanelW > vw / 2) {
-        slot = "right";
-        stacked = true;
-      } else if (rightPanelW > 0 && leftPanelW === 0) {
-        const groupRight = PAD + groupW;
-        const searchLeft = vw - rightPanelW - PAD - searchWrapW;
-        if (groupRight + GAP > searchLeft) searchStacked = true;
-      } else if (leftPanelW > 0 && rightPanelW === 0) {
-        menuCentered = true;
-      } else if (leftPanelW > 0 && rightPanelW > 0) {
-        slot = "center";
-      }
-    }
+    // Menu jumps between three columns by left-panel size (left = default).
+    let menuCol: "left" | "center" | "right" = "left";
+    if (leftPanelW > vw / 2) menuCol = "right";
+    else if (leftPanelW > 0) menuCol = "center";
+    // Search collides with the menu (in its column) → wraps to row 2, aligned
+    // under the menu's column.
+    const menuRightX =
+      menuCol === "center"
+        ? vw / 2 + groupW / 2
+        : menuCol === "right"
+          ? vw - PAD
+          : PAD + groupW;
+    const searchLeftX = vw - rightPanelW - PAD - searchWrapW;
+    const searchStacked = !rail && searchLeftX < menuRightX + GAP;
     topbar.classList.toggle("topbar-rail", rail);
-    topbar.classList.toggle("slot-center", slot === "center");
-    topbar.classList.toggle("slot-right", slot === "right");
-    topbar.classList.toggle("menu-centered", menuCentered);
-    topbar.classList.toggle("stacked", stacked);
+    topbar.classList.toggle("menu-center", menuCol === "center");
+    topbar.classList.toggle("menu-right", menuCol === "right");
     topbar.classList.toggle("search-stacked", searchStacked);
   }
 

@@ -251,33 +251,15 @@ body > :not(#graph) {
    shows the right-edge rail. */
 #search-wrap { position: relative; pointer-events: auto; margin-left: auto; margin-right: var(--right-inset, 0); z-index: 1; top: 3px; }
 
-/* Left panel only (not crossing center): keep the menu centered on screen. */
-#topbar.menu-centered #nav-group {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
+/* MENU jumps between three columns by left-panel size (left = default). */
+#topbar.menu-center #nav-group { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+#topbar.menu-right  #nav-group { position: absolute; right: 18px; left: auto; top: 50%; transform: translateY(-50%); }
 
-/* Both panels open and balanced: menu+search cluster, centered. */
-#topbar.slot-center { justify-content: center; }
-#topbar.slot-center #search-wrap { margin-left: 0; margin-right: 0; }
-
-/* Left panel crossing center: menu+search snap to a right-side column. */
-#topbar.slot-right { justify-content: flex-end; }
-#topbar.slot-right #search-wrap { margin-left: 0; margin-right: 0; }
-
-/* STACKED — search drops to a second row below the menu:
-   .slot-right .stacked (left panel wide): search row 2, right-aligned.
-   .search-stacked (right-panel collision): search row 2, left-aligned. */
-#topbar.stacked #search-wrap,
-#topbar.search-stacked #search-wrap {
-  position: absolute;
-  margin: 0;
-  top: 100%;
-}
-#topbar.stacked.slot-right #search-wrap { right: 18px; left: auto; transform: none; }
-#topbar.search-stacked #search-wrap { left: 18px; right: auto; transform: none; }
+/* SEARCH collides with the menu → wraps to row 2, aligned under the menu's
+   column (left / center / right). */
+#topbar.search-stacked #search-wrap { position: absolute; margin: 0; top: 100%; left: 18px; right: auto; transform: none; }
+#topbar.menu-center.search-stacked #search-wrap { left: 50%; right: auto; transform: translateX(-50%); }
+#topbar.menu-right.search-stacked  #search-wrap { right: 18px; left: auto; transform: none; }
 
 /* ---- RAIL state: vertical icon rail on the right edge, shown when #topbar has
    .topbar-rail (center gap < wider of menu/search). Rail icons proxy-drive the
