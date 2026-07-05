@@ -3707,21 +3707,29 @@ async function boot() {
   // ---- research column (F018): one shared right-side column for
   // semantic/web results. The search field is the entry point; the
   // column owns follow-ups via its own input.
-  let researchMode: ModeName | null = null;
+  let researchMode: ModeName | "article" | null = null;
 
   // Research history (app-local): every web/semantic result is persisted; the
   // column pages back through them and can trash/curate. See server
   // research-history.ts + /api/research/history.
+  type ArticleData = {
+    url: string;
+    title: string;
+    content: string;
+    publishedDate: string | null;
+    author: string | null;
+  };
   type ResearchEntry = {
     id: string;
     ts: string;
-    mode: "web" | "semantic";
+    mode: "web" | "semantic" | "article";
     query: string;
     answer?: {
       content: string;
       citations: Array<{ url: string; title: string }>;
     } | null;
     results?: unknown[];
+    article?: ArticleData;
   };
   let researchHistory: ResearchEntry[] = [];
   let historyIdx = -1; // position in researchHistory (0 = newest); -1 = none
@@ -3790,7 +3798,7 @@ async function boot() {
     }
   }
 
-  function openResearch(mode: ModeName) {
+  function openResearch(mode: ModeName | "article") {
     researchMode = mode;
     $("#research").classList.remove("hidden");
     setReaderCtxLeft(true); // open note = working context on the left
@@ -4079,7 +4087,88 @@ async function boot() {
       h.textContent = i18n.t("research.results");
       body.appendChild(h);
     }
-    for (const r of data.results) body.appendChild(renderWebResult(r, query));
+    for (const r of data.results) body.appendChild(renderWebResult(r));
+  }
+
+  // The "article" category: a full-text page fetched from a web result (Exa
+  // /contents), living only in the research history until the user saves it as
+  // a note. Content is sanitized (untrusted web HTML) before innerHTML.
+  function renderArticleInto(
+    body: HTMLElement,
+    art: ArticleData | undefined,
+    query: string,
+  ) {
+    if (!art) {
+      body.innerHTML = '<p class="muted">no article</p>';
+      return;
+    }
+    const h = document.createElement("h2");
+    h.className = "research-query";
+    h.textContent = art.title || query;
+    body.appendChild(h);
+
+    const src = document.createElement("a");
+    src.href = art.url;
+    src.target = "_blank";
+    src.rel = "noopener noreferrer";
+    src.className = "answer-source article-source";
+    let host = art.url;
+    try {
+      host = new URL(art.url).hostname;
+    } catch {
+      /* keep the raw url */
+    }
+    src.textContent = host;
+    src.insertAdjacentHTML("beforeend", EXT_ICON);
+    body.appendChild(src);
+
+    const content = document.createElement("div");
+    content.className = "article-body";
+    body.appendChild(content);
+    void Promise.resolve(marked.parse(art.content)).then((html) => {
+      content.innerHTML = DOMPurify.sanitize(html);
+    });
+
+    const save = document.createElement("button");
+    save.className = "web-save";
+    save.textContent = i18n.t("research.saveNote");
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      save.textContent = i18n.t("research.saving");
+      try {
+        const noteBody = [
+          "---",
+          `source: ${art.url}`,
+          `saved: ${new Date().toISOString().slice(0, 10)}`,
+          ...(art.author ? [`author: "${art.author.replace(/"/g, "'")}"`] : []),
+          "via: solaris-web-article",
+          "---",
+          "",
+          `# ${art.title}`,
+          "",
+          art.content,
+          "",
+          `[Source](${art.url})`,
+          "",
+        ].join("\n");
+        const res = await fetch("/api/notes", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-solaris-token": await apiToken(),
+          },
+          body: JSON.stringify({ title: art.title, content: noteBody }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        save.textContent = i18n.t("research.saved");
+        await openAfterIngest(String(data.id));
+      } catch {
+        save.disabled = false;
+        save.textContent = i18n.t("research.saveFail");
+      }
+    });
+    body.appendChild(save);
   }
 
   async function apiDelete(url: string) {
@@ -4130,6 +4219,8 @@ async function boot() {
         },
         entry.query,
       );
+    else if (entry.mode === "article")
+      renderArticleInto(body, entry.article, entry.query);
     else renderSemanticInto(body, (entry.results ?? []) as never, entry.query);
     updateHistoryNav();
   }
@@ -4323,6 +4414,41 @@ async function boot() {
     } catch {
       body.innerHTML = "";
       researchError("research failed — is the server running?");
+    }
+  }
+
+  // Fetch a web result's full text (Exa /contents) and open it as an "article"
+  // page in the research column. Spend-bearing, so it walks the web consent gate
+  // first, exactly like a web query.
+  async function runArticleFetch(url: string, title: string) {
+    if (integrations && !integrations.consents.web) {
+      promptWebConsent();
+      return;
+    }
+    openResearch("article");
+    const body = $("#research-body");
+    body.innerHTML = `<p class="muted">${i18n.t("research.fetching")}</p>`;
+    try {
+      const res = await fetch("/api/article", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-solaris-token": await apiToken(),
+        },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        body.innerHTML = "";
+        researchError(data.message ?? "article fetch failed");
+        return;
+      }
+      body.innerHTML = "";
+      renderArticleInto(body, data, title);
+      if (data.historyId) await noteQueryPersisted(data.historyId);
+    } catch {
+      body.innerHTML = "";
+      researchError("article fetch failed — is the server running?");
     }
   }
 
@@ -4763,22 +4889,28 @@ async function boot() {
     slot.appendChild(box);
   }
 
-  function renderWebResult(
-    r: {
-      title: string;
-      url: string;
-      snippet: string;
-      publishedDate: string | null;
-    },
-    query: string,
-  ): HTMLElement {
+  function renderWebResult(r: {
+    title: string;
+    url: string;
+    snippet: string;
+    publishedDate: string | null;
+  }): HTMLElement {
     const row = document.createElement("div");
     row.className = "web-result";
+    // The title opens the FULL article (Exa fetch) as its own history page; a
+    // ctrl/cmd/middle-click still opens the original site in a new tab.
     const link = document.createElement("a");
     link.href = r.url;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
+    link.className = "web-result-title";
     link.textContent = r.title;
+    link.title = i18n.t("research.openArticle");
+    link.addEventListener("click", (e) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+      e.preventDefault();
+      void runArticleFetch(r.url, r.title);
+    });
     const snip = document.createElement("div");
     snip.className = "web-snippet";
     snip.textContent = r.snippet;
@@ -4786,50 +4918,7 @@ async function boot() {
     meta.className = "web-meta";
     const date = document.createElement("span");
     date.textContent = r.publishedDate?.slice(0, 10) ?? "";
-    const save = document.createElement("button");
-    save.className = "web-save";
-    save.textContent = "save as note";
-    save.addEventListener("click", async () => {
-      save.disabled = true;
-      save.textContent = "saving…";
-      try {
-        const content = [
-          "---",
-          `source: ${r.url}`,
-          `saved: ${new Date().toISOString().slice(0, 10)}`,
-          `query: "${query.replace(/"/g, "'")}"`,
-          "via: solaris-web-research",
-          "---",
-          "",
-          `# ${r.title}`,
-          "",
-          r.snippet,
-          "",
-          `[Source](${r.url})`,
-          "",
-        ].join("\n");
-        const res = await fetch("/api/notes", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-solaris-token": await apiToken(),
-          },
-          body: JSON.stringify({ title: r.title, content }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        save.textContent = `saved ✓ ${data.id}`;
-        const rescanBtn = document.createElement("button");
-        rescanBtn.className = "web-save";
-        rescanBtn.textContent = "rescan to see it";
-        rescanBtn.addEventListener("click", () => rescan(false));
-        meta.appendChild(rescanBtn);
-      } catch {
-        save.disabled = false;
-        save.textContent = "save failed — retry";
-      }
-    });
-    meta.append(date, save);
+    meta.append(date);
     row.append(link, snip, meta);
     return row;
   }

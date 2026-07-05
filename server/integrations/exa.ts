@@ -13,6 +13,12 @@ import Exa from "exa-js";
 
 export interface ExaClientLike {
   search(query: string, options: Record<string, unknown>): Promise<unknown>;
+  /** Full-text fetch for one or more URLs (Exa /contents). Optional so the
+   *  research-only mocks don't have to implement it. */
+  getContents?(
+    urls: string[],
+    options: Record<string, unknown>,
+  ): Promise<unknown>;
 }
 
 export interface ResearchResult {
@@ -135,6 +141,57 @@ export function createExaAdapter(opts: ExaAdapterOptions = {}) {
           results: mapResponse(raw),
           answer: options.deep ? mapAnswer(raw) : null,
         };
+      } catch (e) {
+        lastErr = e;
+        if (!transient(e) || attempt === delays.length) break;
+        await new Promise((r) => setTimeout(r, delays[attempt]));
+      }
+    }
+    throw lastErr;
+  };
+}
+
+export interface ArticleResult {
+  url: string;
+  title: string;
+  content: string;
+  publishedDate: string | null;
+  author: string | null;
+}
+
+function mapArticle(raw: unknown, url: string): ArticleResult {
+  const r = ((raw as { results?: unknown[] })?.results ?? [])[0] as
+    | Record<string, unknown>
+    | undefined;
+  const text = typeof r?.text === "string" ? r.text : "";
+  return {
+    url: typeof r?.url === "string" && r.url ? r.url : url,
+    title: typeof r?.title === "string" && r.title ? r.title : url,
+    content: text.replace(/\n{3,}/g, "\n\n").trim(),
+    publishedDate:
+      typeof r?.publishedDate === "string" ? r.publishedDate : null,
+    author: typeof r?.author === "string" ? r.author : null,
+  };
+}
+
+/** Full-text fetch of one URL via Exa /contents (spend-bearing). Same retry
+ *  shape as research; the raw request stays behind this adapter. */
+export function createArticleFetcher(opts: ExaAdapterOptions = {}) {
+  const makeClient =
+    opts.makeClient ?? ((key: string) => new Exa(key) as ExaClientLike);
+  const delays = opts.retryDelays ?? [500, 1500];
+
+  return async function fetchArticle(
+    key: string,
+    url: string,
+  ): Promise<ArticleResult> {
+    const client = makeClient(key);
+    if (!client.getContents) throw new Error("exa client lacks getContents");
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= delays.length; attempt++) {
+      try {
+        const raw = await client.getContents([url], { text: true });
+        return mapArticle(raw, url);
       } catch (e) {
         lastErr = e;
         if (!transient(e) || attempt === delays.length) break;

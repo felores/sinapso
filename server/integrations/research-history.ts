@@ -24,7 +24,7 @@ const ID_RE = /^[a-z0-9-]+$/;
 export interface ResearchHistoryEntry {
   id: string;
   ts: string; // ISO
-  mode: "web" | "semantic";
+  mode: "web" | "semantic" | "article";
   query: string;
   /** Web deep answer + citations (null for semantic or no-answer). */
   answer?: {
@@ -33,6 +33,14 @@ export interface ResearchHistoryEntry {
   } | null;
   /** Web ResearchResult[] or semantic NodeResult[] — re-rendered by the client. */
   results?: unknown[];
+  /** Full-text article fetched from a web result (mode "article"). */
+  article?: {
+    url: string;
+    title: string;
+    content: string;
+    publishedDate: string | null;
+    author: string | null;
+  };
 }
 
 function dir(dataDir: string): string {

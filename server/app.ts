@@ -52,6 +52,7 @@ import {
 import { createQmdMcp, type QmdMcpDeps } from "./integrations/qmd-mcp.js";
 import {
   createExaAdapter,
+  createArticleFetcher,
   type ExaAdapterOptions,
 } from "./integrations/exa.js";
 import { ingestBytes, ingestDocument } from "./integrations/ingest.js";
@@ -816,6 +817,57 @@ export function createApp(
         error: "research-failed",
         message:
           "Exa request failed after retries. Check your key and try again.",
+      });
+    }
+  });
+
+  // POST /api/article: fetch one web result's full text via Exa /contents.
+  // Same trust model as /api/research (token-guarded + web consent + key), and
+  // the fetched article is persisted as a history entry (mode "article").
+  const fetchArticle = createArticleFetcher(integrations?.exa);
+  app.post("/api/article", guarded, express.json(), async (req, res) => {
+    try {
+      const cfg = loadConfig(configPath);
+      if (!cfg.consents.web) {
+        res.status(403).json({
+          error: "web-consent-required",
+          message:
+            "Web mode needs your one-time consent first (activate Web mode to review it).",
+        });
+        return;
+      }
+      if (!cfg.exaKey) {
+        res.status(400).json({
+          error: "no-exa-key",
+          message: "Add your Exa API key in Tools → Integrations.",
+        });
+        return;
+      }
+      const url = String(req.body?.url ?? "").trim();
+      if (!/^https?:\/\//i.test(url)) {
+        res.status(400).json({
+          error: "invalid-url",
+          message: "A valid http(s) URL is required.",
+        });
+        return;
+      }
+      const art = await fetchArticle(cfg.exaKey, url);
+      const historyId = art.content
+        ? saveEntry(dataDir, {
+            mode: "article",
+            query: art.title,
+            article: art,
+          }).id
+        : undefined;
+      res.json({ ...art, historyId });
+    } catch (e) {
+      console.error(
+        "article fetch failed:",
+        e instanceof Error ? e.message : e,
+      );
+      res.status(502).json({
+        error: "article-failed",
+        message: "Exa content fetch failed. Check your key and try again.",
       });
     }
   });
