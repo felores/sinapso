@@ -1,6 +1,7 @@
 node_modules/
 web/dist/
 data/
+.scratchpad/
 *.local.json
 .env*
 dist/
