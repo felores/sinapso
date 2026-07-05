@@ -4238,6 +4238,15 @@ async function boot() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
         save.textContent = i18n.t("research.saved");
+        // Move-on-save: once curated into the vault, drop it from history.
+        if (currentEntryId) {
+          await apiDelete(
+            `/api/research/history/${encodeURIComponent(currentEntryId)}`,
+          );
+          currentEntryId = null;
+          await loadHistory();
+          updateHistoryNav();
+        }
         await openAfterIngest(String(data.id));
       } catch {
         save.disabled = false;
