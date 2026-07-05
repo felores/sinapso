@@ -425,6 +425,11 @@ function hideLoading() {
   }, wait);
 }
 
+// Open-in-new-tab glyph (lucide external-link), same as the Tools-menu links.
+// Appended to external anchors so they read as "opens a new tab".
+const EXT_ICON =
+  '<svg class="ext-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/></svg>';
+
 async function boot() {
   // Fetch graph data (scanned vault topology) and cached layout (node positions from previous session)
   // Layout cache is keyed by content fingerprint; if vault unchanged, positions are reused
@@ -4071,7 +4076,7 @@ async function boot() {
     if (data.results.length && data.answer) {
       const h = document.createElement("div");
       h.className = "sources-head";
-      h.textContent = "Results";
+      h.textContent = i18n.t("research.results");
       body.appendChild(h);
     }
     for (const r of data.results) body.appendChild(renderWebResult(r, query));
@@ -4536,7 +4541,7 @@ async function boot() {
     if (a.citations.length) {
       const h = document.createElement("div");
       h.className = "sources-head";
-      h.textContent = "Sources";
+      h.textContent = i18n.t("research.sources");
       box.appendChild(h);
       a.citations.forEach((c, i) => {
         const link = document.createElement("a");
@@ -4545,14 +4550,16 @@ async function boot() {
         link.rel = "noopener noreferrer";
         link.className = "answer-source";
         // Prefix each source with its [N] so it lines up with the numbered
-        // references Exa embeds in the answer text (no more counting).
+        // references Exa embeds in the answer text (no more counting), then
+        // append the open-in-new-tab icon so it reads as an external link.
         link.textContent = `[${i + 1}] ${c.title}`;
+        link.insertAdjacentHTML("beforeend", EXT_ICON);
         box.appendChild(link);
       });
     }
     const save = document.createElement("button");
     save.className = "web-save";
-    save.textContent = "save research as note";
+    save.textContent = i18n.t("research.saveResearch");
     save.addEventListener("click", async () => {
       save.disabled = true;
       save.textContent = "saving…";
