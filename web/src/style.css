@@ -332,6 +332,7 @@ body > :not(#graph) {
   background-image: url("/solaris-icon-v1-256px.png");
 }
 #topbar-rail .rail-icon {
+  position: relative;
   width: 44px;
   height: 44px;
   display: flex;
@@ -347,6 +348,37 @@ body > :not(#graph) {
 #topbar-rail .rail-icon:hover {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text);
+}
+/* Custom positioned tooltips (native title clips off the right edge). Default
+   opens to the LEFT (inner side, on-screen); [data-tip-side="top"] opens above
+   the button — used by the two panel-reopen buttons so their tooltips clear the
+   reopen targets. */
+#topbar-rail .rail-icon::after {
+  content: attr(data-tip);
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 30;
+  backdrop-filter: blur(8px);
+}
+#topbar-rail .rail-icon:hover::after { opacity: 1; }
+#topbar-rail .rail-icon[data-tip-side="top"]::after {
+  right: auto;
+  left: 50%;
+  top: auto;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
 }
 #topbar-rail .rail-spacer { flex: 1; }
 #topbar-rail .rail-divider { width: 24px; height: 1px; background: var(--border); margin: 2px 0; opacity: 0.7; }
