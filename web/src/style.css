@@ -316,10 +316,18 @@ body > :not(#graph) {
   top: 64px;
 }
 #topbar-rail .rail-logo {
-  font-size: 18px;
-  font-weight: 700;
+  width: 32px;
+  height: 32px;
   margin-bottom: 10px;
-  color: var(--text);
+  background-image: url("/solaris-icon-v1-256px-white.png");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+/* Light themes get the black logo; everything else uses the white one. */
+:root[data-theme="manuscript"] #topbar-rail .rail-logo,
+:root[data-theme="notebook"] #topbar-rail .rail-logo {
+  background-image: url("/solaris-icon-v1-256px.png");
 }
 #topbar-rail .rail-icon {
   width: 44px;
@@ -1517,6 +1525,13 @@ body > :not(#graph) {
   flex-direction: column;
   font-size: 13px;
   transition: transform 0.25s ease, opacity 0.25s ease;
+}
+/* Docked: CSS owns the geometry — effective width is the user's --dock-w minus
+   the rail offset, and the right edge sits left of the rail. (Floating uses
+   inline width/left via applyRGeom.) */
+#research:not(.floating) {
+  width: calc(var(--dock-w, 400px) - var(--rail-w, 0px));
+  right: var(--rail-w, 0px);
 }
 /* Docked research slides off the right edge; floating fades so it can't peek.
    (Was display:none — no motion.) */

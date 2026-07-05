@@ -4098,7 +4098,6 @@ async function boot() {
     // Corner buttons follow the panel inner edges (the one chrome element that
     // "drags" with the panels).
     root.style.setProperty("--btn-left-inset", `${leftPanelW}px`);
-    root.style.setProperty("--btn-right-inset", `${rightPanelW}px`);
 
     // Chrome layout per panel state:
     //  - right panel only: search slides with the panel's left edge
@@ -4116,6 +4115,11 @@ async function boot() {
     const searchWrapW = $("#search-wrap").offsetWidth;
     const centerGap = vw - leftPanelW - rightPanelW;
     const rail = centerGap < Math.max(groupW, searchWrapW) + 2 * PAD;
+    // Rail offset: a docked right panel shrinks by the rail width (CSS subtracts
+    // --rail-w from --dock-w), and the corner buttons clear panel + rail.
+    const railW = rail ? 56 : 0;
+    root.style.setProperty("--rail-w", `${railW}px`);
+    root.style.setProperty("--btn-right-inset", `${rightPanelW + railW}px`);
     // Search slides with the right panel's left edge (--right-inset).
     topbar.style.setProperty("--right-inset", `${rightPanelW}px`);
     // Menu jumps between three columns by left-panel size (left = default).
@@ -4224,12 +4228,14 @@ async function boot() {
           bottom: "auto",
         });
       } else {
-        // Docked: keep the resizable width, let CSS own the rest.
+        // Docked: store the user width in --dock-w; CSS computes the effective
+        // width (minus --rail-w when the rail is showing) and the right offset.
         rGeom.dockW = cl(rGeom.dockW || 400, 300, window.innerWidth - 80);
+        research.style.setProperty("--dock-w", `${rGeom.dockW}px`);
         Object.assign(research.style, {
           left: "",
           top: "",
-          width: rGeom.dockW + "px",
+          width: "",
           height: "",
           right: "",
           bottom: "",
