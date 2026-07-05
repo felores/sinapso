@@ -4745,7 +4745,7 @@ async function boot() {
   async function runIngest(source: string) {
     openResearch("ingest");
     const body = $("#research-body");
-    body.innerHTML = '<p class="muted">converting via markitdown…</p>';
+    body.innerHTML = '<p class="muted">importing…</p>';
     try {
       const res = await fetch("/api/ingest", {
         method: "POST",

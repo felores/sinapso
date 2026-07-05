@@ -55,7 +55,12 @@ import {
   createArticleFetcher,
   type ExaAdapterOptions,
 } from "./integrations/exa.js";
-import { ingestBytes, ingestDocument } from "./integrations/ingest.js";
+import {
+  ingestBytes,
+  ingestDocument,
+  ingestText,
+  isYoutubeUrl,
+} from "./integrations/ingest.js";
 import {
   clearEntries,
   deleteEntry,
@@ -266,6 +271,9 @@ export function createApp(
     },
   );
 
+  // Exa /contents fetcher, shared by /api/article and the YouTube ingest path.
+  const fetchArticle = createArticleFetcher(integrations?.exa);
+
   // POST /api/ingest: convert a document or URL to a Markdown note via
   // markitdown (F023). Reads may come from anywhere (importing is the
   // point); the write goes through the guarded path into the vault.
@@ -274,6 +282,47 @@ export function createApp(
       const b = (req.body ?? {}) as Record<string, unknown>;
       if (typeof b.source !== "string" || !b.source.trim()) {
         res.status(400).json({ error: "source (file path or URL) required" });
+        return;
+      }
+      const cfg = loadConfig(configPath);
+      // YouTube: markitdown only sees the SPA shell (no transcript), so fetch
+      // via Exa /contents, which extracts the transcript. Egress → gated on web
+      // consent + an Exa key, same as web research.
+      if (isYoutubeUrl(b.source)) {
+        if (!cfg.consents.web) {
+          res.status(403).json({
+            error: "web-consent-required",
+            message:
+              "Fetching a YouTube transcript goes through Exa — activate Web mode once to consent.",
+          });
+          return;
+        }
+        if (!cfg.exaKey) {
+          res.status(400).json({
+            error: "no-exa-key",
+            message: "Add your Exa API key in Tools → Integrations.",
+          });
+          return;
+        }
+        const art = await fetchArticle(cfg.exaKey, b.source.trim());
+        if (!art.content) {
+          res.status(422).json({
+            error: "no-transcript",
+            message: "Exa returned no transcript for this video.",
+          });
+          return;
+        }
+        const yr = await ingestText(
+          { vaultRoot, dataDir: dirname(graphPath) },
+          {
+            source: b.source.trim(),
+            title: art.title,
+            content: art.content,
+            via: "exa-youtube",
+            destination: cfg.writeDestination,
+          },
+        );
+        res.json({ ok: true, id: yr.id });
         return;
       }
       if (!toolCache) toolCache = await detectAll(detectDeps);
@@ -285,7 +334,6 @@ export function createApp(
         });
         return;
       }
-      const cfg = loadConfig(configPath);
       const r = await ingestDocument(
         integrations?.detectDeps?.run ?? realRunner,
         toolCache.markitdown.path,
@@ -825,7 +873,7 @@ export function createApp(
   // POST /api/article: fetch one web result's full text via Exa /contents.
   // Same trust model as /api/research (token-guarded + web consent + key), and
   // the fetched article is persisted as a history entry (mode "article").
-  const fetchArticle = createArticleFetcher(integrations?.exa);
+  // (fetchArticle is defined once above, near /api/ingest.)
   app.post("/api/article", guarded, express.json(), async (req, res) => {
     try {
       const cfg = loadConfig(configPath);

@@ -55,6 +55,50 @@ function extractTitle(markdown: string): string | null {
   return null;
 }
 
+/** youtube.com/watch, youtu.be, /shorts, /live, /embed — markitdown only sees
+ *  the SPA shell (no transcript), so these route to Exa /contents instead. */
+export function isYoutubeUrl(source: string): boolean {
+  return /^https?:\/\/(www\.|m\.)?(youtube\.com\/(watch|shorts|live|embed)|youtu\.be\/)/i.test(
+    source.trim(),
+  );
+}
+
+/** Write a note from already-fetched text (e.g. an Exa transcript), sharing the
+ *  frontmatter + guarded-write path with ingestDocument. */
+export async function ingestText(
+  writeDeps: WriteDeps,
+  opts: {
+    source: string;
+    title?: string;
+    content: string;
+    via: string;
+    destination?: string;
+  },
+): Promise<{ id: string }> {
+  const text = opts.content.trim();
+  if (!text) throw new WriteError(422, "no content to ingest");
+  const title =
+    opts.title?.trim() || extractTitle(text) || deriveTitle(opts.source, true);
+  const date = new Date().toISOString().slice(0, 10);
+  const content = [
+    "---",
+    `source: ${opts.source.replace(/\n/g, " ")}`,
+    `ingested: ${date}`,
+    `via: ${opts.via}`,
+    "---",
+    "",
+    text,
+    "",
+  ].join("\n");
+  return guardedCreate(writeDeps, {
+    title,
+    content,
+    destination: opts.destination,
+    actor: "user",
+    prefix: `${date}_`,
+  });
+}
+
 export async function ingestDocument(
   run: Runner,
   markitdownBin: string,
