@@ -14,7 +14,15 @@
 import { randomBytes } from "node:crypto";
 import type { RequestHandler } from "express";
 
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+const LOCAL_HOSTS = new Set([
+  "localhost",
+  "127.0.0.1",
+  "::1",
+  "[::1]",
+  ...(process.env.TAILSCALE_HOST
+    ? [process.env.TAILSCALE_HOST]
+    : []),
+]);
 
 export const TOKEN_HEADER = "x-solaris-token";
 

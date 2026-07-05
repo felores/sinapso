@@ -97,7 +97,7 @@ const webDist = resolve(__dirname, "..", "web", "dist");
 const { app, attachVoice } = createApp(graphPath, webDist);
 
 // Start server on localhost (not exposed publicly)
-const listener = app.listen(args.port, "127.0.0.1", () => {
+  const listener = app.listen(args.port, process.env.AKASHA_HOST ?? "127.0.0.1", () => {
   const { port } = listener.address() as AddressInfo;
   const url = `http://localhost:${port}`;
   console.log(`Solaris: ${url}   (Ctrl+C to stop)`);

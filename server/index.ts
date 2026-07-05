@@ -18,6 +18,7 @@ const ROOT = resolve(fileURLToPath(import.meta.url), "..", "..");
 const GRAPH_PATH =
   process.env.AKASHA_GRAPH ?? resolve(ROOT, "data", "graph.json");
 const PORT = Number(process.env.AKASHA_PORT ?? 5175);
+const HOST = process.env.AKASHA_HOST ?? "127.0.0.1";
 
 // Verify graph.json exists before starting server
 if (!existsSync(GRAPH_PATH)) {
@@ -32,7 +33,7 @@ const { app, meta, attachVoice } = createApp(
   GRAPH_PATH,
   resolve(ROOT, "web", "dist"),
 );
-const server = app.listen(PORT, "127.0.0.1", () => {
+const server = app.listen(PORT, HOST, () => {
   const m = meta();
   console.log(
     `Solaris: http://localhost:${PORT}  (vault: ${m.vaultName}, ${m.notes} notes)`,
