@@ -3370,8 +3370,15 @@ async function boot() {
             const n = byId.get(String(p.note ?? ""));
             if (n) select(n);
           } else if (action === "open_research") {
-            const entry = researchHistory.find((r) => r.id === p.id);
-            if (entry) showHistoryEntry(entry);
+            // The agent may have just created this entry (web_research /
+            // fetch_url); reload so it's present before we show it.
+            void loadHistory().then(() => {
+              const i = researchHistory.findIndex((r) => r.id === p.id);
+              if (i >= 0) {
+                historyIdx = i;
+                showHistoryEntry(researchHistory[i]);
+              }
+            });
           } else if (action === "show_document") {
             // the agent (re)wrote its working document: render it in place and
             // fold it into the history pager (newest entry after the upsert).
