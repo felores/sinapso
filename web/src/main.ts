@@ -396,15 +396,9 @@ const THEMES: Record<string, ThemeDef> = {
 const $ = <T extends HTMLElement>(sel: string) =>
   document.querySelector(sel) as T;
 
-// Reflect the current interface language in the menubar flag + active chip.
-const LANG_FLAG: Record<string, string> = { en: "🇬🇧", es: "🇪🇸" };
+// Reflect the current interface language in the active chip (File menu → EN/ES).
 function syncLangUI() {
   const code = i18n.getLang();
-  const label = document.getElementById("lang-label");
-  // wrap the glyph so CSS can nudge only the flag (emoji ink sits high in its
-  // box) without moving the hover background
-  if (label)
-    label.innerHTML = `<span class="flag-glyph">${LANG_FLAG[code] ?? code.toUpperCase()}</span>`;
   document
     .querySelectorAll<HTMLElement>(".lang-chip")
     .forEach((c) => c.classList.toggle("active", c.dataset.lang === code));

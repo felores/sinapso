@@ -173,30 +173,16 @@ body > :not(#graph) {
 .mi-group button:not(.checked) { padding-left: 26px; }
 .mi-group .checked { padding-left: 10px; }
 
-/* language menu: flag + language name; the active one is the accent color.
-   .dropdown button is (0,1,1) and sets justify-content:space-between + gap:18px,
-   so the override must out-specify it (button.lang-chip = 0,2,1) to keep the
-   flag and name together. The label keeps the text labels' 13px so the flag
-   does not grow the menubar row and shift it off the Solaris baseline. */
-.lang-dropdown { min-width: 120px; }
-.dropdown button.lang-chip { justify-content: flex-start; gap: 8px; }
+/* language picker: a single row at the bottom of the File menu, split into two
+   equal buttons (EN | ES). The active language renders in the accent color.
+   .dropdown button is (0,1,1) and sets width:100% + space-between, so the
+   override (.lang-row .lang-chip = 0,2,1) must out-specify it. */
+.lang-row { display: flex; gap: 6px; padding: 4px 6px; }
+.lang-row .lang-chip { flex: 1; justify-content: center; align-items: center; gap: 6px; }
+/* flag emoji's ink sits low in its em box; tighten line-height so it lines up
+   with the text baseline, then nudge up a hair to level with the glyph text */
+.lang-row .flag { line-height: 1; transform: translateY(-1px); }
 .lang-chip.active { color: var(--accent); }
-/* the flag is a glyph, not text: no shadow, and larger than the text labels.
-   Box height matches the text labels (25px, border-box) so the hover background
-   is the same size; inline-flex centers the bigger glyph inside without growing
-   the row. */
-#lang-label {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 25px;
-  font-size: 19px;
-  line-height: 1;
-  text-shadow: none;
-}
-/* the flag emoji's ink sits high in its em box; drop it to the box's optical
-   middle without moving the (hover) background */
-#lang-label .flag-glyph { display: block; transform: translateY(2px); }
 
 /* ---------- modal ---------- */
 #modal-backdrop {
