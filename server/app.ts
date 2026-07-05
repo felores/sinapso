@@ -61,6 +61,7 @@ import {
   deleteEntry,
   listEntries,
   saveEntry,
+  upsertEntry,
 } from "./integrations/research-history.js";
 import {
   clearReaderHistory,
@@ -869,6 +870,30 @@ export function createApp(
         error: "article-failed",
         message: "Exa content fetch failed. Check your key and try again.",
       });
+    }
+  });
+
+  // POST /api/document: upsert the voice agent's working document (mode
+  // "document"). Same id across a session's turns → the entry is edited in
+  // place, not appended (no chat log). Token-guarded (mutates local history).
+  app.post("/api/document", guarded, express.json(), (req, res) => {
+    const id = String(req.body?.id ?? "");
+    if (!/^[a-z0-9-]+$/.test(id)) {
+      res.status(400).json({ error: "bad-id" });
+      return;
+    }
+    const title = String(req.body?.title ?? "").trim() || "Untitled";
+    const content = String(req.body?.content ?? "");
+    try {
+      const entry = upsertEntry(dataDir, {
+        id,
+        mode: "document",
+        query: title,
+        document: { title, content },
+      });
+      res.json({ ok: true, id: entry.id });
+    } catch {
+      res.status(400).json({ error: "document-save-failed" });
     }
   });
 

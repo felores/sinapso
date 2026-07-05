@@ -24,7 +24,7 @@ const ID_RE = /^[a-z0-9-]+$/;
 export interface ResearchHistoryEntry {
   id: string;
   ts: string; // ISO
-  mode: "web" | "semantic" | "article";
+  mode: "web" | "semantic" | "article" | "document";
   query: string;
   /** Web deep answer + citations (null for semantic or no-answer). */
   answer?: {
@@ -40,6 +40,11 @@ export interface ResearchHistoryEntry {
     content: string;
     publishedDate: string | null;
     author: string | null;
+  };
+  /** Agent-authored working document (mode "document"), edited across turns. */
+  document?: {
+    title: string;
+    content: string;
   };
 }
 
@@ -71,6 +76,20 @@ export function saveEntry(
   const full: ResearchHistoryEntry = { id, ts, ...entry };
   writeFileSync(join(d, `${id}.json`), JSON.stringify(full), "utf-8");
   prune(d);
+  return full;
+}
+
+/** Create or overwrite an entry with a caller-supplied id (the agent's working
+ *  document, upserted in place across turns). Refreshes ts each write. */
+export function upsertEntry(
+  dataDir: string,
+  entry: Omit<ResearchHistoryEntry, "ts">,
+): ResearchHistoryEntry {
+  if (!ID_RE.test(entry.id)) throw new Error("bad entry id");
+  const d = dir(dataDir);
+  mkdirSync(d, { recursive: true });
+  const full: ResearchHistoryEntry = { ...entry, ts: new Date().toISOString() };
+  writeFileSync(join(d, `${entry.id}.json`), JSON.stringify(full), "utf-8");
   return full;
 }
 

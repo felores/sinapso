@@ -3347,6 +3347,23 @@ async function boot() {
           } else if (action === "open_research") {
             const entry = researchHistory.find((r) => r.id === p.id);
             if (entry) showHistoryEntry(entry);
+          } else if (action === "show_document") {
+            // the agent (re)wrote its working document: render it in place and
+            // fold it into the history pager (newest entry after the upsert).
+            openResearch("document");
+            const b = $("#research-body");
+            b.innerHTML = "";
+            const title = String(p.title ?? "");
+            renderDocumentInto(
+              b,
+              { title, content: String(p.content ?? "") },
+              title,
+            );
+            currentEntryId = String(p.id ?? "") || null;
+            void loadHistory().then(() => {
+              historyIdx = 0;
+              updateHistoryNav();
+            });
           }
         },
       });
@@ -3701,7 +3718,7 @@ async function boot() {
   // ---- research column (F018): one shared right-side column for
   // semantic/web results. The search field is the entry point; the
   // column owns follow-ups via its own input.
-  let researchMode: ModeName | "article" | null = null;
+  let researchMode: ModeName | "article" | "document" | null = null;
 
   // Research history (app-local): every web/semantic result is persisted; the
   // column pages back through them and can trash/curate. See server
@@ -3716,7 +3733,7 @@ async function boot() {
   type ResearchEntry = {
     id: string;
     ts: string;
-    mode: "web" | "semantic" | "article";
+    mode: "web" | "semantic" | "article" | "document";
     query: string;
     answer?: {
       content: string;
@@ -3724,6 +3741,7 @@ async function boot() {
     } | null;
     results?: unknown[];
     article?: ArticleData;
+    document?: { title: string; content: string };
   };
   let researchHistory: ResearchEntry[] = [];
   let historyIdx = -1; // position in researchHistory (0 = newest); -1 = none
@@ -3792,7 +3810,7 @@ async function boot() {
     }
   }
 
-  function openResearch(mode: ModeName | "article") {
+  function openResearch(mode: ModeName | "article" | "document") {
     researchMode = mode;
     $("#research").classList.remove("hidden");
     setReaderCtxLeft(true); // open note = working context on the left
@@ -4203,6 +4221,66 @@ async function boot() {
     body.appendChild(save);
   }
 
+  // The "document" category: the voice agent's working note, edited in place
+  // across turns. Same shape as an article minus the source link. Content is
+  // sanitized (agent markdown) before innerHTML.
+  function renderDocumentInto(
+    body: HTMLElement,
+    doc: { title: string; content: string } | undefined,
+    query: string,
+  ) {
+    if (!doc) {
+      body.innerHTML = '<p class="muted">no document</p>';
+      return;
+    }
+    const h = document.createElement("h2");
+    h.className = "research-query";
+    h.textContent = doc.title || query;
+    body.appendChild(h);
+
+    const content = document.createElement("div");
+    content.className = "article-body";
+    body.appendChild(content);
+    void Promise.resolve(marked.parse(doc.content)).then((html) => {
+      content.innerHTML = DOMPurify.sanitize(html);
+    });
+
+    const save = document.createElement("button");
+    save.className = "web-save";
+    save.textContent = i18n.t("research.saveNote");
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      save.textContent = i18n.t("research.saving");
+      try {
+        const noteBody = [
+          "---",
+          `saved: ${new Date().toISOString().slice(0, 10)}`,
+          "via: solaris-agent-document",
+          "---",
+          "",
+          doc.content,
+          "",
+        ].join("\n");
+        const res = await fetch("/api/notes", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-solaris-token": await apiToken(),
+          },
+          body: JSON.stringify({ title: doc.title, content: noteBody }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        save.textContent = i18n.t("research.saved");
+        await openAfterIngest(String(data.id));
+      } catch {
+        save.disabled = false;
+        save.textContent = i18n.t("research.saveFail");
+      }
+    });
+    body.appendChild(save);
+  }
+
   async function apiDelete(url: string) {
     await fetch(url, {
       method: "DELETE",
@@ -4253,6 +4331,8 @@ async function boot() {
       );
     else if (entry.mode === "article")
       renderArticleInto(body, entry.article, entry.query);
+    else if (entry.mode === "document")
+      renderDocumentInto(body, entry.document, entry.query);
     else renderSemanticInto(body, (entry.results ?? []) as never, entry.query);
     updateHistoryNav();
   }
