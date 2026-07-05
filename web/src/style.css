@@ -99,8 +99,32 @@ body > :not(#graph) {
    keeps the whole group (and its open dropdowns) above the search field + mode
    buttons, which sit later in the DOM. */
 #nav-group { display: flex; align-items: center; gap: 18px; pointer-events: auto; position: relative; z-index: 2; }
-#brand { display: flex; align-items: baseline; gap: 10px; }
-#brand-name { font-size: 22px; font-weight: 650; letter-spacing: 0.5px; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7); }
+#brand { display: flex; align-items: center; gap: 8px; }
+#brand .brand-icon {
+  width: 28px;
+  height: 28px;
+  background-image: url("/solaris-icon-v1-256px-white.png");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+#brand .brand-title {
+  width: 92px;
+  height: 26px;
+  background-image: url("/solaris-title-v1-256px-white.png");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: left center;
+}
+/* Light themes (manuscript, notebook) get the black icon + title. */
+:root[data-theme="manuscript"] #brand .brand-icon,
+:root[data-theme="notebook"] #brand .brand-icon {
+  background-image: url("/solaris-icon-v1-256px.png");
+}
+:root[data-theme="manuscript"] #brand .brand-title,
+:root[data-theme="notebook"] #brand .brand-title {
+  background-image: url("/solaris-title-v1-256px.png");
+}
 #brand-stats { color: var(--muted); font-size: 13px; font-family: Consolas, monospace; }
 
 /* ---------- menubar ---------- */
