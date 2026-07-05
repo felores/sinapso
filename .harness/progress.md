@@ -184,3 +184,28 @@ was stale dev-server pileup on ports 5173/5174/5175, cleaned up.
 
 **All planned semantic work COMPLETE.** Follow-ups (non-blocking): electron-rebuild
 better-sqlite3 for the desktop shell; F031 per-note incremental; F033 optional LLM labels.
+
+## Session 2026-07-05-1700 — voice waveform + context footer + topbar z-index/collapse
+
+**Features worked (all not_started → passing):**
+- **F037** voice waveform spectrum: two Analysers tapped onto the existing voice
+  graph (mic parallel to the worklet → muted sink; agent as a single bus every
+  BufferSource routes through). Canvas above #brand-stats, rAF, fftSize 512,
+  one color at a time (agent = --accent, human = HSL complement), idle flat dim.
+  Mounts only during voiceSession. Plan 004 U1.
+- **F038** context-aware footer: #brand-stats split into two spans;
+  updateBrandStats() resolves per-side precedence (voice > panel > default).
+  Left = provider+voice (voice) / words (reader) / notes; right = timer (voice)
+  / mode-specific count (research) / links. Both old write sites replaced.
+  Plan 004 U2.
+- **F039** topbar z-index flip (10 → 25, above docked panels) + left-panel
+  collapse mirror (centered-then-jump): layoutTopbar() now feeds leftPanelW
+  into the collision math and toggles menu-jumped-right + search-stacked.
+  Plan 005 U1.
+
+**Verification:** npm run typecheck clean; npm test 161/161; npm run build green.
+Behavioral AEs (turn-taking color, footer state transitions, panel-collapse
+mirror) deferred to manual npm run dev review — frontend has no test framework.
+
+**Plans:** docs/plans/2026-07-05-004 (spectrum+footer) and -005 (topbar),
+both ce-brainstorm → ce-plan → harness-progress, implementation-ready.

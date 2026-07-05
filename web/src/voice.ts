@@ -17,6 +17,9 @@ export interface VoiceHandlers {
 
 export interface VoiceSession {
   stop(): void;
+  /** analyser nodes for the waveform visualizer; null when session not live */
+  readonly micAnalyser: AnalyserNode | null;
+  readonly agentAnalyser: AnalyserNode | null;
 }
 
 // AudioWorklet that turns each render quantum of Float32 mono into PCM16 and
@@ -66,6 +69,8 @@ export async function startVoice(
   let captureCtx: AudioContext | undefined;
   let playCtx: AudioContext | undefined;
   let ws: WebSocket | undefined;
+  let micAnalyser: AnalyserNode | undefined;
+  let agentAnalyser: AnalyserNode | undefined;
   const sources = new Set<AudioBufferSourceNode>();
 
   const cleanup = () => {
@@ -102,6 +107,12 @@ export async function startVoice(
     // ---- playback (24 kHz), scheduled back-to-back ----
     playCtx = new AudioContext({ sampleRate: 24000 });
     await playCtx.resume().catch(() => {}); // created after an await → may start suspended
+    // Single persistent analyser every playback source routes through, so all
+    // agent audio is measured by one node (waveform visualizer tap).
+    agentAnalyser = playCtx.createAnalyser();
+    agentAnalyser.fftSize = 512;
+    agentAnalyser.smoothingTimeConstant = 0.85;
+    agentAnalyser.connect(playCtx.destination);
     let playhead = 0;
     const enqueue = (pcm: Int16Array) => {
       if (!playCtx || !pcm.length) return;
@@ -111,7 +122,7 @@ export async function startVoice(
       buf.getChannelData(0).set(f32);
       const node = playCtx.createBufferSource();
       node.buffer = buf;
-      node.connect(playCtx.destination);
+      node.connect(agentAnalyser!);
       const t = Math.max(playCtx.currentTime + 0.02, playhead);
       node.start(t);
       playhead = t + buf.duration;
@@ -186,6 +197,13 @@ export async function startVoice(
     srcNode.connect(worklet);
     worklet.connect(mute);
     mute.connect(captureCtx.destination);
+    // Waveform tap: analyse the mic alongside the worklet, routed through the
+    // existing muted sink so the graph keeps pulling without reaching speakers.
+    micAnalyser = captureCtx.createAnalyser();
+    micAnalyser.fftSize = 512;
+    micAnalyser.smoothingTimeConstant = 0.85;
+    srcNode.connect(micAnalyser);
+    micAnalyser.connect(mute);
   } catch (e) {
     handlers.onError?.(
       e instanceof Error ? e.message : "could not start voice",
@@ -193,5 +211,13 @@ export async function startVoice(
     cleanup();
   }
 
-  return { stop: cleanup };
+  return {
+    stop: cleanup,
+    get micAnalyser() {
+      return micAnalyser ?? null;
+    },
+    get agentAnalyser() {
+      return agentAnalyser ?? null;
+    },
+  };
 }

@@ -1885,6 +1885,8 @@ async function boot() {
     repaint();
     $("#reader").classList.add("hidden");
     readerLeftPinned = false; // closing the panel drops the left pin
+    openNoteWords = null;
+    updateBrandStats();
   }
 
   // --- reader panel ---
@@ -1989,6 +1991,8 @@ async function boot() {
       body.innerHTML = `<p class="muted">This note doesn't exist yet. ${
         neighbors.get(n.id)?.size ?? 0
       } note(s) link to it.</p>`;
+      openNoteWords = null;
+      updateBrandStats();
       return;
     }
     // Real note: show the collapsed find affordance (just the icon) + reset (B).
@@ -2016,6 +2020,8 @@ async function boot() {
       // ingested documents carry untrusted content; unsanitized script would
       // run same-origin and could drive the token-authenticated endpoints.
       body.innerHTML = DOMPurify.sanitize(await marked.parse(prepped));
+      openNoteWords = countWords(stripped);
+      updateBrandStats();
       // External URL links open in a new tab so they never replace the app.
       // Wiki links carry no href (they use data-target + a click handler), so
       // a[href] matches only real outbound links.
@@ -2039,6 +2045,8 @@ async function boot() {
       if (!fromHistory) void refreshReaderHistory();
     } catch {
       body.innerHTML = '<p class="muted">could not load note</p>';
+      openNoteWords = null;
+      updateBrandStats();
     }
   }
 
@@ -2084,7 +2092,10 @@ async function boot() {
     // Fold to lowercase + strip diacritics so the query matches with or without
     // accents (canción ↔ cancion, niño ↔ nino).
     const fold = (s: string) =>
-      s.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, ""); // strip combining diacritics
+      s
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, ""); // strip combining diacritics
     const needle = fold(term.trim());
     if (!needle || !store || !Ctor) return;
     // Accent-folded text buffer + per-char origin over the body's text nodes.
@@ -2477,9 +2488,63 @@ async function boot() {
     tapNode(n);
   });
 
-  // --- topbar stats ---
-  $("#brand-stats").textContent =
-    `${data.meta.notes.toLocaleString()} notes · ${data.meta.links.toLocaleString()} links`;
+  // --- topbar stats: context-aware footer. Left mirrors content/voice, right
+  // mirrors research/voice; each half reverts when its panel closes. The two
+  // write sites (load + rescan) seed the counts; dynamic updates flow through
+  // updateBrandStats() from the selection / research / voice hooks. Declared
+  // early but NOT called here — voiceSession/researchMode/… it reads are still
+  // in TDZ during initial load, so the initial render writes the spans directly.
+  let lastNotes = 0,
+    lastLinks = 0;
+  let openNoteWords: number | null = null;
+  let voiceStartedAt = 0;
+  let voiceTimer: number | null = null;
+  const countWords = (s: string): number =>
+    (s.trim().match(/\S+/g) ?? []).length;
+  const fmtTimer = (start: number): string => {
+    const s = Math.max(0, Math.floor((Date.now() - start) / 1000));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+  const isReaderOpen = () => !$("#reader").classList.contains("hidden");
+  const isResearchOpen = () => !$("#research").classList.contains("hidden");
+  function updateBrandStats() {
+    const left = $("#bs-left");
+    const right = $("#bs-right");
+    if (!left || !right) return;
+    if (voiceSession) {
+      const v = integrations?.voice;
+      left.textContent =
+        `${v?.provider ?? "gemini"} · ${v?.voice ?? ""}`.trim();
+      right.textContent = fmtTimer(voiceStartedAt);
+      return;
+    }
+    left.textContent =
+      isReaderOpen() && openNoteWords != null
+        ? `${openNoteWords.toLocaleString()} words`
+        : `${lastNotes.toLocaleString()} notes`;
+    if (isResearchOpen()) {
+      const entry = historyIdx >= 0 ? researchHistory[historyIdx] : null;
+      if (researchMode === "ingest") {
+        right.textContent = "ingest…";
+      } else if (
+        entry &&
+        (researchMode === "article" || researchMode === "document")
+      ) {
+        const c = entry.article?.content ?? entry.document?.content ?? "";
+        right.textContent = `${countWords(c).toLocaleString()} words`;
+      } else if (entry) {
+        right.textContent = `${(entry.results?.length ?? 0).toLocaleString()} results`;
+      } else {
+        right.textContent = `${lastLinks.toLocaleString()} links`;
+      }
+    } else {
+      right.textContent = `${lastLinks.toLocaleString()} links`;
+    }
+  }
+  lastNotes = data.meta.notes;
+  lastLinks = data.meta.links;
+  $("#bs-left").textContent = `${lastNotes.toLocaleString()} notes`;
+  $("#bs-right").textContent = `${lastLinks.toLocaleString()} links`;
 
   // --- legend (rebuilt on theme/group/color changes) ---
   // Each swatch is a color picker: pick your own group colors, persisted.
@@ -3408,6 +3473,165 @@ async function boot() {
     voiceToggle.classList.toggle("active", on);
     voiceToggle.setAttribute("aria-pressed", String(on));
     voiceToggle.title = i18n.t(on ? "voice.stop" : "voice.toggle");
+    if (on && voiceSession) {
+      voiceStartedAt = Date.now();
+      mountVoiceSpectrum(voiceSession);
+      if (voiceTimer == null)
+        voiceTimer = window.setInterval(updateBrandStats, 1000);
+    } else {
+      unmountVoiceSpectrum();
+      if (voiceTimer != null) {
+        clearInterval(voiceTimer);
+        voiceTimer = null;
+      }
+    }
+    updateBrandStats();
+  }
+
+  // ---- voice waveform spectrum: a subtle line above #brand-stats that reads
+  // the live mic (human) and agent-playback analysers exposed by voice.ts.
+  // One color at a time (turn-taking is strict); idle renders a flat dim line.
+  let spectrumRaf = 0;
+  let speakingState: "idle" | "human" | "agent" = "idle";
+  function mountVoiceSpectrum(session: VoiceSession) {
+    const canvas = $("#voice-spectrum") as HTMLCanvasElement | null;
+    if (!canvas) return;
+    const mic = session.micAnalyser;
+    const agent = session.agentAnalyser;
+    if (!mic || !agent) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    canvas.classList.add("live");
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = rect.width || 280;
+    const h = rect.height || 32;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const micBuf = new Uint8Array(mic.fftSize);
+    const agentBuf = new Uint8Array(agent.fftSize);
+    const { accent, complement } = spectrumThemeColors();
+    const ON = 0.045,
+      OFF = 0.02; // speaking thresholds with hysteresis (tunable at impl)
+    const rms = (b: Uint8Array) => {
+      let s = 0;
+      for (let i = 0; i < b.length; i++) {
+        const v = (b[i] - 128) / 128;
+        s += v * v;
+      }
+      return Math.sqrt(s / b.length);
+    };
+    const draw = () => {
+      spectrumRaf = requestAnimationFrame(draw);
+      mic.getByteTimeDomainData(micBuf);
+      agent.getByteTimeDomainData(agentBuf);
+      const mA = rms(micBuf);
+      const aA = rms(agentBuf);
+      if (speakingState === "idle") {
+        if (mA > ON) speakingState = "human";
+        else if (aA > ON) speakingState = "agent";
+      } else {
+        const cur = speakingState === "human" ? mA : aA;
+        if (cur < OFF) {
+          if (mA > ON) speakingState = "human";
+          else if (aA > ON) speakingState = "agent";
+          else speakingState = "idle";
+        }
+      }
+      let color: string, alpha: number, buf: Uint8Array;
+      if (speakingState === "human") {
+        color = complement;
+        alpha = 0.9;
+        buf = micBuf;
+      } else if (speakingState === "agent") {
+        color = accent;
+        alpha = 0.9;
+        buf = agentBuf;
+      } else {
+        color = accent;
+        alpha = 0.16;
+        buf = micBuf; // flat dim trace at rest
+      }
+      ctx.clearRect(0, 0, w, h);
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      const n = buf.length;
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * w;
+        const v = (buf[i] - 128) / 128;
+        const y = h / 2 + v * (h / 2 - 2);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    };
+    draw();
+  }
+  function unmountVoiceSpectrum() {
+    if (spectrumRaf) cancelAnimationFrame(spectrumRaf);
+    spectrumRaf = 0;
+    speakingState = "idle";
+    const canvas = $("#voice-spectrum");
+    if (canvas) canvas.classList.remove("live");
+  }
+  function spectrumThemeColors(): { accent: string; complement: string } {
+    const accent =
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--accent")
+        .trim() || "#58a6ff";
+    return { accent, complement: spectrumComplement(accent) };
+  }
+  function spectrumComplement(hex: string): string {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+    if (!m) return "#f0883e"; // fallback amber if --accent is not a hex triple
+    const r = parseInt(m[1].slice(0, 2), 16) / 255;
+    const g = parseInt(m[1].slice(2, 4), 16) / 255;
+    const b = parseInt(m[1].slice(4, 6), 16) / 255;
+    const max = Math.max(r, g, b),
+      min = Math.min(r, g, b);
+    let h = 0,
+      s = 0;
+    const l = (max + min) / 2;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h /= 6;
+    }
+    const hue = ((h * 360 + 180) % 360) / 360; // rotate 180 degrees
+    const c = spectrumHslToRgb(hue, s, l);
+    return `#${c.map((x) => x.toString(16).padStart(2, "0")).join("")}`;
+  }
+  function spectrumHslToRgb(
+    h: number,
+    s: number,
+    l: number,
+  ): [number, number, number] {
+    if (s === 0) {
+      const v = Math.round(l * 255);
+      return [v, v, v];
+    }
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    const f = (t: number) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1 / 6) return p + (q - p) * 6 * t;
+      if (t < 1 / 2) return q;
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+      return p;
+    };
+    return [
+      Math.round(f(h + 1 / 3) * 255),
+      Math.round(f(h) * 255),
+      Math.round(f(h - 1 / 3) * 255),
+    ];
   }
   voiceToggle.addEventListener("click", async () => {
     if (voiceSession) {
@@ -3872,7 +4096,6 @@ async function boot() {
 
     const topbar = $("#topbar");
     topbar.style.setProperty("--right-inset", `${rightPanelW}px`);
-    topbar.classList.toggle("menu-centered", leftDocked);
 
     // Push the bottom corner buttons into the visible gap between the panels:
     // left buttons clear a ctx-left reader, right buttons clear a right panel.
@@ -3884,14 +4107,27 @@ async function boot() {
     // The search sits on row 1 (inset left of any right panel) and drops to a
     // second row directly below the brand+menu group whenever the group would
     // collide with it. The stacked search follows the group's alignment (CSS:
-    // left when normal, centered when menu-centered).
+    // left when normal, centered when menu-centered, right-of-panel when
+    // menu-jumped-right). Left-panel collapse is centered-then-jump: a ctx-left
+    // reader keeps the menu centered until its right edge reaches the menu's
+    // left edge, then the menu jumps to right-of-panel and the search wraps —
+    // the mirror of the right-side collision.
     const PAD = 18,
       GAP = 18;
     const vw = window.innerWidth;
     const groupW = $("#nav-group").offsetWidth;
-    const groupRight = leftDocked ? vw / 2 + groupW / 2 : PAD + groupW;
-    const searchLeft = vw - PAD - rightPanelW - $("#search-wrap").offsetWidth;
+    const searchWrapW = $("#search-wrap").offsetWidth;
+    const jumped = leftDocked && leftPanelW + PAD > vw / 2 - groupW / 2;
+    const menuLeftX = jumped
+      ? leftPanelW + PAD
+      : leftDocked
+        ? vw / 2 - groupW / 2
+        : PAD;
+    const groupRight = menuLeftX + groupW;
+    const searchLeft = vw - PAD - rightPanelW - searchWrapW;
     const collides = groupRight + GAP > searchLeft;
+    topbar.classList.toggle("menu-centered", leftDocked && !jumped);
+    topbar.classList.toggle("menu-jumped-right", jumped);
     topbar.classList.toggle("search-stacked", collides);
   }
 
@@ -3916,6 +4152,7 @@ async function boot() {
     setReaderCtxLeft(true); // open note = working context on the left
     $("#research-title").textContent = i18n.t(`research.${mode}`);
     researchError(null);
+    updateBrandStats();
   }
 
   function closeResearch() {
@@ -3923,6 +4160,7 @@ async function boot() {
     $("#research").classList.add("hidden");
     // reader returns to the right unless the user pinned it left
     if (!readerLeftPinned) setReaderCtxLeft(false);
+    updateBrandStats();
   }
   $("#research-close").addEventListener("click", closeResearch);
 
@@ -4449,6 +4687,7 @@ async function boot() {
       renderDocumentInto(body, entry.document, entry.query);
     else renderSemanticInto(body, (entry.results ?? []) as never, entry.query);
     updateHistoryNav();
+    updateBrandStats();
   }
 
   // After a fresh query the new entry is newest (index 0).
@@ -4815,8 +5054,9 @@ async function boot() {
     );
 
     // 12. Footer counts.
-    $("#brand-stats").textContent =
-      `${data.meta.notes.toLocaleString()} notes · ${data.meta.links.toLocaleString()} links`;
+    lastNotes = data.meta.notes;
+    lastLinks = data.meta.links;
+    updateBrandStats();
   }
 
   async function runIngest(source: string) {

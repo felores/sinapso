@@ -91,7 +91,7 @@ body > :not(#graph) {
      (menu-centered + search-stacked), so the stacked search lands below it */
   min-height: 54px;
   pointer-events: none;
-  z-index: 10;
+  z-index: 25; /* above docked panels (20), below dropdowns (50) and modal (100) */
 }
 
 /* brand + menu are one unit ("Solaris <menu>"): they travel together, at the
@@ -266,6 +266,18 @@ body > :not(#graph) {
   left: 50%;
   transform: translateX(-50%); /* below the centered menu */
 }
+/* Left-panel collapse (centered-then-jump): once a ctx-left reader reaches the
+   centered menu, the menu jumps to right-of-panel and the search wraps below. */
+#topbar.menu-jumped-right #nav-group {
+  position: absolute;
+  left: calc(var(--btn-left-inset, 0px) + 18px); /* right of the ctx-left panel */
+  top: 50%;
+  transform: translateY(-50%);
+}
+#topbar.search-stacked.menu-jumped-right #search-wrap {
+  left: 50%;
+  transform: translateX(-50%); /* below the jumped menu */
+}
 
 #search-results {
   position: absolute;
@@ -418,6 +430,22 @@ body > :not(#graph) {
   transform: translateX(-50%);
   z-index: 12;
   pointer-events: none;
+}
+
+/* voice waveform: a subtle line above #brand-stats, live only during voice */
+#voice-spectrum {
+  position: fixed;
+  bottom: 34px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 280px;
+  height: 32px;
+  z-index: 12;
+  pointer-events: none;
+  display: none;
+}
+#voice-spectrum.live {
+  display: block;
 }
 
 /* controls now live inside the View menu dropdown */
