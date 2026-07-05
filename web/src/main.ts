@@ -869,9 +869,11 @@ async function boot() {
   // Each link used to be its own three.js object (one draw call apiece), the
   // dominant cost at this scale. All non-highlighted links now share a single
   // LineSegments buffer; hidden links collapse to degenerate (invisible) segments.
-  const L = data.links.length;
-  const linePos = new Float32Array(L * 6);
-  const lineCol = new Float32Array(L * 6);
+  // Mutable so a rescan diff (applyGraphUpdate) can grow/shrink the buffer when
+  // the link count changes — the arrays and L are reassigned by rebuildLinkBuffers.
+  let L = data.links.length;
+  let linePos = new Float32Array(L * 6);
+  let lineCol = new Float32Array(L * 6);
   const lineGeo = new THREE.BufferGeometry();
   lineGeo.setAttribute("position", new THREE.BufferAttribute(linePos, 3));
   lineGeo.setAttribute("color", new THREE.BufferAttribute(lineCol, 3));
@@ -925,6 +927,17 @@ async function boot() {
       lineCol[o + 2] = lineCol[o + 5] = c.b;
     }
     (lineGeo.attributes.color as THREE.BufferAttribute).needsUpdate = true;
+  }
+
+  // Reallocate the merged-link buffer to the current link count (after a rescan
+  // diff adds/removes edges). The old typed arrays are dropped; callers must
+  // follow with updateLinkPositions()/updateLinkColors() to fill the new buffer.
+  function rebuildLinkBuffers() {
+    L = data.links.length;
+    linePos = new Float32Array(L * 6);
+    lineCol = new Float32Array(L * 6);
+    lineGeo.setAttribute("position", new THREE.BufferAttribute(linePos, 3));
+    lineGeo.setAttribute("color", new THREE.BufferAttribute(lineCol, 3));
   }
 
   // ---- arrangement modes (F032): links / semantic / hybrid ----
@@ -4311,62 +4324,139 @@ async function boot() {
   // Ingest a document or URL as a vault note via markitdown (F023).
   // After ingesting, rescan (so the new note joins the graph) and reopen to
   // it: stash the id, reload via rescan, and boot selects it.
-  function openAfterIngest(id: string) {
-    sessionStorage.setItem("solaris-pending-select", id);
-    void rescan(false);
+  // Create a note, then rescan-diff the vault (no reload) and fly to the new
+  // note once it joins the live graph with its resolved links.
+  async function openAfterIngest(id: string) {
+    sessionStorage.setItem("solaris-pending-select", id); // survives a fallback reload
+    await rescan(false);
+    const n = byId.get(id);
+    if (n) {
+      sessionStorage.removeItem("solaris-pending-select");
+      select(n);
+    }
   }
 
-  // Splice a freshly created note into the LIVE graph and fly to it — no rescan,
-  // no full reload (Option A). Only the node is added: the merged-link buffer is
-  // fixed-size (L captured at boot), so the [[back-link]] to the origin note and
-  // the qmd embedding materialize on the next rescan (both are in the file's
-  // frontmatter already). We seed the node next to its origin so it doesn't pop
-  // in from the center, and cooldownTicks(0) keeps every existing node put.
-  function spliceNoteIntoGraph(
-    id: string,
-    title: string,
-    originId: string | null,
-  ) {
-    const existing = byId.get(id);
-    if (existing) {
-      select(existing); // re-save of an already-present note: just fly to it
-      return;
+  // Hot-swap a rescanned graph into the LIVE scene: diff against the current
+  // graph and splice adds / removes / edge changes in place, then re-register
+  // without reheating the layout — no full page reload. Existing nodes keep
+  // their positions; new nodes land at the centroid of their resolved neighbors
+  // (so they sit among their links). Phantom→real reconciliation falls out of
+  // the by-id diff: the phantom id disappears, the real id appears, and the
+  // inbound edges in next.links already point at the real id.
+  function applyGraphUpdate(next: Graph) {
+    const nextById = new Map(next.nodes.map((n) => [n.id, n] as const));
+    const endId = (e: string | GNode) => (typeof e === "object" ? e.id : e);
+
+    // 1. Remove gone nodes: dispose their three.js material + drop from every
+    //    lookup so applyNodeColors/saveLayout never touch a stale id.
+    for (const n of data.nodes) {
+      if (nextById.has(n.id)) continue;
+      const mesh = meshOf.get(n.id);
+      (mesh?.material as THREE.Material | undefined)?.dispose?.();
+      meshOf.delete(n.id);
+      glowOf.delete(n.id);
+      spinOf.delete(n.id);
+      byBasename.delete(n.title.toLowerCase());
+      byId.delete(n.id);
     }
-    const slash = id.indexOf("/");
-    const pillar = slash === -1 ? "" : id.slice(0, slash);
-    const origin = originId ? byId.get(originId) : undefined;
+
+    // 2. Update kept nodes' metadata in place, keeping the SAME object reference
+    //    so 3d-force-graph reuses its mesh + position (degree drives size/orphan).
+    let titleChanged = false;
+    for (const n of data.nodes) {
+      const nn = nextById.get(n.id);
+      if (!nn) continue;
+      if (n.title !== nn.title) {
+        byBasename.delete(n.title.toLowerCase());
+        titleChanged = true;
+      }
+      n.title = nn.title;
+      n.pillar = nn.pillar;
+      n.tags = nn.tags;
+      n.words = nn.words;
+      n.in = nn.in;
+      n.out = nn.out;
+      n.phantom = nn.phantom;
+      byBasename.set(n.title.toLowerCase(), n);
+    }
+
+    // 3. Rebuild neighbor adjacency from the new edges (centroid seed + focus).
+    neighbors.clear();
+    for (const l of next.links) {
+      addNb(endId(l.source), endId(l.target));
+      addNb(endId(l.target), endId(l.source));
+    }
+
+    // 4. Add new nodes at the centroid of their already-positioned neighbors.
     const jitter = () => (Math.random() - 0.5) * 24;
-    const node: GNode = {
-      id,
-      title,
-      pillar,
-      words: 0,
-      in: 0,
-      out: 0,
-      x: (origin?.x ?? 0) + jitter(),
-      y: (origin?.y ?? 0) + jitter(),
-      z: (origin?.z ?? 0) + jitter(),
-    };
-    data.nodes.push(node);
-    byId.set(id, node);
-    byBasename.set(title.toLowerCase(), node);
+    const kept = data.nodes.filter((n) => nextById.has(n.id));
+    for (const nn of next.nodes) {
+      if (byId.has(nn.id)) continue;
+      const node: GNode = { ...nn };
+      let sx = 0,
+        sy = 0,
+        sz = 0,
+        c = 0;
+      for (const nbId of neighbors.get(node.id) ?? []) {
+        const nb = byId.get(nbId);
+        if (nb && nb.x != null) {
+          sx += nb.x;
+          sy += nb.y ?? 0;
+          sz += nb.z ?? 0;
+          c++;
+        }
+      }
+      node.x = (c ? sx / c : 0) + jitter();
+      node.y = (c ? sy / c : 0) + jitter();
+      node.z = (c ? sz / c : 0) + jitter();
+      byId.set(node.id, node);
+      byBasename.set(node.title.toLowerCase(), node);
+      kept.push(node);
+    }
+
+    // 5. Commit the new node / link / meta sets.
+    data.nodes = kept;
+    data.links = next.links;
+    data.meta = next.meta;
+
+    // 6. Drop semantic edges whose endpoints no longer exist (stale post-rescan).
+    semanticLinks = semanticLinks.filter(
+      (l) => byId.has(endId(l.source)) && byId.has(endId(l.target)),
+    );
+
+    // 7. Recompute derived views + grow/shrink the link buffer.
     computeGroups();
     recomputeColors();
     buildLegend();
-    // Reuse the current sim edge set (arrangement-dependent) and re-register the
-    // node without reheating: existing nodes keep x/y/z, cooldownTicks(0) runs
-    // no ticks, so nothing reflows.
-    const { links } = graph.graphData() as { nodes: GNode[]; links: GLink[] };
+    rebuildLinkBuffers();
+
+    // 8. Active sim edge set for the current arrangement (mirror applyArrangement).
+    const links: GLink[] = [];
+    if (arrangement !== "semantic") for (const l of data.links) links.push(l);
+    if (arrangement !== "links") for (const l of semanticLinks) links.push(l);
+
+    // 9. Re-register without reheating: existing nodes hold x/y/z, new nodes hold
+    //    their centroid seed, cooldownTicks(0) runs no ticks → nothing reflows.
     graph.warmupTicks(0).cooldownTicks(0);
     graph.graphData({ nodes: data.nodes, links });
-    select(node); // instant camera fly + reader open
-    // Colour the freshly created mesh once 3d-force-graph has built its object.
+    if (titleChanged) graph.nodeThreeObject(graph.nodeThreeObject()); // refresh labels
+
+    // 10. Persist the updated layout under the new fingerprint.
+    layoutSaved = false;
+    saveLayout();
+
+    // 11. Paint the new meshes/links once their objects exist.
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         updateLinkPositions();
+        updateLinkColors();
         applyNodeColors();
       }),
     );
+
+    // 12. Footer counts.
+    $("#brand-stats").textContent =
+      `${data.meta.notes.toLocaleString()} notes · ${data.meta.links.toLocaleString()} links`;
   }
 
   async function runIngest(source: string) {
@@ -4509,9 +4599,9 @@ async function boot() {
           await loadHistory();
           updateHistoryNav();
         }
-        // Option A: splice the note into the live graph and fly to it — no
-        // rescan, no reload. The camera lands on the new note right away.
-        spliceNoteIntoGraph(String(data.id), query, originNode?.id ?? null);
+        // Rescan-diff the vault in place (no reload) and fly to the new note —
+        // it joins the graph with its resolved [[links]] to the origin note.
+        await openAfterIngest(String(data.id));
       } catch {
         save.disabled = false;
         save.textContent = "save failed — retry";
@@ -4832,7 +4922,7 @@ async function boot() {
     try {
       // When qmd covers this vault, always refresh its index on rescan (embed is
       // incremental — only changed chunks). Fire the guarded job first so it runs
-      // server-side and survives the reload below; progress shows on return.
+      // server-side while we diff; progress shows on return.
       if (qmdStatus.state === "ready") {
         await fetch("/api/qmd/maintenance?update=1&embed=1", {
           method: "POST",
@@ -4843,9 +4933,14 @@ async function boot() {
         method: "POST",
       }).then((x) => x.json());
       if (!r.ok) throw new Error(r.error);
-      // reload picks up the new graph; the layout cache is fingerprint-keyed,
-      // so an unchanged vault comes back instantly with the same layout.
-      window.location.reload();
+      // Hot-swap the new graph in place — no reload, no reflow. Fall back to a
+      // full reload only if the server didn't return the graph (older build).
+      if (r.graph) {
+        applyGraphUpdate(r.graph as Graph);
+        hideModal();
+      } else {
+        window.location.reload();
+      }
     } catch {
       showModal(
         "Rescan failed",

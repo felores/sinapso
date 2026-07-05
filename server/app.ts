@@ -1523,6 +1523,9 @@ export function createApp(
         notes: g.meta.notes,
         links: g.meta.links,
         stats: g.meta.scanStats,
+        // Full graph so the client can diff + hot-swap in place instead of a
+        // full page reload (applyGraphUpdate).
+        graph: g,
       });
     } catch (e) {
       console.error("Rescan failed:", e);
