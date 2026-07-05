@@ -144,6 +144,11 @@ const EN: Dict = {
   "research.collapse": "collapse",
   "research.openArticle": "Open the full article",
   "research.fetching": "fetching the full article…",
+  "research.deepBusy":
+    "researching deeply — synthesizing an answer from multiple sources, this can take up to a minute…",
+  "research.webBusy": "searching the web…",
+  "scope.deep": "Deep research",
+  "scope.web": "Web results",
   "dock.dock": "Dock to right edge",
   "dock.undock": "Undock (float)",
   // loading hint
@@ -281,6 +286,11 @@ const ES: Dict = {
   "research.collapse": "colapsar",
   "research.openArticle": "Abrir el artículo completo",
   "research.fetching": "trayendo el artículo completo…",
+  "research.deepBusy":
+    "investigando a fondo — sintetizando una respuesta de varias fuentes, puede tardar hasta un minuto…",
+  "research.webBusy": "buscando en la web…",
+  "scope.deep": "Investigación profunda",
+  "scope.web": "Resultados web",
   "dock.dock": "Acoplar al borde derecho",
   "dock.undock": "Desacoplar (flotante)",
   "loading.line1":

@@ -882,6 +882,79 @@ body > :not(#graph) {
 #voice-toggle.active .voice-bot { display: block; }
 #ingest-browse { right: 44px; } /* clear the voice button on the wrap's right */
 
+/* Web mode scope toggle: Deep research (microscope) | Web results (zoom). A
+   segmented control docked at the search field's right edge, clearing the voice
+   button — mirrors the ingest browse button's slot, and the two never coexist
+   (modes are mutually exclusive). Default-active button is filled with --accent. */
+#web-scope {
+  position: absolute;
+  right: 44px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 12;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+#web-scope.hidden { display: none; }
+.scope-btn {
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.scope-btn:hover { color: var(--fg); }
+.scope-btn.active { background: var(--accent); color: #fff; }
+.scope-btn svg { display: block; }
+#search.with-scope { padding-right: 112px; }
+
+/* Custom tooltip (replaces native title=): appears instantly below the target,
+   centered, with an up-arrow. Positioned in JS; --arrow-dx re-aims the arrow at
+   the target when the tooltip is clamped to the viewport edge. */
+#tooltip {
+  position: fixed;
+  z-index: 9999;
+  transform: translateX(-50%);
+  width: max-content; /* else a fixed box shrinks to the space left of `left` */
+  max-width: 260px;
+  padding: 5px 9px;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  transition: opacity 0.06s ease-out;
+}
+#tooltip.show { opacity: 1; }
+#tooltip::before,
+#tooltip::after {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: calc(50% + var(--arrow-dx, 0px));
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-bottom-color: var(--border);
+}
+#tooltip::after {
+  border-width: 5px;
+  border-bottom-color: var(--panel);
+  margin-bottom: -1px;
+}
+
 /* Integration rows mirror the View menu's .ctl rows: same padding, size,
    centered alignment, name left / status (or control) right. */
 .integ-row {

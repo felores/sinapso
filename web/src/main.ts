@@ -2955,6 +2955,8 @@ async function boot() {
   const MODE_LIST = ["semantic", "web", "ingest"] as const;
   let integrations: IntegrationsStatus | null = null;
   let activeMode = localStorage.getItem("akasha-mode") as ModeName | null;
+  let webScope: "deep" | "web" =
+    localStorage.getItem("akasha-web-scope") === "web" ? "web" : "deep";
 
   // Per-session token for mutating routes (fetched once, sent as a header).
   let sessionToken = "";
@@ -3004,6 +3006,9 @@ async function boot() {
     const ingest = activeMode === "ingest";
     ($("#ingest-browse") as HTMLElement).classList.toggle("hidden", !ingest);
     searchBox.classList.toggle("with-browse", ingest);
+    const web = activeMode === "web";
+    ($("#web-scope") as HTMLElement).classList.toggle("hidden", !web);
+    searchBox.classList.toggle("with-scope", web);
   }
 
   function setMode(m: ModeName | null) {
@@ -3025,6 +3030,69 @@ async function boot() {
     $(`#mode-${m}`).addEventListener("click", () =>
       setMode(activeMode === m ? null : m),
     );
+
+  // Web-mode scope: Deep research (synthesized answer) vs Web results (a raw
+  // result list, like a precise search engine). Shown only in web mode; the
+  // choice drives the `deep` flag on the query. Persisted like the other modes.
+  function renderWebScope() {
+    $("#scope-deep").classList.toggle("active", webScope === "deep");
+    $("#scope-web").classList.toggle("active", webScope === "web");
+  }
+  function setWebScope(s: "deep" | "web") {
+    webScope = s;
+    localStorage.setItem("akasha-web-scope", s);
+    renderWebScope();
+  }
+  $("#scope-deep").addEventListener("click", () => setWebScope("deep"));
+  $("#scope-web").addEventListener("click", () => setWebScope("web"));
+  renderWebScope();
+
+  // Custom tooltips: one floating element, delegated hover. Hijacks any native
+  // `title` (stashes it to data-tip + aria-label, then removes title to kill the
+  // slow native bubble) so every titled control gets the same instant tooltip,
+  // shown centered below with an up-arrow. --arrow-dx re-aims the arrow when the
+  // tooltip is clamped to the viewport edge.
+  (function initTooltips() {
+    const tip = document.createElement("div");
+    tip.id = "tooltip";
+    document.body.appendChild(tip);
+    let cur: HTMLElement | null = null;
+    const hide = () => {
+      cur = null;
+      tip.classList.remove("show");
+    };
+    const show = (el: HTMLElement, text: string) => {
+      cur = el;
+      tip.textContent = text;
+      tip.classList.add("show");
+      const r = el.getBoundingClientRect();
+      const half = tip.offsetWidth / 2;
+      const cx = r.left + r.width / 2;
+      const clamped = Math.max(8 + half, Math.min(cx, innerWidth - 8 - half));
+      tip.style.left = `${clamped}px`;
+      tip.style.top = `${r.bottom + 8}px`;
+      tip.style.setProperty("--arrow-dx", `${cx - clamped}px`);
+    };
+    document.addEventListener("mouseover", (e) => {
+      const el = (e.target as Element | null)?.closest?.<HTMLElement>(
+        "[title], [data-tip]",
+      );
+      if (!el || el === cur) return;
+      const live = el.getAttribute("title");
+      if (live) {
+        el.dataset.tip = live;
+        el.setAttribute("aria-label", live);
+        el.removeAttribute("title");
+      }
+      const text = el.dataset.tip;
+      if (text) show(el, text);
+    });
+    document.addEventListener("mouseout", (e) => {
+      if (cur && !cur.contains(e.relatedTarget as Node)) hide();
+    });
+    for (const ev of ["click", "keydown", "scroll", "wheel"])
+      document.addEventListener(ev, () => cur && hide(), true);
+  })();
 
   function renderIntegrationsPanel() {
     const t = integrations?.tools;
@@ -4548,10 +4616,12 @@ async function boot() {
   }
 
   async function runWebQuery(query: string) {
+    const deep = webScope === "deep";
     openResearch("web");
     const body = $("#research-body");
-    body.innerHTML =
-      '<p class="muted">researching deeply — synthesizing an answer from multiple sources, this can take up to a minute…</p>';
+    body.innerHTML = `<p class="muted">${i18n.t(
+      deep ? "research.deepBusy" : "research.webBusy",
+    )}</p>`;
     try {
       const res = await fetch("/api/research", {
         method: "POST",
@@ -4559,7 +4629,7 @@ async function boot() {
           "content-type": "application/json",
           "x-solaris-token": await apiToken(),
         },
-        body: JSON.stringify({ query, deep: true }),
+        body: JSON.stringify({ query, deep }),
       });
       const data = await res.json();
       if (!res.ok) {
