@@ -235,3 +235,19 @@ visual probe (Variant B: icon rail + flyouts) → ce-plan → harness-progress.
 
 **Also this session, uncommitted earlier:** voice spectrum tweak (180px wide,
 bottom 29px) — folded into this commit.
+
+## Session 2026-07-05-1810 — topbar rail rework (slot model + Lucide + right-panel restore)
+
+Reworked F040-F042 after visual review feedback (icons terrible, slide model
+wrong, right corner buttons desync). New model in layoutTopbar():
+- right panel only → search slides with panel (--right-inset) + wraps below
+  menu left-aligned on collision (RESTORED original "flawless" behavior).
+- left panel only, not crossing center → menu centered.
+- left panel crossing center → menu+search snap to right-side column, stacked
+  (menu row 1, search row 2, right-aligned).
+- both panels balanced → centered cluster.
+- center gap < wider of menu/search → RAIL (vertical right-edge rail).
+Lucide icons (inline SVG) replace the emoji; rail icons ~2x (44px, 26px svg).
+Removed U3 panel displacement (--rail-inset) — the desync source; the rail now
+overlays panels (z-index 25 > 20).
+Verification: typecheck + build green. Still heavily deferred to manual review.

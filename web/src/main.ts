@@ -4086,9 +4086,6 @@ async function boot() {
       !research.classList.contains("hidden") &&
       !research.classList.contains("floating");
     const leftDocked = readerDocked && reader.classList.contains("ctx-left");
-    // Width of whatever is docked on each side. The left panel slides the whole
-    // topbar row right as a unit (--left-inset); the right panel slides the
-    // search left (--right-inset, existing).
     const rightPanelW = researchDocked
       ? research.offsetWidth
       : readerDocked && !reader.classList.contains("ctx-left")
@@ -4098,35 +4095,52 @@ async function boot() {
 
     const topbar = $("#topbar");
     const root = document.documentElement;
-    topbar.style.setProperty("--left-inset", `${leftPanelW}px`);
-    topbar.style.setProperty("--right-inset", `${rightPanelW}px`);
-    // Bottom corner buttons clear whichever panel is on their side.
+    // Corner buttons follow the panel inner edges (the one chrome element that
+    // "drags" with the panels).
     root.style.setProperty("--btn-left-inset", `${leftPanelW}px`);
     root.style.setProperty("--btn-right-inset", `${rightPanelW}px`);
 
-    // Three states: ROW (normal), STACKED (right-panel-only search wrap to
-    // row 2), RAIL (vertical right-edge rail, terminal for any crowding). The
-    // left panel continuously slides the chrome right (no STACKED); when the
-    // row runs out of room it goes straight to RAIL.
+    // Chrome layout per panel state:
+    //  - right panel only: search slides with the panel's left edge
+    //    (--right-inset); on collision with the menu it wraps to row 2, left-
+    //    aligned (.search-stacked). Menu stays at the left.
+    //  - left panel only, not crossing center: menu centers (.menu-centered).
+    //  - left panel crossing center: menu+search snap to a right-side column,
+    //    stacked (menu row 1, search row 2, right-aligned) (.slot-right .stacked).
+    //  - both panels open and balanced: centered cluster (.slot-center).
+    //  - center gap too small for either: vertical rail (.topbar-rail).
     const PAD = 18,
       GAP = 18;
     const vw = window.innerWidth;
     const groupW = $("#nav-group").offsetWidth;
     const searchWrapW = $("#search-wrap").offsetWidth;
-    const availableW = vw - leftPanelW - rightPanelW;
-    const rowW = groupW + GAP + searchWrapW; // row at natural width
-    const stackedW = Math.max(groupW, searchWrapW); // the wider of two stacked rows
-    const rail =
-      availableW < stackedW + 2 * PAD || // even STACKED won't fit
-      (leftDocked && availableW < rowW + 2 * PAD); // left slide ran out of room → rail
-    const groupRight = leftPanelW + PAD + groupW;
-    const searchLeft = vw - rightPanelW - PAD - searchWrapW;
-    const rightCollides = groupRight + GAP > searchLeft;
-    const stacked = !rail && rightCollides;
+    const centerGap = vw - leftPanelW - rightPanelW;
+    const rail = centerGap < Math.max(groupW, searchWrapW) + 2 * PAD;
+    topbar.style.setProperty("--right-inset", `${rightPanelW}px`);
+    let slot: "center" | "right" | "" = "";
+    let menuCentered = false;
+    let stacked = false;
+    let searchStacked = false;
+    if (!rail) {
+      if (leftPanelW > vw / 2) {
+        slot = "right";
+        stacked = true;
+      } else if (rightPanelW > 0 && leftPanelW === 0) {
+        const groupRight = PAD + groupW;
+        const searchLeft = vw - rightPanelW - PAD - searchWrapW;
+        if (groupRight + GAP > searchLeft) searchStacked = true;
+      } else if (leftPanelW > 0 && rightPanelW === 0) {
+        menuCentered = true;
+      } else if (leftPanelW > 0 && rightPanelW > 0) {
+        slot = "center";
+      }
+    }
     topbar.classList.toggle("topbar-rail", rail);
-    topbar.classList.toggle("search-stacked", stacked);
-    // U3: in rail mode, right-docked panels shift left of the rail.
-    root.style.setProperty("--rail-inset", rail ? "52px" : "0px");
+    topbar.classList.toggle("slot-center", slot === "center");
+    topbar.classList.toggle("slot-right", slot === "right");
+    topbar.classList.toggle("menu-centered", menuCentered);
+    topbar.classList.toggle("stacked", stacked);
+    topbar.classList.toggle("search-stacked", searchStacked);
   }
 
   // Flip the reader's left dock. When the reader is HIDDEN, suppress the
