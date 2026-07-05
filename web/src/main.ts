@@ -3983,6 +3983,34 @@ async function boot() {
   // Renders passage results (from /api/passages) grouped under their note, so
   // a long note's several hits read as one block. Also handles legacy history
   // entries shaped {id,title,snippet} (no file/line) via the id ?? file fallback.
+  // A small relevance-score pill (0–100%). Null/NaN scores render nothing.
+  function scoreBadge(score: number | undefined | null): HTMLElement | null {
+    if (score == null || !isFinite(score)) return null;
+    const b = document.createElement("span");
+    b.className = "score-badge";
+    b.textContent = `${Math.round(Math.max(0, Math.min(1, score)) * 100)}%`;
+    return b;
+  }
+
+  // Clamp a text block to ~7 lines; when it actually overflows, insert an
+  // expand/collapse toggle right after it. stopPropagation so the toggle never
+  // triggers an enclosing row click (e.g. opening the note).
+  function attachExpand(snip: HTMLElement) {
+    snip.classList.add("clampable");
+    requestAnimationFrame(() => {
+      if (snip.scrollHeight - snip.clientHeight < 4) return; // fits already
+      const btn = document.createElement("button");
+      btn.className = "expand-btn";
+      btn.textContent = i18n.t("research.expand");
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const on = snip.classList.toggle("expanded");
+        btn.textContent = i18n.t(on ? "research.collapse" : "research.expand");
+      });
+      snip.insertAdjacentElement("afterend", btn);
+    });
+  }
+
   function renderSemanticInto(
     body: HTMLElement,
     results: Array<{
@@ -3990,6 +4018,7 @@ async function boot() {
       id?: string;
       title: string;
       line?: number;
+      score?: number;
       snippet: string;
     }>,
     query?: string,
@@ -4033,16 +4062,25 @@ async function boot() {
       for (const p of passages) {
         const row = document.createElement("div");
         row.className = "rel-row sem-passage";
-        if (p.line) {
-          const ln = document.createElement("span");
-          ln.className = "sem-line";
-          ln.textContent = `L${p.line}`;
-          row.appendChild(ln);
+        // meta line: line number + relevance score
+        const badge = scoreBadge(p.score);
+        if (p.line || badge) {
+          const meta = document.createElement("div");
+          meta.className = "sem-passage-meta";
+          if (p.line) {
+            const ln = document.createElement("span");
+            ln.className = "sem-line";
+            ln.textContent = `L${p.line}`;
+            meta.appendChild(ln);
+          }
+          if (badge) meta.appendChild(badge);
+          row.appendChild(meta);
         }
         const snip = document.createElement("span");
         snip.className = "rel-snippet";
         snip.textContent = p.snippet;
         row.appendChild(snip);
+        attachExpand(snip);
         row.addEventListener("click", () => select(node, p.snippet));
         group.appendChild(row);
       }
@@ -4358,6 +4396,7 @@ async function boot() {
           file: string;
           title: string;
           line: number;
+          score?: number;
           snippet: string;
         }>;
       } = await fetch(`/api/passages?q=${encodeURIComponent(query)}`).then(
@@ -4888,6 +4927,7 @@ async function boot() {
     url: string;
     snippet: string;
     publishedDate: string | null;
+    score?: number | null;
   }): HTMLElement {
     const row = document.createElement("div");
     row.className = "web-result";
@@ -4913,7 +4953,10 @@ async function boot() {
     const date = document.createElement("span");
     date.textContent = r.publishedDate?.slice(0, 10) ?? "";
     meta.append(date);
+    const badge = scoreBadge(r.score);
+    if (badge) meta.append(badge);
     row.append(link, snip, meta);
+    attachExpand(snip); // preview to ~7 lines with an expand toggle
     return row;
   }
 

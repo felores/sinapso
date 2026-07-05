@@ -1049,16 +1049,42 @@ body > :not(#graph) {
   cursor: pointer;
 }
 .sem-note:hover { color: var(--accent); }
-.sem-passage {
-  flex-direction: row;
-  align-items: baseline;
-  gap: 6px;
-}
+.sem-passage { gap: 3px; }
+.sem-passage-meta { display: flex; align-items: baseline; gap: 6px; }
 .sem-line {
   flex: 0 0 auto;
   font-size: 10.5px;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
+}
+
+/* Preview clamp + expand toggle + relevance score, shared by semantic passages
+   and web results. .clampable previews ~7 lines; .expanded shows all. */
+.clampable {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 7;
+  overflow: hidden;
+}
+.clampable.expanded {
+  -webkit-line-clamp: 9999;
+  overflow: visible;
+}
+.expand-btn {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 11px;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.expand-btn:hover { text-decoration: underline; }
+.score-badge {
+  font-size: 10px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
 }
 
 #qmd-enable.hidden { display: none; }
