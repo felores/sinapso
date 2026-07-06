@@ -107,6 +107,7 @@ body > :not(#graph) {
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
 }
 #brand .brand-title {
   width: 92px;
@@ -115,6 +116,7 @@ body > :not(#graph) {
   background-size: contain;
   background-repeat: no-repeat;
   background-position: left center;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
 }
 /* Light themes (manuscript, notebook) get the black icon + title. */
 :root[data-theme="manuscript"] #brand .brand-icon,
@@ -124,6 +126,12 @@ body > :not(#graph) {
 :root[data-theme="manuscript"] #brand .brand-title,
 :root[data-theme="notebook"] #brand .brand-title {
   background-image: url("/solaris-title-v1-256px.png");
+}
+:root[data-theme="manuscript"] #brand .brand-icon,
+:root[data-theme="manuscript"] #brand .brand-title,
+:root[data-theme="notebook"] #brand .brand-icon,
+:root[data-theme="notebook"] #brand .brand-title {
+  filter: none;
 }
 #brand-stats { color: var(--muted); font-size: 13px; font-family: Consolas, monospace; }
 
