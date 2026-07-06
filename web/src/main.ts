@@ -4131,10 +4131,7 @@ async function boot() {
         ? readerWNat || rightPanelW
         : rightPanelW;
     const centerGap = vw - natLeft - natRight;
-    // Rail triggers as soon as the menu+search row can't fit between the panels
-    // (full row width + margin) — earlier and symmetric, so panels can't push
-    // far into the chrome before it escapes to the rail.
-    const rail = centerGap < groupW + searchWrapW + GAP + 2 * PAD;
+    const rail = centerGap < Math.max(groupW, searchWrapW) + 2 * PAD;
     // Rail offset: a docked right panel shrinks by the rail width (CSS subtracts
     // --rail-w from --dock-w), and the corner buttons clear panel + rail.
     const railW = rail ? 56 : 0;
@@ -4142,11 +4139,9 @@ async function boot() {
     root.style.setProperty("--btn-right-inset", `${rightPanelW + railW}px`);
     // Search slides with the right panel's left edge (--right-inset).
     topbar.style.setProperty("--right-inset", `${rightPanelW}px`);
-    // Menu jumps between three columns by left-panel size (left = default). The
-    // center→right jump fires when the panel reaches the centered menu, not at
-    // a fixed vw/2, so the menu escapes earlier.
+    // Menu jumps between three columns by left-panel size (left = default).
     let menuCol: "left" | "center" | "right" = "left";
-    if (leftPanelW > vw / 2 - groupW / 2 - PAD) menuCol = "right";
+    if (leftPanelW > vw / 2) menuCol = "right";
     else if (leftPanelW > 0) menuCol = "center";
     // Search collides with the menu (in its column) → wraps to row 2, aligned
     // under the menu's column.
