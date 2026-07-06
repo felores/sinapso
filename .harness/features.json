@@ -1,7 +1,7 @@
 {
   "project": "solaris-optional-integrations",
   "created": "2026-07-02T04:37:20Z",
-  "updated": "2026-07-05T22:40:38Z",
+  "updated": "2026-07-06T14:22:50Z",
   "features": [
     {
       "id": "F001",
@@ -1154,6 +1154,208 @@
       "implemented_at": "2026-07-05T22:40:38Z",
       "verified_by": "harness-progress verify (npm run typecheck && npm test && npm run build, exit 0)",
       "verified_at": "2026-07-05T22:40:38Z"
+    },
+    {
+      "id": "F043",
+      "priority": 43,
+      "category": "Admin Foundation",
+      "behavior": "Solaris config persists vault-scoped Admin state: activeVaultPath, per-vault wiki configs, per-wiki enabled/label/path/contractFiles/confidence/rawDestination, and editable prompt overrides. New detected wikis default to enabled:true and an inferred rawDestination, falling back to '../raw/'. Config merge stays sanitized, malformed wiki entries are ignored, prompt reset restores built-in defaults, secrets remain hidden from status payloads, and ~/.solaris/config.json keeps 0600 permissions.",
+      "verification": {
+        "command": "npm test -- server/integrations/config.test.ts && npm run typecheck",
+        "expected": "config tests pass for defaults, vault-scoped wiki config persistence, per-wiki rawDestination persistence, malformed entry sanitization, prompt reset fallback, hidden secrets, and 0600 permissions; typecheck clean"
+      },
+      "state": "passing",
+      "depends_on": [],
+      "files_touched": [
+        "server/integrations/config.ts",
+        "server/integrations/config.test.ts",
+        "server/app.ts"
+      ],
+      "confidence": "autonomous",
+      "context_note": "Follow config.ts merge() and existing /api/integrations shape. Keep config global but vault-scoped by path; never expose key material. New WikiConfig rawDestination is inferred by discovery and can be blank or ../research/ after confinement.",
+      "spec_ref": "docs/plans/2026-07-05-007-feat-vault-admin-wiki-aware-ingest-plan.md#u1-persist-vault-wiki-and-prompt-config",
+      "evidence": "npm test -- server/integrations/config.test.ts: 9/9 pass; npm run typecheck: clean. Config now persists vault-scoped wikis, rawDestination defaults/overrides, prompt overrides/resets, and exposes non-secret admin config in /api/integrations responses.",
+      "implemented_by": "opencode-gpt-5.5",
+      "implemented_at": "2026-07-05T23:15:00Z",
+      "verified_by": "harness-progress verify (npm test -- server/integrations/config.test.ts && npm run typecheck, exit 0)",
+      "verified_at": "2026-07-05T23:15:00Z"
+    },
+    {
+      "id": "F044",
+      "priority": 44,
+      "category": "Wiki Discovery",
+      "behavior": "A wiki discovery service scans the active vault for directories named exactly 'wiki', respecting graph excludes, and returns candidates selected by default. For each wiki it detects likely contract files AGENTS.md, CLAUDE.md, index.md, and README.md; assigns confidence high for AGENTS/CLAUDE, medium for index/README, low for folder-only; merges discoveries with saved manual edits without losing disabled state or custom rawDestination.",
+      "verification": {
+        "command": "npm test -- server/integrations/wiki.test.ts && npm run typecheck",
+        "expected": "wiki tests pass for root wiki, nested wikis, excluded directories skipped, contract-file confidence levels, selected-by-default discoveries, index-only wiki support, and saved disabled/rawDestination values surviving rediscovery; typecheck clean"
+      },
+      "state": "passing",
+      "depends_on": [
+        "F043"
+      ],
+      "files_touched": [
+        "server/integrations/wiki.ts",
+        "server/integrations/wiki.test.ts",
+        "server/app.ts"
+      ],
+      "confidence": "autonomous",
+      "context_note": "Discovery signal is folder basename wiki, not AGENTS.md. Use write.ts-style confinement. Default each new discovery to enabled:true + inferred rawDestination: raw/, ../raw/, research/, ../research/, docs/, ../docs/, then ../raw/ fallback.",
+      "spec_ref": "docs/plans/2026-07-05-007-feat-vault-admin-wiki-aware-ingest-plan.md#u2-add-wiki-discovery-service",
+      "evidence": "npm test -- server/integrations/wiki.test.ts: 20/20 pass; npm run typecheck: clean. Reviewer patch added realpath guard so symlinked directories inside the vault cannot make discovery traverse outside the vault. Follow-up corrected rawDestination inference order to raw/, ../raw/, research/, ../research/, docs/, ../docs/, then ../raw/ fallback, and replaces stale legacy raw/ defaults when rediscovery finds a better location.",
+      "implemented_by": "opencode-glm-5.2-worker + opencode-gpt-5.5-reviewer",
+      "implemented_at": "2026-07-05T23:37:00Z",
+      "verified_by": "harness-progress verify (npm test -- server/integrations/wiki.test.ts && npm run typecheck, exit 0)",
+      "verified_at": "2026-07-05T23:37:00Z"
+    },
+    {
+      "id": "F045",
+      "priority": 45,
+      "category": "Admin UI",
+      "behavior": "File menu gets Admin... as its first item. Admin opens in the existing centered modal with Vault, Wikis, and Prompts sections. Wiki rows show selected-by-default checkboxes, editable label, path, confidence, contract badges, and an inferred raw folder input. Users can disable detected wikis, rename labels, add manual wiki paths, change rawDestination to values like ../raw/ or ../research/, and reset prompt overrides to defaults.",
+      "verification": {
+        "command": "npm run typecheck && npm run build",
+        "expected": "typecheck and production build pass. Manual npm run dev checklist: Admin first in File menu, modal centered, multi-wiki checklist all checked by default, index-only wiki visible, raw folder edits persist, prompt reset restores default"
+      },
+      "state": "passing",
+      "depends_on": [
+        "F043",
+        "F044"
+      ],
+      "files_touched": [
+        "web/index.html",
+        "web/src/main.ts",
+        "web/src/style.css",
+        "web/src/i18n.ts"
+      ],
+      "confidence": "needs-review",
+      "context_note": "Frontend is imperative single-file. Reuse showModal(), postConfig(), menu close behavior, and current modal styling. Menubar click-outside closes only outside .menu; preserve dropdown interaction. No new router/framework.",
+      "spec_ref": "docs/plans/2026-07-05-007-feat-vault-admin-wiki-aware-ingest-plan.md#u3-admin-modal-ui",
+      "evidence": "npm run typecheck && npm run build: clean. Reviewer patches fixed manual wiki rows so a typed path is editable/persisted instead of saving an em dash placeholder, escaped vault/contract/path/label/raw prompt HTML, and avoided persisting built-in prompt text as overrides when Save is pressed unchanged. Follow-up narrowed the Admin modal, made wiki rows a compact two-column/two-row layout (path + raw folder, then confidence + contracts), and changed Prompts to a two-column list/editor layout. Manual npm run dev checklist still deferred for visual polish.",
+      "implemented_by": "opencode-glm-5.2-worker + opencode-gpt-5.5-reviewer",
+      "implemented_at": "2026-07-06T03:53:55Z",
+      "verified_by": "harness-progress verify (npm run typecheck && npm run build, exit 0)",
+      "verified_at": "2026-07-06T03:53:55Z"
+    },
+    {
+      "id": "F046",
+      "priority": 46,
+      "category": "Vault Admin",
+      "behavior": "Admin can safely switch the active vault. Browser/CLI mode accepts a typed local directory path; Electron mode can use a native directory dialog through a createApp integration callback. Switching is token-guarded and local-origin guarded, rejects missing paths and files, scans the directory into the current graph path, calls reload(), persists activeVaultPath, invalidates semantic/qmd caches, returns the new graph for hot-swap, and leaves the current vault unchanged if browse is unavailable or cancelled.",
+      "verification": {
+        "command": "npm test -- server/app.test.ts && npm run typecheck",
+        "expected": "app tests pass for tokenless switch 403, missing path rejected, file path rejected, valid directory rescans and updates graph meta, browse unavailable without Electron callback, cancelled callback unchanged; typecheck clean"
+      },
+      "state": "passing",
+      "depends_on": [
+        "F043"
+      ],
+      "files_touched": [
+        "server/app.ts",
+        "desktop/main.ts",
+        "server/app.test.ts",
+        "web/src/main.ts"
+      ],
+      "confidence": "needs-review",
+      "context_note": "Use existing desktop pickAndScanVault() and server /api/rescan patterns. Browser cannot truly browse server-local folders, so typed path is the web fallback. Keep Host/Origin + x-solaris-token gates.",
+      "spec_ref": "docs/plans/2026-07-05-007-feat-vault-admin-wiki-aware-ingest-plan.md#u4-safe-vault-switching-and-desktop-browse",
+      "evidence": "npm test -- server/app.test.ts: 22/22 pass; npm run typecheck clean; npm run build clean. Added token-guarded POST /api/vault for typed path and Electron browse callback, validates directory paths before scanning, hot-swaps graph via existing reload/applyGraphUpdate path, persists activeVaultPath, clears qmd/semantic/search caches on reload, and leaves current vault unchanged for unavailable/cancelled browse.",
+      "implemented_by": "opencode-gpt-5.5",
+      "implemented_at": "2026-07-06T04:02:43Z",
+      "verified_by": "harness-progress verify (npm test -- server/app.test.ts && npm run typecheck && npm run build, exit 0)",
+      "verified_at": "2026-07-06T04:02:43Z"
+    },
+    {
+      "id": "F047",
+      "priority": 47,
+      "category": "Ingest",
+      "behavior": "Ingest routes path, URL, and browser-upload imports to either Inbox / capture only or a selected wiki. Exactly one enabled wiki is selected implicitly; multiple enabled wikis show a compact target selector. The selected wiki's rawDestination resolves relative to the wiki path, inferred from existing raw/research/docs folders and allowing confined custom values like ../research/. Existing capture-only behavior remains available. Upload ingest passes the selected destination through ingestBytes(), so uploads no longer silently fall back to inbox/.",
+      "verification": {
+        "command": "npm test -- server/integrations/ingest.test.ts && npm run typecheck && npm run build",
+        "expected": "ingest tests pass for path/URL destination, upload destination, implicit single wiki, actionable multi-wiki no-selection error, capture-only writeDestination, invalid wiki id rejection, inferred rawDestination resolution, and custom ../research/ confinement; typecheck and build clean"
+      },
+      "state": "passing",
+      "depends_on": [
+        "F043",
+        "F044",
+        "F045"
+      ],
+      "files_touched": [
+        "server/integrations/ingest.ts",
+        "server/integrations/ingest.test.ts",
+        "server/app.ts",
+        "web/src/main.ts",
+        "web/index.html"
+      ],
+      "confidence": "needs-review",
+      "context_note": "Existing bug: /api/ingest-upload loads cfg but does not pass cfg.writeDestination to ingestBytes(). Fix while adding wiki target. Keep capture-only path simple; don't synthesize wiki pages in this feature.",
+      "spec_ref": "docs/plans/2026-07-05-007-feat-vault-admin-wiki-aware-ingest-plan.md#u5-wiki-target-selection-in-ingest",
+      "evidence": "npm test -- server/integrations/ingest.test.ts: 16/16 pass; npm run typecheck clean; npm run build clean. Ingest destination resolver now supports capture-only, implicit single enabled wiki, selected wiki id/path, custom rawDestination including ../research/ under vault confinement, actionable multi-wiki no-target errors, and invalid wiki id rejection. Upload ingest now passes destination through ingestBytes instead of falling back to inbox. UI shows a compact Ingest target selector fed by /api/wikis and sends target data for both path/URL ingest and uploads.",
+      "implemented_by": "opencode-gpt-5.5",
+      "implemented_at": "2026-07-06T04:14:35Z",
+      "verified_by": "harness-progress verify (npm test -- server/integrations/ingest.test.ts && npm run typecheck && npm run build, exit 0)",
+      "verified_at": "2026-07-06T04:14:35Z"
+    },
+    {
+      "id": "F048",
+      "priority": 48,
+      "category": "Wiki Ingest",
+      "behavior": "Contract-aware wiki ingest converts imported content into user-approved create/edit proposals for the selected wiki. It optionally saves a raw copy to the wiki's configured rawDestination, reads available contract files (AGENTS.md, CLAUDE.md, index.md, README.md), calls the configured OpenRouter prompt for structured JSON proposals, validates every proposed path under the vault and selected wiki or raw destination, previews create content and edit diffs in the research panel, writes approved proposals only through write.ts, rejects without writing, rescans, and opens the first result.",
+      "verification": {
+        "command": "npm test -- server/integrations/wiki-ingest.test.ts server/integrations/write.test.ts && npm run typecheck && npm run build",
+        "expected": "wiki-ingest/write tests pass for missing OpenRouter key clear setup error, inferred raw copy, custom raw destination copy, contract-file inclusion/omission, prompt override/default reset, previewed create approval via write.ts, previewed edit reject with no write/changelog, path outside selected wiki rejected, and path outside vault rejected; typecheck and build clean"
+      },
+      "state": "passing",
+      "depends_on": [
+        "F043",
+        "F044",
+        "F047"
+      ],
+      "files_touched": [
+        "server/integrations/wiki-ingest.ts",
+        "server/integrations/wiki-ingest.test.ts",
+        "server/app.ts",
+        "web/src/main.ts",
+        "web/src/style.css"
+      ],
+      "confidence": "needs-review",
+      "context_note": "Security-sensitive. This is proposal-based, not autonomous wiki rewrite. Reuse openrouter.ts patterns and write.ts confinement; never add a second writer. Cap contract/source text before LLM call and require structured JSON only.",
+      "spec_ref": "docs/plans/2026-07-05-007-feat-vault-admin-wiki-aware-ingest-plan.md#u6-contract-aware-wiki-ingest-proposals",
+      "evidence": "npm test -- server/integrations/wiki-ingest.test.ts server/integrations/write.test.ts: 29/29 pass; npm run typecheck clean; npm run build clean with existing Vite chunk-size warning only. Added proposal endpoints for path/URL and uploads, scoped apply endpoint through write.ts, raw-copy proposals for inferred/custom rawDestination values including ../raw/ and ../research/, contract/prompt inclusion in OpenRouter call, path validation under selected wiki/raw destination, and frontend approve/reject preview in the research panel. Reject is no-op, so it writes nothing and journals nothing.",
+      "implemented_by": "opencode-gpt-5.5",
+      "implemented_at": "2026-07-06T08:55:07Z",
+      "verified_by": "harness-progress verify (npm test -- server/integrations/wiki-ingest.test.ts server/integrations/write.test.ts && npm run typecheck && npm run build, exit 0)",
+      "verified_at": "2026-07-06T08:55:07Z"
+    },
+    {
+      "id": "F049",
+      "priority": 49,
+      "category": "Docs",
+      "behavior": "README.md and CLAUDE.md document the Admin flow, root wiki default, multi-wiki selected-by-default checklist, contract file candidates (AGENTS.md, CLAUDE.md, index.md, README.md), per-wiki raw folder inference with raw/research/docs and ../raw/ fallback, prompt overrides, desktop-only native browse, browser typed-path fallback, and approval-based write model. Trust wording remains precise: scanning and capture are local; LLM synthesis uses configured/consented providers.",
+      "verification": {
+        "command": "npm run typecheck",
+        "expected": "typecheck unaffected. Manual doc review confirms README.md and CLAUDE.md match shipped Admin/wiki-ingest behavior and do not overpromise no-egress for LLM synthesis"
+      },
+      "state": "passing",
+      "depends_on": [
+        "F043",
+        "F044",
+        "F045",
+        "F046",
+        "F047",
+        "F048"
+      ],
+      "files_touched": [
+        "README.md",
+        "CLAUDE.md"
+      ],
+      "confidence": "needs-review",
+      "context_note": "Update trust-model language, not just feature tour. Keep local-first promise scoped like current CLAUDE.md: core uploads nothing; optional LLM/Web features require stored key/consent.",
+      "spec_ref": "docs/plans/2026-07-05-007-feat-vault-admin-wiki-aware-ingest-plan.md#u7-documentation-and-release-notes",
+      "evidence": "npm run typecheck clean. README.md now documents File -> Admin, typed/Electron vault switching, wiki discovery by folder basename, selected-by-default multi-wiki checklist, contract candidates, per-wiki rawDestination inference/overrides, prompt overrides, capture-only ingest, and approval-based wiki ingest. CLAUDE.md now documents config/wiki/wiki-ingest modules, OpenRouter egress scope, Admin/wiki config gotchas, rawDestination inference order, and the single write path for capture-only ingest, wiki proposal approval, and orphan links.",
+      "implemented_by": "opencode-gpt-5.5",
+      "implemented_at": "2026-07-06T08:58:20Z",
+      "verified_by": "harness-progress verify (npm run typecheck, exit 0)",
+      "verified_at": "2026-07-06T08:58:20Z"
     }
   ]
 }

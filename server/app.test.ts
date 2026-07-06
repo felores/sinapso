@@ -1,9 +1,10 @@
 import { describe, it, expect, afterAll } from "vitest";
 import request from "supertest";
 import { createApp } from "./app";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { scanVault } from "../scanner/scan";
 
 // Throwaway vault with one real note. The graph.json points /api/note's
 // vaultRoot here so the path-traversal guard can be exercised end-to-end.
@@ -169,5 +170,115 @@ describe("server: /api/tree folder structure", () => {
     expect(res.body.notes.map((n: { id: string }) => n.id)).toEqual(
       expect.arrayContaining(["saas/a.md", "saas/b.md"]),
     );
+  });
+});
+
+function switchFixture(pickVault?: () => Promise<string | null>) {
+  const root = mkdtempSync(join(tmpdir(), "solaris-switch-"));
+  const data = join(root, "data");
+  const vaultA = join(root, "vault-a");
+  const vaultB = join(root, "vault-b");
+  mkdirSync(data);
+  mkdirSync(vaultA);
+  mkdirSync(vaultB);
+  writeFileSync(join(vaultA, "a.md"), "# A\n");
+  writeFileSync(join(vaultB, "b.md"), "# B\n");
+  const graph = join(data, "graph.json");
+  scanVault({ vault: vaultA, out: graph });
+  const server = createApp(graph, undefined, {
+    configPath: join(root, "config.json"),
+    pickVault,
+  });
+  return { root, vaultA, vaultB, server };
+}
+
+async function sessionToken(app: ReturnType<typeof createApp>["app"]) {
+  return (await request(app).get("/api/session")).body.token as string;
+}
+
+describe("server: /api/vault switch", () => {
+  it("rejects switching without a session token", async () => {
+    const f = switchFixture();
+    try {
+      const res = await request(f.server.app)
+        .post("/api/vault")
+        .send({ path: f.vaultB });
+      expect(res.status).toBe(403);
+      expect(f.server.meta().vaultPath).toBe(f.vaultA);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects missing paths and files", async () => {
+    const f = switchFixture();
+    try {
+      const token = await sessionToken(f.server.app);
+      const missing = await request(f.server.app)
+        .post("/api/vault")
+        .set("x-solaris-token", token)
+        .send({ path: join(f.root, "missing") });
+      expect(missing.status).toBe(404);
+
+      const file = await request(f.server.app)
+        .post("/api/vault")
+        .set("x-solaris-token", token)
+        .send({ path: join(f.vaultA, "a.md") });
+      expect(file.status).toBe(400);
+      expect(f.server.meta().vaultPath).toBe(f.vaultA);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("rescans a valid directory and updates the active graph", async () => {
+    const f = switchFixture();
+    try {
+      const token = await sessionToken(f.server.app);
+      const res = await request(f.server.app)
+        .post("/api/vault")
+        .set("x-solaris-token", token)
+        .send({ path: f.vaultB });
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.graph.meta.vaultPath).toBe(f.vaultB);
+      expect(res.body.graph.nodes.map((n: { id: string }) => n.id)).toEqual([
+        "b.md",
+      ]);
+      expect(f.server.meta().vaultPath).toBe(f.vaultB);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports browse unavailable without an Electron picker", async () => {
+    const f = switchFixture();
+    try {
+      const token = await sessionToken(f.server.app);
+      const res = await request(f.server.app)
+        .post("/api/vault")
+        .set("x-solaris-token", token)
+        .send({ browse: true });
+      expect(res.status).toBe(501);
+      expect(f.server.meta().vaultPath).toBe(f.vaultA);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves the current vault unchanged when browse is cancelled", async () => {
+    const f = switchFixture(async () => null);
+    try {
+      const token = await sessionToken(f.server.app);
+      const res = await request(f.server.app)
+        .post("/api/vault")
+        .set("x-solaris-token", token)
+        .send({ browse: true });
+      expect(res.status).toBe(200);
+      expect(res.body.cancelled).toBe(true);
+      expect(f.server.meta().vaultPath).toBe(f.vaultA);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
   });
 });

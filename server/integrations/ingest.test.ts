@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../app";
+import { updateConfig } from "./config";
 import { TOKEN_HEADER } from "./security";
 import { ingestBytes, ingestDocument } from "./ingest";
 import { readChangeLog } from "./write";
@@ -28,6 +29,7 @@ afterAll(() => rmSync(ROOT, { recursive: true, force: true }));
 const MD_BIN = "/fake/bin/markitdown";
 const ok = (stdout: string): RunResult => ({ ok: true, stdout, stderr: "" });
 const fail = (stderr: string): RunResult => ({ ok: false, stdout: "", stderr });
+let appSeq = 0;
 
 function recorder(behavior: (cmd: string, args: string[]) => RunResult) {
   const calls: string[][] = [];
@@ -129,12 +131,17 @@ describe("POST /api/ingest", () => {
     }),
   );
 
-  function makeApp(markitdownInstalled: boolean) {
+  function makeApp(
+    markitdownInstalled: boolean,
+    patch?: Parameters<typeof updateConfig>[0],
+  ) {
     const { run } = recorder((cmd) =>
       cmd === MD_BIN ? ok("# Converted\n\nbody") : fail(""),
     );
+    const configPath = join(DATA, `config-${markitdownInstalled}-${appSeq++}.json`);
+    if (patch) updateConfig(patch, configPath);
     return createApp(graphPath, undefined, {
-      configPath: join(DATA, `config-${markitdownInstalled}.json`),
+      configPath,
       detectDeps: {
         home: "/h",
         env: { PATH: "/fake/bin" },
@@ -143,6 +150,17 @@ describe("POST /api/ingest", () => {
       },
     }).app;
   }
+
+  const wiki = (id: string, path = id, rawDestination: string | null = "raw/") => ({
+    id,
+    label: id,
+    path,
+    enabled: true,
+    contractFiles: [],
+    rawDestination,
+    discovered: true,
+    confidence: "low" as const,
+  });
 
   it("requires the session token", async () => {
     const app = makeApp(true);
@@ -188,5 +206,92 @@ describe("POST /api/ingest", () => {
     expect(readFileSync(join(VAULT, res.body.id), "utf-8")).toContain(
       "source: notes.docx",
     );
+  });
+
+  it("POST /api/ingest-upload honors configured capture destination", async () => {
+    const app = makeApp(true, { writeDestination: "captures" });
+    const t = (await request(app).get("/api/session")).body.token;
+    const res = await request(app)
+      .post("/api/ingest-upload?name=notes.docx&captureOnly=1")
+      .set(TOKEN_HEADER, t)
+      .set("content-type", "application/octet-stream")
+      .send("raw bytes here");
+    expect(res.status).toBe(200);
+    expect(res.body.id.startsWith("captures/")).toBe(true);
+  });
+
+  it("implicitly routes to one enabled wiki raw folder", async () => {
+    const app = makeApp(true, {
+      vaults: { [VAULT]: { path: VAULT, wikis: [wiki("wiki")] } },
+    });
+    const t = (await request(app).get("/api/session")).body.token;
+    const res = await request(app)
+      .post("/api/ingest")
+      .set(TOKEN_HEADER, t)
+      .send({ source: DOC });
+    expect(res.status).toBe(200);
+    expect(res.body.id.startsWith("wiki/raw/")).toBe(true);
+    expect(existsSync(join(VAULT, res.body.id))).toBe(true);
+  });
+
+  it("requires a target when multiple wikis are enabled", async () => {
+    const app = makeApp(true, {
+      vaults: {
+        [VAULT]: { path: VAULT, wikis: [wiki("wiki"), wiki("other", "other/wiki")] },
+      },
+    });
+    const t = (await request(app).get("/api/session")).body.token;
+    const res = await request(app)
+      .post("/api/ingest")
+      .set(TOKEN_HEADER, t)
+      .send({ source: DOC });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("choose a wiki target");
+  });
+
+  it("routes upload to a selected wiki with custom ../research destination", async () => {
+    const app = makeApp(true, {
+      vaults: {
+        [VAULT]: {
+          path: VAULT,
+          wikis: [wiki("wiki"), wiki("other", "other/wiki", "../research/")],
+        },
+      },
+    });
+    const t = (await request(app).get("/api/session")).body.token;
+    const res = await request(app)
+      .post("/api/ingest-upload?name=notes.docx&wikiId=other")
+      .set(TOKEN_HEADER, t)
+      .set("content-type", "application/octet-stream")
+      .send("raw bytes here");
+    expect(res.status).toBe(200);
+    expect(res.body.id.startsWith("other/research/")).toBe(true);
+  });
+
+  it("keeps capture-only available when wikis exist", async () => {
+    const app = makeApp(true, {
+      writeDestination: "captures",
+      vaults: { [VAULT]: { path: VAULT, wikis: [wiki("wiki")] } },
+    });
+    const t = (await request(app).get("/api/session")).body.token;
+    const res = await request(app)
+      .post("/api/ingest")
+      .set(TOKEN_HEADER, t)
+      .send({ source: DOC, captureOnly: true });
+    expect(res.status).toBe(200);
+    expect(res.body.id.startsWith("captures/")).toBe(true);
+  });
+
+  it("rejects an invalid wiki id", async () => {
+    const app = makeApp(true, {
+      vaults: { [VAULT]: { path: VAULT, wikis: [wiki("wiki")] } },
+    });
+    const t = (await request(app).get("/api/session")).body.token;
+    const res = await request(app)
+      .post("/api/ingest")
+      .set(TOKEN_HEADER, t)
+      .send({ source: DOC, wikiId: "missing" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("invalid wiki target");
   });
 });

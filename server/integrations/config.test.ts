@@ -8,7 +8,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defaultConfig, loadConfig, updateConfig } from "./config";
+import {
+  defaultConfig,
+  defaultPrompts,
+  effectivePrompts,
+  loadConfig,
+  updateConfig,
+} from "./config";
 
 const DIR = mkdtempSync(join(tmpdir(), "solaris-config-"));
 afterAll(() => rmSync(DIR, { recursive: true, force: true }));
@@ -58,6 +64,82 @@ describe("integrations config", () => {
     expect(cfg.consents.web).toBe(false);
     expect((cfg as never as Record<string, unknown>).bogus).toBeUndefined();
     expect(readFileSync(p, "utf-8")).not.toContain("bogus");
+  });
+
+  it("persists vault-scoped wiki config with per-wiki raw destinations", () => {
+    const p = join(DIR, "vaults.json");
+    const cfg = updateConfig(
+      {
+        activeVaultPath: "/vault/a",
+        vaults: {
+          "/vault/a": {
+            path: "/vault/a",
+            wikis: [
+              {
+                id: "root",
+                label: "Root Wiki",
+                path: "wiki",
+                enabled: true,
+                contractFiles: ["AGENTS.md", "index.md"],
+                rawDestination: "../research/",
+                discovered: true,
+                confidence: "high",
+              },
+              {
+                id: "manual",
+                path: "saas/project/wiki",
+              },
+            ],
+          },
+        },
+      },
+      p,
+    );
+    expect(cfg.activeVaultPath).toBe("/vault/a");
+    expect(cfg.vaults["/vault/a"].wikis[0]).toMatchObject({
+      rawDestination: "../research/",
+      confidence: "high",
+    });
+      expect(cfg.vaults["/vault/a"].wikis[1]).toMatchObject({
+        label: "saas/project/wiki",
+        enabled: true,
+        rawDestination: "../raw/",
+        confidence: "low",
+      });
+  });
+
+  it("ignores malformed wiki config entries", () => {
+    const p = join(DIR, "bad-wikis.json");
+    const cfg = updateConfig(
+      {
+        vaults: {
+          "/vault/a": {
+            path: "/vault/a",
+            wikis: [
+              { id: "ok", path: "wiki" },
+              { id: "missing-path" },
+              { path: "missing-id" },
+              "bad",
+            ],
+          },
+        },
+      } as never,
+      p,
+    );
+    expect(cfg.vaults["/vault/a"].wikis).toHaveLength(1);
+    expect(cfg.vaults["/vault/a"].wikis[0].id).toBe("ok");
+  });
+
+  it("stores prompt overrides and resets to defaults with null", () => {
+    const p = join(DIR, "prompts.json");
+    let cfg = updateConfig(
+      { prompts: { wikiIngest: "Custom wiki prompt" } },
+      p,
+    );
+    expect(effectivePrompts(cfg).wikiIngest).toBe("Custom wiki prompt");
+    cfg = updateConfig({ prompts: { wikiIngest: null } }, p);
+    expect(cfg.prompts.wikiIngest).toBeNull();
+    expect(effectivePrompts(cfg).wikiIngest).toBe(defaultPrompts().wikiIngest);
   });
 
   it("yields defaults plus a warning on a corrupt file, never a crash", () => {

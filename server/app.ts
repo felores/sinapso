@@ -23,6 +23,8 @@ import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 import { scanVault } from "../scanner/scan.js";
 import {
+  defaultPrompts,
+  effectivePrompts,
   loadConfig,
   updateConfig,
   defaultConfigPath,
@@ -56,10 +58,13 @@ import {
   type ExaAdapterOptions,
 } from "./integrations/exa.js";
 import {
+  convertBytes,
+  convertDocument,
   ingestBytes,
   ingestDocument,
   ingestText,
   isYoutubeUrl,
+  resolveIngestDestination,
 } from "./integrations/ingest.js";
 import {
   clearEntries,
@@ -105,6 +110,12 @@ import {
   WriteError,
 } from "./integrations/write.js";
 import { attachVoiceRelay } from "./integrations/voice.js";
+import { discoverAndMerge } from "./integrations/wiki.js";
+import {
+  applyWikiIngestOperations,
+  buildWikiIngestProposal,
+  resolveWikiTarget,
+} from "./integrations/wiki-ingest.js";
 
 interface GraphFile {
   meta: {
@@ -159,6 +170,8 @@ export interface IntegrationsOptions {
   openrouter?: OpenRouterOptions;
   /** Inject a fake stdio child for the warm qmd client (tests). */
   qmdMcp?: Partial<QmdMcpDeps>;
+  /** Electron-only native vault picker. Browser/CLI mode leaves this undefined. */
+  pickVault?: () => Promise<string | null>;
 }
 
 export function createApp(
@@ -212,6 +225,13 @@ export function createApp(
         consents: cfg.consents,
         defaultModel: cfg.defaultModel,
         writeDestination: cfg.writeDestination,
+        admin: {
+          activeVaultPath: cfg.activeVaultPath,
+          vaults: cfg.vaults,
+          promptDefaults: defaultPrompts(),
+          prompts: effectivePrompts(cfg),
+          promptOverrides: cfg.prompts,
+        },
         voice: {
           provider: cfg.voice.provider,
           voice: cfg.voice.voice,
@@ -238,11 +258,38 @@ export function createApp(
         consents: cfg.consents,
         defaultModel: cfg.defaultModel,
         writeDestination: cfg.writeDestination,
+        activeVaultPath: cfg.activeVaultPath,
+        vaults: cfg.vaults,
+        promptDefaults: defaultPrompts(),
+        prompts: effectivePrompts(cfg),
+        promptOverrides: cfg.prompts,
         exaConfigured: !!cfg.exaKey,
       });
     } catch (e) {
       console.error("Config update failed:", e);
       res.status(500).json({ error: "config update failed" });
+    }
+  });
+
+  // GET /api/wikis (F044): discover `wiki/` folders in the active vault,
+  // respect graph excludes, detect contract files (AGENTS.md/CLAUDE.md/
+  // index.md/README.md), and merge with saved manual wikis so user-disabled
+  // state and custom rawDestination survive rediscovery. Read-only.
+  app.get("/api/wikis", (req, res) => {
+    try {
+      const vaultPath = graph.meta.vaultPath;
+      if (!vaultPath || !existsSync(vaultPath)) {
+        res.status(503).json({ error: "vault root is missing or not reachable" });
+        return;
+      }
+      const excludes = graph.meta.excludes ?? [];
+      const cfg = loadConfig(configPath);
+      const saved = cfg.vaults[vaultPath]?.wikis ?? [];
+      const wikis = discoverAndMerge(vaultPath, excludes, saved);
+      res.json({ wikis });
+    } catch (e) {
+      console.error("Wiki discovery failed:", e);
+      res.status(500).json({ error: "wiki discovery failed" });
     }
   });
 
@@ -273,6 +320,19 @@ export function createApp(
 
   // Exa /contents fetcher, shared by /api/article and the YouTube ingest path.
   const fetchArticle = createArticleFetcher(integrations?.exa);
+  const ingestTargetConfig = (cfg: ReturnType<typeof loadConfig>) => {
+    const saved = cfg.vaults[vaultRoot]?.wikis ?? [];
+    return {
+      ...cfg,
+      vaults: {
+        ...cfg.vaults,
+        [vaultRoot]: {
+          path: vaultRoot,
+          wikis: discoverAndMerge(vaultRoot, graph.meta.excludes ?? [], saved),
+        },
+      },
+    };
+  };
 
   // POST /api/ingest: convert a document or URL to a Markdown note via
   // markitdown (F023). Reads may come from anywhere (importing is the
@@ -285,6 +345,10 @@ export function createApp(
         return;
       }
       const cfg = loadConfig(configPath);
+      const destination = resolveIngestDestination(vaultRoot, ingestTargetConfig(cfg), {
+        wikiId: b.wikiId,
+        captureOnly: b.captureOnly,
+      });
       // YouTube: markitdown only sees the SPA shell (no transcript), so fetch
       // via Exa /contents, which extracts the transcript. Egress → gated on web
       // consent + an Exa key, same as web research.
@@ -319,7 +383,7 @@ export function createApp(
             title: art.title,
             content: art.content,
             via: "exa-youtube",
-            destination: cfg.writeDestination,
+            destination,
           },
         );
         res.json({ ok: true, id: yr.id });
@@ -341,7 +405,7 @@ export function createApp(
         {
           source: b.source,
           title: typeof b.title === "string" ? b.title : undefined,
-          destination: cfg.writeDestination,
+          destination,
         },
       );
       res.json({ ok: true, id: r.id });
@@ -375,11 +439,16 @@ export function createApp(
         const name =
           typeof req.query.name === "string" ? req.query.name : "upload";
         const cfg = loadConfig(configPath);
+        const destination = resolveIngestDestination(vaultRoot, ingestTargetConfig(cfg), {
+          wikiId: req.query.wikiId,
+          captureOnly:
+            req.query.captureOnly === "1" || req.query.captureOnly === "true",
+        });
         const r = await ingestBytes(
           integrations?.detectDeps?.run ?? realRunner,
           toolCache.markitdown.path,
           { vaultRoot, dataDir: dirname(graphPath) },
-          { name, bytes: req.body },
+          { name, bytes: req.body, destination },
         );
         res.json({ ok: true, id: r.id });
       } catch (e) {
@@ -977,6 +1046,129 @@ export function createApp(
       res.status(500).json({ error: `${what} failed` });
     }
   };
+
+  async function markitdownBinOrFail(res: express.Response): Promise<string | null> {
+    if (!toolCache) toolCache = await detectAll(detectDeps);
+    if (!toolCache.markitdown.installed || !toolCache.markitdown.path) {
+      res.status(503).json({
+        error: "markitdown-missing",
+        message:
+          "markitdown is not installed — Tools → Integrations offers the install.",
+      });
+      return null;
+    }
+    return toolCache.markitdown.path;
+  }
+
+  async function wikiIngestProposal(
+    converted: Awaited<ReturnType<typeof convertDocument>>,
+    wikiId: unknown,
+  ) {
+    const cfg = loadConfig(configPath);
+    if (!cfg.openrouterKey)
+      throw new WriteError(400, "Add an OpenRouter key before wiki ingest");
+    const merged = ingestTargetConfig(cfg);
+    const wiki = resolveWikiTarget(vaultRoot, merged, { wikiId });
+    return buildWikiIngestProposal(
+      { vaultRoot },
+      cfg,
+      wiki,
+      converted,
+      (messages) =>
+        chatCompletion(
+          cfg.openrouterKey!,
+          cfg.defaultModel || DEFAULT_MODEL,
+          messages,
+          integrations?.openrouter,
+        ),
+    );
+  }
+
+  app.post(
+    "/api/wiki-ingest/propose",
+    guarded,
+    express.json({ limit: "5mb" }),
+    async (req, res) => {
+      try {
+        const b = (req.body ?? {}) as Record<string, unknown>;
+        if (b.captureOnly === true) {
+          res.status(400).json({ error: "capture-only uses /api/ingest" });
+          return;
+        }
+        if (typeof b.source !== "string" || !b.source.trim()) {
+          res.status(400).json({ error: "source (file path or URL) required" });
+          return;
+        }
+        const cfg = loadConfig(configPath);
+        if (!cfg.openrouterKey) {
+          res.status(400).json({ error: "Add an OpenRouter key before wiki ingest" });
+          return;
+        }
+        const bin = await markitdownBinOrFail(res);
+        if (!bin) return;
+        const converted = await convertDocument(
+          integrations?.detectDeps?.run ?? realRunner,
+          bin,
+          { source: b.source, title: typeof b.title === "string" ? b.title : undefined },
+        );
+        res.json(await wikiIngestProposal(converted, b.wikiId));
+      } catch (e) {
+        writeFail(res, e, "wiki ingest proposal");
+      }
+    },
+  );
+
+  app.post(
+    "/api/wiki-ingest/propose-upload",
+    guarded,
+    express.raw({ type: "*/*", limit: "50mb" }),
+    async (req, res) => {
+      try {
+        if (!Buffer.isBuffer(req.body) || !req.body.length) {
+          res.status(400).json({ error: "file body required" });
+          return;
+        }
+        const cfg = loadConfig(configPath);
+        if (!cfg.openrouterKey) {
+          res.status(400).json({ error: "Add an OpenRouter key before wiki ingest" });
+          return;
+        }
+        const bin = await markitdownBinOrFail(res);
+        if (!bin) return;
+        const name = typeof req.query.name === "string" ? req.query.name : "upload";
+        const converted = await convertBytes(
+          integrations?.detectDeps?.run ?? realRunner,
+          bin,
+          { name, bytes: req.body },
+        );
+        res.json(await wikiIngestProposal(converted, req.query.wikiId));
+      } catch (e) {
+        writeFail(res, e, "wiki ingest upload proposal");
+      }
+    },
+  );
+
+  app.post(
+    "/api/wiki-ingest/apply",
+    guarded,
+    express.json({ limit: "10mb" }),
+    (req, res) => {
+      try {
+        const b = (req.body ?? {}) as Record<string, unknown>;
+        const cfg = ingestTargetConfig(loadConfig(configPath));
+        const wiki = resolveWikiTarget(vaultRoot, cfg, { wikiId: b.wikiId });
+        const ids = applyWikiIngestOperations(
+          writeDeps(),
+          vaultRoot,
+          wiki,
+          b.operations,
+        );
+        res.json({ ok: true, ids });
+      } catch (e) {
+        writeFail(res, e, "wiki ingest apply");
+      }
+    },
+  );
 
   // POST /api/notes: create a note (save-as-note, approved agent creates).
   // Defaults to the configured destination (inbox/); never overwrites.
@@ -1626,8 +1818,23 @@ export function createApp(
     vaultRoot = graph.meta.vaultPath;
     index = null; // rebuilt lazily against the new scan
     contents.clear();
+    colCache = null;
+    maintIdxCache = null;
     relatedCache.clear(); // related notes may change with the graph (F015)
     vectorsHandle = null; // vectors reconcile against vaultRoot, rebuilt lazily
+    semanticBuild = null;
+  };
+
+  const scanAndReload = (vault: string, full = false) => {
+    const g = scanVault({
+      vault,
+      out: graphPath,
+      exclude: graph.meta.excludes ?? [],
+      full,
+    });
+    reload();
+    updateConfig({ activeVaultPath: g.meta.vaultPath }, configPath);
+    return g;
   };
 
   // POST /api/rescan: Trigger incremental rescan of the vault
@@ -1636,13 +1843,7 @@ export function createApp(
   // Query param ?full=true forces a cold scan (ignores cache)
   app.post("/api/rescan", (req, res) => {
     try {
-      const g = scanVault({
-        vault: graph.meta.vaultPath,
-        out: graphPath,
-        exclude: graph.meta.excludes ?? [],
-        full: req.query.full === "true",
-      });
-      reload();
+      const g = scanAndReload(graph.meta.vaultPath, req.query.full === "true");
       res.json({
         ok: true,
         notes: g.meta.notes,
@@ -1658,6 +1859,46 @@ export function createApp(
         error: "rescan failed",
         details: e instanceof Error ? e.message : String(e),
       });
+    }
+  });
+
+  app.post("/api/vault", guarded, express.json(), async (req, res) => {
+    try {
+      let target: unknown = req.body?.path;
+      if (req.body?.browse === true) {
+        if (!integrations?.pickVault) {
+          res.status(501).json({ error: "desktop browse unavailable" });
+          return;
+        }
+        target = await integrations.pickVault();
+        if (!target) {
+          res.json({ ok: false, cancelled: true });
+          return;
+        }
+      }
+
+      if (typeof target !== "string" || !target.trim()) {
+        res.status(400).json({ error: "vault path required" });
+        return;
+      }
+      const vault = resolve(target);
+      let st: ReturnType<typeof statSync>;
+      try {
+        st = statSync(vault);
+      } catch {
+        res.status(404).json({ error: "vault not found" });
+        return;
+      }
+      if (!st.isDirectory()) {
+        res.status(400).json({ error: "vault path must be a directory" });
+        return;
+      }
+
+      const g = scanAndReload(vault);
+      res.json({ ok: true, graph: g });
+    } catch (e) {
+      console.error("Vault switch failed:", e);
+      res.status(500).json({ error: "vault switch failed" });
     }
   });
 

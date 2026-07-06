@@ -26,6 +26,33 @@ export interface VoiceConfig {
   keys: { gemini: string | null; openai: string | null; xai: string | null };
 }
 
+export type PromptKey =
+  | "wikiIngest"
+  | "noteQuestions"
+  | "voiceAssistant"
+  | "webResearch";
+
+export type PromptOverrides = Record<PromptKey, string | null>;
+
+export interface WikiConfig {
+  id: string;
+  label: string;
+  /** Vault-relative path to the wiki folder. */
+  path: string;
+  enabled: boolean;
+  /** Wiki-relative contract candidates, e.g. AGENTS.md or index.md. */
+  contractFiles: string[];
+  /** Wiki-relative by default; ../research is allowed after runtime confinement. */
+  rawDestination: string | null;
+  discovered: boolean;
+  confidence: "high" | "medium" | "low";
+}
+
+export interface VaultConfig {
+  path: string;
+  wikis: WikiConfig[];
+}
+
 export interface SolarisConfig {
   exaKey: string | null;
   openrouterKey: string | null;
@@ -36,6 +63,10 @@ export interface SolarisConfig {
   /** Addon install markers (qmd/markitdown), managed by the installer. */
   addons: Record<string, string>;
   voice: VoiceConfig;
+  activeVaultPath: string | null;
+  vaults: Record<string, VaultConfig>;
+  /** User prompt overrides. Null means use the built-in default. */
+  prompts: PromptOverrides;
 }
 
 export interface ConfigPatch {
@@ -49,6 +80,36 @@ export interface ConfigPatch {
     provider?: string | null;
     voice?: string | null;
     keys?: Partial<VoiceConfig["keys"]>;
+  };
+  activeVaultPath?: string | null;
+  vaults?: Record<string, unknown>;
+  prompts?: Partial<PromptOverrides>;
+}
+
+const PROMPT_DEFAULTS: Record<PromptKey, string> = {
+  wikiIngest:
+    "Read the selected wiki contracts and turn the source into proposed Markdown creates/edits that preserve the wiki's conventions, links, index, and log.",
+  noteQuestions:
+    "Generate concise web-research questions that close knowledge gaps around the current note. Reply as JSON strings only.",
+  voiceAssistant:
+    "You are the Solaris voice assistant. Ground answers in the current view first, use vault tools for note questions, and ask before spending web credit.",
+  webResearch:
+    "Use web research only for user-requested external/current information. Return synthesized answers with sources and never auto-run spending searches while typing.",
+};
+
+export function defaultPrompts(): Record<PromptKey, string> {
+  return { ...PROMPT_DEFAULTS };
+}
+
+export function effectivePrompts(
+  cfg: Pick<SolarisConfig, "prompts">,
+): Record<PromptKey, string> {
+  const defaults = defaultPrompts();
+  return {
+    wikiIngest: cfg.prompts.wikiIngest ?? defaults.wikiIngest,
+    noteQuestions: cfg.prompts.noteQuestions ?? defaults.noteQuestions,
+    voiceAssistant: cfg.prompts.voiceAssistant ?? defaults.voiceAssistant,
+    webResearch: cfg.prompts.webResearch ?? defaults.webResearch,
   };
 }
 
@@ -65,6 +126,14 @@ export function defaultConfig(): SolarisConfig {
       voice: null,
       keys: { gemini: null, openai: null, xai: null },
     },
+    activeVaultPath: null,
+    vaults: {},
+    prompts: {
+      wikiIngest: null,
+      noteQuestions: null,
+      voiceAssistant: null,
+      webResearch: null,
+    },
   };
 }
 
@@ -79,6 +148,8 @@ function merge(base: SolarisConfig, patch: unknown): SolarisConfig {
     consents: { ...base.consents },
     addons: { ...base.addons },
     voice: { ...base.voice, keys: { ...base.voice.keys } },
+    vaults: { ...base.vaults },
+    prompts: { ...base.prompts },
   };
   if (typeof patch !== "object" || patch === null) return out;
   const p = patch as Record<string, unknown>;
@@ -111,7 +182,71 @@ function merge(base: SolarisConfig, patch: unknown): SolarisConfig {
       }
     }
   }
+  if (typeof p.activeVaultPath === "string" || p.activeVaultPath === null)
+    out.activeVaultPath = p.activeVaultPath;
+  if (typeof p.vaults === "object" && p.vaults !== null) {
+    for (const [k, v] of Object.entries(p.vaults)) {
+      const vault = sanitizeVault(k, v);
+      if (vault) out.vaults[vault.path] = vault;
+    }
+  }
+  if (typeof p.prompts === "object" && p.prompts !== null) {
+    const prompts = p.prompts as Record<string, unknown>;
+    for (const k of [
+      "wikiIngest",
+      "noteQuestions",
+      "voiceAssistant",
+      "webResearch",
+    ] as const) {
+      const v = prompts[k];
+      if (v === null) out.prompts[k] = null;
+      else if (typeof v === "string") out.prompts[k] = v.trim() ? v : null;
+    }
+  }
   return out;
+}
+
+function sanitizeVault(key: string, value: unknown): VaultConfig | null {
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as Record<string, unknown>;
+  const path = typeof v.path === "string" && v.path ? v.path : key;
+  if (!path) return null;
+  return {
+    path,
+    wikis: Array.isArray(v.wikis)
+      ? v.wikis
+          .map(sanitizeWiki)
+          .filter((w): w is WikiConfig => w !== null)
+      : [],
+  };
+}
+
+function sanitizeWiki(value: unknown): WikiConfig | null {
+  if (typeof value !== "object" || value === null) return null;
+  const w = value as Record<string, unknown>;
+  if (typeof w.id !== "string" || !w.id) return null;
+  if (typeof w.path !== "string" || !w.path) return null;
+  const confidence =
+    w.confidence === "high" || w.confidence === "medium" || w.confidence === "low"
+      ? w.confidence
+      : "low";
+  return {
+    id: w.id,
+    label: typeof w.label === "string" && w.label ? w.label : w.path,
+    path: w.path,
+    enabled: typeof w.enabled === "boolean" ? w.enabled : true,
+    contractFiles: Array.isArray(w.contractFiles)
+      ? w.contractFiles.filter((f): f is string => typeof f === "string" && !!f)
+      : [],
+    rawDestination:
+      typeof w.rawDestination === "string"
+        ? w.rawDestination
+        : w.rawDestination === null
+          ? null
+          : "../raw/",
+    discovered: typeof w.discovered === "boolean" ? w.discovered : true,
+    confidence,
+  };
 }
 
 /** Read config; a corrupt file yields defaults plus a logged warning, never a crash. */

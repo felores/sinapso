@@ -65,6 +65,7 @@ interface GLink {
 interface Graph {
   meta: {
     vaultName: string;
+    vaultPath: string;
     scannedAt: string;
     fingerprint: string;
     notes: number;
@@ -3015,6 +3016,16 @@ async function boot() {
     };
     consents: { web: boolean };
     defaultModel: string | null;
+    admin?: {
+      activeVaultPath: string | null;
+      vaults: Record<
+        string,
+        { path: string; wikis: AdminWikiConfig[] }
+      >;
+      promptDefaults: Record<string, string>;
+      prompts: Record<string, string>;
+      promptOverrides: Record<string, string | null>;
+    };
     voice?: {
       provider: string | null;
       voice: string | null;
@@ -3022,6 +3033,28 @@ async function boot() {
     };
   }
   const MODE_LIST = ["semantic", "web", "ingest"] as const;
+  interface AdminWikiConfig {
+    id: string;
+    label: string;
+    path: string;
+    enabled: boolean;
+    contractFiles: string[];
+    rawDestination: string | null;
+    discovered: boolean;
+    confidence: "high" | "medium" | "low";
+  }
+  const PROMPT_KEYS = [
+    "wikiIngest",
+    "noteQuestions",
+    "voiceAssistant",
+    "webResearch",
+  ] as const;
+  const PROMPT_LABELS: Record<(typeof PROMPT_KEYS)[number], string> = {
+    wikiIngest: "Wiki ingest",
+    noteQuestions: "Note questions",
+    voiceAssistant: "Voice assistant",
+    webResearch: "Web research",
+  };
   let integrations: IntegrationsStatus | null = null;
   let activeMode = localStorage.getItem("akasha-mode") as ModeName | null;
   let webScope: "deep" | "web" =
@@ -3074,10 +3107,49 @@ async function boot() {
     searchBox.classList.toggle("mode-active", !!activeMode);
     const ingest = activeMode === "ingest";
     ($("#ingest-browse") as HTMLElement).classList.toggle("hidden", !ingest);
+    if (ingest) void renderIngestTargets();
+    else ($("#ingest-target") as HTMLElement).classList.add("hidden");
     searchBox.classList.toggle("with-browse", ingest);
     const web = activeMode === "web";
     ($("#web-scope") as HTMLElement).classList.toggle("hidden", !web);
     searchBox.classList.toggle("with-scope", web);
+  }
+
+  let ingestTargetSeq = 0;
+  async function renderIngestTargets() {
+    const select = $("#ingest-target") as HTMLSelectElement;
+    const seq = ++ingestTargetSeq;
+    try {
+      const r = await fetch("/api/wikis");
+      if (!r.ok) throw new Error(String(r.status));
+      const { wikis } = (await r.json()) as { wikis: AdminWikiConfig[] };
+      if (seq !== ingestTargetSeq || activeMode !== "ingest") return;
+      const enabled = wikis.filter((w) => w.enabled);
+      select.innerHTML = "";
+      if (!enabled.length) {
+        select.classList.add("hidden");
+        return;
+      }
+      const add = (value: string, text: string) => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = text;
+        select.appendChild(option);
+      };
+      if (enabled.length > 1) add("", i18n.t("ingest.targetChoose"));
+      for (const w of enabled) add(w.id, w.label || w.path);
+      add("__capture", i18n.t("ingest.capture"));
+      select.classList.remove("hidden");
+    } catch {
+      select.classList.add("hidden");
+    }
+  }
+
+  function ingestTargetPayload(): { wikiId?: string; captureOnly?: boolean } {
+    const select = $("#ingest-target") as HTMLSelectElement;
+    if (select.classList.contains("hidden")) return {};
+    if (select.value === "__capture") return { captureOnly: true };
+    return select.value ? { wikiId: select.value } : {};
   }
 
   function setMode(m: ModeName | null) {
@@ -4989,6 +5061,88 @@ async function boot() {
     }
   }
 
+  interface WikiIngestOperation {
+    type: "create" | "edit";
+    path: string;
+    content: string;
+    title?: string;
+    raw?: boolean;
+  }
+  interface WikiIngestProposal {
+    wiki: { id: string; label: string; path: string };
+    source: string;
+    title: string;
+    operations: WikiIngestOperation[];
+  }
+
+  function wantsWikiProposal(target: { wikiId?: string; captureOnly?: boolean }) {
+    const select = $("#ingest-target") as HTMLSelectElement;
+    return !select.classList.contains("hidden") && !target.captureOnly;
+  }
+
+  function renderWikiProposal(body: HTMLElement, proposal: WikiIngestProposal) {
+    body.innerHTML = "";
+    const h = document.createElement("h2");
+    h.className = "research-query";
+    h.textContent = `${proposal.title} → ${proposal.wiki.label || proposal.wiki.path}`;
+    body.appendChild(h);
+    const meta = document.createElement("p");
+    meta.className = "muted wiki-proposal-meta";
+    meta.textContent = `${proposal.operations.length} proposed write(s). Review before applying.`;
+    body.appendChild(meta);
+    for (const op of proposal.operations) {
+      const row = document.createElement("div");
+      row.className = "wiki-proposal-op";
+      const title = document.createElement("div");
+      title.className = "wiki-proposal-title";
+      title.textContent = `${op.type}${op.raw ? " raw" : ""}: ${op.path}`;
+      const pre = document.createElement("pre");
+      pre.textContent = op.content;
+      row.append(title, pre);
+      body.appendChild(row);
+    }
+    const actions = document.createElement("div");
+    actions.className = "wiki-proposal-actions";
+    const approve = document.createElement("button");
+    approve.className = "web-save";
+    approve.textContent = "approve writes";
+    const reject = document.createElement("button");
+    reject.className = "web-save";
+    reject.textContent = "reject";
+    reject.addEventListener("click", () => {
+      body.innerHTML = '<p class="muted">rejected — no files written</p>';
+    });
+    approve.addEventListener("click", async () => {
+      approve.disabled = true;
+      approve.textContent = "applying…";
+      try {
+        const res = await fetch("/api/wiki-ingest/apply", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-solaris-token": await apiToken(),
+          },
+          body: JSON.stringify({
+            wikiId: proposal.wiki.id,
+            operations: proposal.operations,
+          }),
+        });
+        const data = (await res.json()) as { ids?: string[]; error?: string };
+        if (!res.ok || !data.ids?.length) throw new Error(data.error ?? "apply failed");
+        const preferred = proposal.operations.findIndex((op) => !op.raw);
+        const id = data.ids[preferred >= 0 ? preferred : 0] ?? data.ids[0];
+        body.innerHTML = '<p class="muted">applied — opening the note…</p>';
+        await openAfterIngest(id);
+      } catch (e) {
+        approve.disabled = false;
+        approve.textContent = "apply failed — retry";
+        researchError(e instanceof Error ? e.message : "apply failed");
+      }
+    });
+    actions.append(approve, reject);
+    body.appendChild(actions);
+  }
+
   // Hot-swap a rescanned graph into the LIVE scene: diff against the current
   // graph and splice adds / removes / edge changes in place, then re-register
   // without reheating the layout — no full page reload. Existing nodes keep
@@ -5116,20 +5270,25 @@ async function boot() {
   async function runIngest(source: string) {
     openResearch("ingest");
     const body = $("#research-body");
-    body.innerHTML = '<p class="muted">importing…</p>';
+    const target = ingestTargetPayload();
+    const propose = wantsWikiProposal(target);
+    body.innerHTML = `<p class="muted">${propose ? "building wiki proposal…" : "importing…"}</p>`;
     try {
-      const res = await fetch("/api/ingest", {
+      const res = await fetch(propose ? "/api/wiki-ingest/propose" : "/api/ingest", {
         method: "POST",
         headers: {
           "content-type": "application/json",
           "x-solaris-token": await apiToken(),
         },
-        body: JSON.stringify({ source }),
+        body: JSON.stringify({ source, ...target }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? data.error);
-      body.innerHTML = '<p class="muted">saved — opening the note…</p>';
-      openAfterIngest(String(data.id));
+      if (propose) renderWikiProposal(body, data as WikiIngestProposal);
+      else {
+        body.innerHTML = '<p class="muted">saved — opening the note…</p>';
+        openAfterIngest(String(data.id));
+      }
     } catch (e) {
       body.innerHTML = "";
       researchError(e instanceof Error ? e.message : "ingest failed");
@@ -5151,11 +5310,16 @@ async function boot() {
       input.value = ""; // allow re-picking the same file
       openResearch("ingest");
       const body = $("#research-body");
-      body.innerHTML = `<p class="muted">converting ${file.name} via markitdown…</p>`;
+      const target = ingestTargetPayload();
+      const propose = wantsWikiProposal(target);
+      body.innerHTML = `<p class="muted">${propose ? "building wiki proposal" : "converting"} ${file.name} via markitdown…</p>`;
       try {
         const buf = await file.arrayBuffer();
+        const params = new URLSearchParams({ name: file.name });
+        if (target.wikiId) params.set("wikiId", target.wikiId);
+        if (target.captureOnly) params.set("captureOnly", "1");
         const res = await fetch(
-          `/api/ingest-upload?name=${encodeURIComponent(file.name)}`,
+          `/${propose ? "api/wiki-ingest/propose-upload" : "api/ingest-upload"}?${params.toString()}`,
           {
             method: "POST",
             headers: {
@@ -5167,8 +5331,11 @@ async function boot() {
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.message ?? data.error);
-        body.innerHTML = '<p class="muted">saved — opening the note…</p>';
-        openAfterIngest(String(data.id));
+        if (propose) renderWikiProposal(body, data as WikiIngestProposal);
+        else {
+          body.innerHTML = '<p class="muted">saved — opening the note…</p>';
+          openAfterIngest(String(data.id));
+        }
       } catch (e) {
         body.innerHTML = "";
         researchError(e instanceof Error ? e.message : "ingest failed");
@@ -5573,14 +5740,32 @@ async function boot() {
 
   // ---- modal ----
   const showModal = (title: string, html: string) => {
+    $("#modal").classList.remove("admin-modal");
     $("#modal-title").textContent = title;
     $("#modal-body").innerHTML = html;
     $("#modal-backdrop").classList.remove("hidden");
   };
-  const hideModal = () => $("#modal-backdrop").classList.add("hidden");
-  $("#modal-close").addEventListener("click", hideModal);
+  let adminDirty = false;
+  let adminSaving = false;
+  const hideModal = async () => {
+    if (
+      $("#modal").classList.contains("admin-modal") &&
+      adminDirty &&
+      !adminSaving
+    ) {
+      if (confirm(i18n.t("admin.unsavedSave"))) {
+        adminSaving = true;
+        const saved = await saveAdmin();
+        adminSaving = false;
+        if (!saved) return;
+      } else if (!confirm(i18n.t("admin.unsavedDiscard"))) return;
+    }
+    adminDirty = false;
+    $("#modal-backdrop").classList.add("hidden");
+  };
+  $("#modal-close").addEventListener("click", () => void hideModal());
   $("#modal-backdrop").addEventListener("click", (e) => {
-    if (e.target === e.currentTarget) hideModal();
+    if (e.target === e.currentTarget) void hideModal();
   });
 
   // ---- File ----
@@ -5674,6 +5859,257 @@ async function boot() {
     if (selected) openInObsidian(selected);
     else showModal("No note selected", "<p>Click a node first.</p>");
   });
+
+  // ---- Admin (F045): vault path, wiki checkboxes, per-wiki raw folder,
+  // prompt overrides. Reuses showModal() + postConfig(); read-only fetch of
+  // discovered wikis via /api/wikis (which already merges with saved state).
+  async function openAdmin() {
+    const T = (k: string) => i18n.t(k);
+    const vaultPath = integrations?.admin?.activeVaultPath ?? data.meta.vaultPath ?? "";
+    const body = $("#modal-body");
+    showModal(T("admin.title"), "");
+    $("#modal").classList.add("admin-modal");
+    body.innerHTML = `
+      <section class="admin-section">
+        <h3>${T("admin.vault")}</h3>
+        <div class="admin-vault">
+          <label class="admin-vault-picker"><span>${T("admin.vaultPath")}</span><input id="admin-vault-input" type="text" value="${escapeHtml(vaultPath)}" placeholder="${T("admin.vaultPathPlaceholder")}"></label>
+        </div>
+      </section>
+      <section class="admin-section">
+        <h3>${T("admin.wikis")} <span class="muted admin-section-hint">${T("admin.wikisHint")}</span></h3>
+        <div id="admin-wikis"><p class="muted">${T("admin.loading")}</p></div>
+        <div class="admin-wiki-actions">
+          <button id="admin-add-manual" class="ghost">${T("admin.addManual")}</button>
+          <button id="admin-rediscover" class="ghost">${T("admin.rediscover")}</button>
+        </div>
+      </section>
+      <section class="admin-section">
+        <h3>${T("admin.prompts")} <span class="muted admin-section-hint">${T("admin.promptsHint")}</span></h3>
+        <div id="admin-prompts"></div>
+      </section>
+      <div class="admin-save-row">
+        <span id="admin-status" class="muted"></span>
+        <button id="admin-save">${T("admin.save")}</button>
+      </div>`;
+    await renderAdminWikis();
+    renderAdminPrompts();
+    body.oninput = () => (adminDirty = true);
+    body.onchange = () => (adminDirty = true);
+    $("#admin-add-manual").addEventListener("click", () => {
+      adminDirty = true;
+      appendAdminWikiRow({
+        id: "manual-" + Math.random().toString(36).slice(2, 8),
+        label: "",
+        path: "",
+        enabled: true,
+        contractFiles: [],
+        rawDestination: "../raw/",
+        discovered: false,
+        confidence: "low",
+      });
+    });
+    $("#admin-rediscover").addEventListener("click", renderAdminWikis);
+    $("#admin-save").addEventListener("click", saveAdmin);
+  }
+
+  async function renderAdminWikis() {
+    const box = $("#admin-wikis");
+    try {
+      const r = await fetch("/api/wikis");
+      if (!r.ok) throw new Error(String(r.status));
+      const { wikis } = (await r.json()) as { wikis: AdminWikiConfig[] };
+      box.innerHTML = "";
+      if (!wikis.length) {
+        box.innerHTML = `<p class="muted">${i18n.t("admin.empty")}</p>`;
+        return;
+      }
+      for (const w of wikis) appendAdminWikiRow(w, box);
+    } catch {
+      box.innerHTML = `<p class="muted">${i18n.t("admin.saveFail")}</p>`;
+    }
+  }
+
+  function appendAdminWikiRow(w: AdminWikiConfig, container?: HTMLElement) {
+    const box = container ?? $("#admin-wikis");
+    const row = document.createElement("div");
+    row.className = "admin-wiki-row";
+    const contracts = w.contractFiles
+      .map((f) => `<span class="admin-badge">${escapeHtml(f)}</span>`)
+      .join("");
+    row.innerHTML = `
+      <div class="admin-wiki-grid">
+        <label class="admin-field admin-field-path"><span><input type="checkbox" ${w.enabled ? "checked" : ""}> ${i18n.t("admin.wikiPath")}</span><input class="admin-path" type="text" value="${escapeHtml(w.path)}" placeholder="${i18n.t("admin.manualPlaceholder")}"></label>
+        <label class="admin-field"><span>${i18n.t("admin.wikiRaw")}</span><input class="admin-raw" type="text" value="${escapeHtml(w.rawDestination ?? "")}" placeholder="${i18n.t("admin.wikiRawHint")}"></label>
+        <span class="admin-conf admin-conf-${w.confidence}">${i18n.t("admin.wikiConf")}: ${w.confidence}</span>
+        <span class="admin-contracts">${contracts || '<span class="muted">no contract files</span>'}</span>
+      </div>
+      `;
+    box.appendChild(row);
+  }
+
+  function renderAdminPrompts() {
+    const box = $("#admin-prompts");
+    const admin = integrations?.admin;
+    if (!admin) return;
+    box.innerHTML = "";
+    const shell = document.createElement("div");
+    shell.className = "admin-prompts-layout";
+    const list = document.createElement("div");
+    list.className = "admin-prompt-list";
+    const editor = document.createElement("div");
+    editor.className = "admin-prompt-editor";
+    shell.append(list, editor);
+    box.appendChild(shell);
+    for (const key of PROMPT_KEYS) {
+      const effective = admin.prompts[key] ?? admin.promptDefaults[key] ?? "";
+      const tab = document.createElement("button");
+      tab.className = "admin-prompt-tab";
+      tab.type = "button";
+      tab.dataset.key = key;
+      tab.textContent = PROMPT_LABELS[key];
+      list.appendChild(tab);
+      const row = document.createElement("div");
+      row.className = "admin-prompt-row hidden";
+      row.dataset.key = key;
+      row.innerHTML = `
+        <div class="admin-prompt-head"><span>${PROMPT_LABELS[key]}</span><button class="ghost admin-reset" data-i18n="admin.reset">${i18n.t("admin.reset")}</button></div>
+        <textarea class="admin-prompt-text" rows="3">${escapeHtml(effective)}</textarea>`;
+      editor.appendChild(row);
+    }
+    const activate = (key: string) => {
+      list.querySelectorAll(".admin-prompt-tab").forEach((b) =>
+        b.classList.toggle("active", (b as HTMLElement).dataset.key === key),
+      );
+      editor.querySelectorAll(".admin-prompt-row").forEach((r) =>
+        r.classList.toggle("hidden", (r as HTMLElement).dataset.key !== key),
+      );
+    };
+    list.querySelectorAll(".admin-prompt-tab").forEach((b) =>
+      b.addEventListener("click", () => activate((b as HTMLElement).dataset.key!)),
+    );
+    activate(PROMPT_KEYS[0]);
+    box.querySelectorAll(".admin-reset").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const row = b.closest(".admin-prompt-row") as HTMLElement | null;
+        const key = row?.dataset.key;
+        if (!key) return;
+        try {
+          await postConfig({ prompts: { [key]: null } });
+          await refreshIntegrations();
+          renderAdminPrompts();
+          flashAdmin(i18n.t("admin.saved"));
+        } catch {
+          flashAdmin(i18n.t("admin.saveFail"));
+        }
+      }),
+    );
+  }
+
+  async function saveAdmin(): Promise<boolean> {
+    const status = $("#admin-status");
+    status.textContent = i18n.t("admin.saving");
+    const vaultPath = integrations?.admin?.activeVaultPath ?? data.meta.vaultPath ?? "";
+    const requestedVaultPath = ($("#admin-vault-input") as HTMLInputElement).value.trim();
+    const prompts: Record<string, string | null> = {};
+    const defaults = integrations?.admin?.promptDefaults ?? {};
+    for (const row of document.querySelectorAll(
+      ".admin-prompt-row",
+    ) as NodeListOf<HTMLElement>) {
+      const key = row.dataset.key!;
+      const val = (
+        row.querySelector(".admin-prompt-text") as HTMLTextAreaElement
+      ).value.trim();
+      prompts[key] = val && val !== defaults[key] ? val : null;
+    }
+
+    try {
+      if (requestedVaultPath !== vaultPath) {
+        const res = await fetch("/api/vault", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-solaris-token": await apiToken(),
+          },
+          body: JSON.stringify({ path: requestedVaultPath }),
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          graph?: Graph;
+        };
+        if (!res.ok || !body.graph)
+          throw new Error(body.error ?? i18n.t("admin.saveFail"));
+        applyGraphUpdate(body.graph);
+        await postConfig({ prompts });
+        await refreshIntegrations();
+        ($("#admin-vault-input") as HTMLInputElement).value = body.graph.meta.vaultPath;
+        await renderAdminWikis();
+        adminDirty = false;
+        flashAdmin(i18n.t("admin.saved"));
+        return true;
+      }
+
+      const wikis: AdminWikiConfig[] = [];
+      for (const row of document.querySelectorAll(
+        ".admin-wiki-row",
+      ) as NodeListOf<HTMLElement>) {
+        const path = (
+          row.querySelector(".admin-path") as HTMLInputElement
+        ).value.trim();
+        const enabled = (
+          row.querySelector("input[type='checkbox']") as HTMLInputElement
+        ).checked;
+        const rawDestination = (
+          row.querySelector(".admin-raw") as HTMLInputElement
+        ).value.trim();
+        const finalPath = path;
+        if (!finalPath) continue;
+        wikis.push({
+          id: finalPath,
+          label: finalPath,
+          path: finalPath,
+          enabled,
+          contractFiles: [],
+          rawDestination: rawDestination || null,
+          discovered: false,
+          confidence: "low",
+        });
+      }
+      await postConfig({
+        vaults: vaultPath
+          ? { [vaultPath]: { path: vaultPath, wikis } }
+          : {},
+        prompts,
+      });
+      await refreshIntegrations();
+      adminDirty = false;
+      flashAdmin(i18n.t("admin.saved"));
+      return true;
+    } catch (e) {
+      flashAdmin(e instanceof Error ? e.message : i18n.t("admin.saveFail"));
+      return false;
+    }
+  }
+
+  function flashAdmin(msg: string) {
+    const status = $("#admin-status");
+    status.textContent = msg;
+    setTimeout(() => (status.textContent = ""), 2500);
+  }
+
+  function escapeHtml(s: string): string {
+    return s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  $("#mi-admin").addEventListener("click", () => {
+    closeMenus();
+    void openAdmin();
+  });
+
 
   // ---- Help ----
   $("#mi-shortcuts").addEventListener("click", () => {

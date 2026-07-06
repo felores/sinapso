@@ -9,7 +9,8 @@
 
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, join, relative, resolve, sep } from "node:path";
+import type { SolarisConfig, WikiConfig } from "./config.js";
 import type { Runner } from "./detect.js";
 import { guardedCreate, WriteError, type WriteDeps } from "./write.js";
 
@@ -22,6 +23,41 @@ export interface IngestOptions {
   sourceLabel?: string;
   title?: string;
   destination?: string;
+}
+
+export interface ConvertedDocument {
+  source: string;
+  sourceLabel: string;
+  title: string;
+  markdown: string;
+}
+
+export function resolveIngestDestination(
+  vaultRoot: string,
+  cfg: Pick<SolarisConfig, "writeDestination" | "vaults">,
+  target: { wikiId?: unknown; captureOnly?: unknown } = {},
+): string {
+  if (target.captureOnly === true) return cfg.writeDestination;
+
+  const enabled = (cfg.vaults[vaultRoot]?.wikis ?? []).filter((w) => w.enabled);
+  const wikiId = typeof target.wikiId === "string" ? target.wikiId.trim() : "";
+  if (wikiId) {
+    const wiki = enabled.find((w) => w.id === wikiId || w.path === wikiId);
+    if (!wiki) throw new WriteError(400, "invalid wiki target");
+    return wikiDestination(vaultRoot, wiki);
+  }
+  if (enabled.length === 1) return wikiDestination(vaultRoot, enabled[0]);
+  if (enabled.length > 1)
+    throw new WriteError(400, "choose a wiki target or capture-only");
+  return cfg.writeDestination;
+}
+
+function wikiDestination(vaultRoot: string, wiki: WikiConfig): string {
+  const base = resolve(vaultRoot);
+  const full = resolve(base, wiki.path, wiki.rawDestination ?? "");
+  if (full !== base && !full.startsWith(base + sep))
+    throw new WriteError(400, "invalid wiki destination");
+  return relative(base, full).split(sep).join("/") || ".";
 }
 
 function deriveTitle(source: string, isUrl: boolean): string {
@@ -105,6 +141,32 @@ export async function ingestDocument(
   writeDeps: WriteDeps,
   opts: IngestOptions,
 ): Promise<{ id: string }> {
+  const converted = await convertDocument(run, markitdownBin, opts);
+  const date = new Date().toISOString().slice(0, 10);
+  const content = [
+    "---",
+    `source: ${converted.sourceLabel.replace(/\n/g, " ")}`,
+    `ingested: ${date}`,
+    "via: markitdown",
+    "---",
+    "",
+    converted.markdown,
+    "",
+  ].join("\n");
+  return guardedCreate(writeDeps, {
+    title: converted.title,
+    content,
+    destination: opts.destination,
+    actor: "user",
+    prefix: `${date}_`, // date-stamp ingested notes: 2026-07-03_<title>.md
+  });
+}
+
+export async function convertDocument(
+  run: Runner,
+  markitdownBin: string,
+  opts: IngestOptions,
+): Promise<ConvertedDocument> {
   const source = opts.source.trim();
   if (!source) throw new WriteError(400, "source required");
   const isUrl = /^https?:\/\//i.test(source);
@@ -125,24 +187,7 @@ export async function ingestDocument(
   // document's headline; fall back to an explicit title, then the source name.
   const title =
     extractTitle(markdown) || opts.title?.trim() || deriveTitle(source, isUrl);
-  const date = new Date().toISOString().slice(0, 10);
-  const content = [
-    "---",
-    `source: ${(opts.sourceLabel ?? source).replace(/\n/g, " ")}`,
-    `ingested: ${date}`,
-    "via: markitdown",
-    "---",
-    "",
-    markdown,
-    "",
-  ].join("\n");
-  return guardedCreate(writeDeps, {
-    title,
-    content,
-    destination: opts.destination,
-    actor: "user",
-    prefix: `${date}_`, // date-stamp ingested notes: 2026-07-03_<title>.md
-  });
+  return { source, sourceLabel: opts.sourceLabel ?? source, title, markdown };
 }
 
 /**
@@ -154,15 +199,41 @@ export async function ingestBytes(
   run: Runner,
   markitdownBin: string,
   writeDeps: WriteDeps,
-  opts: { name: string; bytes: Uint8Array },
+  opts: { name: string; bytes: Uint8Array; destination?: string },
 ): Promise<{ id: string }> {
+  const converted = await convertBytes(run, markitdownBin, opts);
+  const date = new Date().toISOString().slice(0, 10);
+  const content = [
+    "---",
+    `source: ${converted.sourceLabel.replace(/\n/g, " ")}`,
+    `ingested: ${date}`,
+    "via: markitdown",
+    "---",
+    "",
+    converted.markdown,
+    "",
+  ].join("\n");
+  return guardedCreate(writeDeps, {
+    title: converted.title,
+    content,
+    destination: opts.destination,
+    actor: "user",
+    prefix: `${date}_`,
+  });
+}
+
+export async function convertBytes(
+  run: Runner,
+  markitdownBin: string,
+  opts: { name: string; bytes: Uint8Array },
+): Promise<ConvertedDocument> {
   const dir = mkdtempSync(join(tmpdir(), "solaris-ingest-"));
   const safe =
     opts.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 64) || "upload";
   const tmp = join(dir, safe);
   writeFileSync(tmp, opts.bytes);
   try {
-    return await ingestDocument(run, markitdownBin, writeDeps, {
+    return await convertDocument(run, markitdownBin, {
       source: tmp,
       sourceLabel: opts.name,
       // Drop the extension so the note name is clean (safeName kebab-cases it);

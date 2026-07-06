@@ -251,3 +251,104 @@ Lucide icons (inline SVG) replace the emoji; rail icons ~2x (44px, 26px svg).
 Removed U3 panel displacement (--rail-inset) — the desync source; the rail now
 overlays panels (z-index 25 > 20).
 Verification: typecheck + build green. Still heavily deferred to manual review.
+
+## Session 2026-07-05-2315 — vault Admin/wiki-ingest harness start
+
+Queued docs/plans/2026-07-05-007-feat-vault-admin-wiki-aware-ingest-plan.md as F043-F049.
+
+**Features worked:**
+- **F043** not_started -> active -> passing. Extended `server/integrations/config.ts` for vault-scoped Admin config: `activeVaultPath`, per-vault `wikis`, per-wiki `rawDestination`, and local prompt overrides with built-in reset defaults. `/api/integrations` now exposes non-secret Admin config and effective/default prompt text.
+
+**Verification:** `npm test -- server/integrations/config.test.ts` 9/9 pass; `npm run typecheck` clean.
+
+**Next:** F044 — wiki discovery service.
+
+## Session 2026-07-05-2337 — F044 worker/reviewer trial via Herdr
+
+Used Herdr to assign **F044** to the idle OpenCode GLM-5.2 pane (`w5:p9`) and kept this pane as reviewer/verifier.
+
+**Features worked:**
+- **F044** active -> passing. Added `server/integrations/wiki.ts` discovery service, `server/integrations/wiki.test.ts`, and `GET /api/wikis`. Discovery finds directories named exactly `wiki`, respects graph excludes, detects `AGENTS.md`/`CLAUDE.md`/`index.md`/`README.md`, assigns confidence, defaults new discoveries to enabled + inferred rawDestination, and merges saved disabled/custom raw state.
+- Reviewer fix: added `realpathSync` confinement so symlinked directories inside the vault cannot make discovery traverse outside the vault; added regression test.
+
+**Verification:** `npm test -- server/integrations/wiki.test.ts` 18/18 pass; `npm run typecheck` clean.
+
+**Next:** F045 — Admin modal UI.
+
+## Session 2026-07-06-0354 — F045 Admin UI review
+
+Reviewed the OpenCode GLM-5.2 worker implementation for **F045** and patched two save-path issues before marking it passing.
+
+**Features worked:**
+- **F045** active -> passing. Added File -> Admin, centered Admin modal, Vault/Wikis/Prompts sections, selected wiki rows with editable label/path/raw folder, confidence and contract badges, manual wiki rows, rediscovery, and prompt reset/save.
+- Reviewer fixes: manual rows now have an editable path input and save that path; vault/contract/wiki values are escaped before HTML insertion; unchanged built-in prompt text saves as `null` instead of becoming a sticky override.
+
+**Verification:** `npm run typecheck && npm run build` clean.
+
+**Next:** F046 — safe vault switching + Electron browse.
+
+## Session 2026-07-06-0402 — F046 safe vault switching
+
+**Features worked:**
+- **F046** not_started -> passing. Added token-guarded `POST /api/vault` for typed local paths and Electron `browse:true`, using existing `scanVault()` -> graph file -> `reload()` flow and returning the new graph for frontend hot-swap.
+- Admin Vault section now has a typed path input plus Switch/Browse buttons; successful switches call `applyGraphUpdate()`, refresh Admin config, and rediscover wikis.
+- Desktop now passes a native `pickVault` callback into `createApp()` by splitting the existing dialog picker from `pickAndScanVault()`.
+- `reload()` now clears qmd collection/status caches and in-flight semantic build state in addition to search, related, and vector caches.
+
+**Verification:** `npm test -- server/app.test.ts` 22/22 pass; `npm run typecheck` clean; `npm run build` clean.
+
+**Next:** F047 — wiki target selection in ingest.
+
+## Session 2026-07-06-0414 — F047 ingest target selection
+
+**Features worked:**
+- **F047** not_started -> passing. Added `resolveIngestDestination()` for capture-only, implicit single enabled wiki, selected wiki id/path, multi-wiki no-selection errors, and confined wiki-relative `rawDestination` values like `raw/` and `../research/`.
+- `/api/ingest` and `/api/ingest-upload` now resolve against `/api/wikis`-style discovery merged with saved config, so unsaved discovered `wiki/` folders can be used. Uploads pass `destination` through `ingestBytes()` instead of silently falling back to `inbox/`.
+- Ingest mode now shows a compact target selector when enabled wikis exist; it defaults to the sole wiki, forces a choice when multiple exist, and keeps `Inbox / capture only` available.
+
+**Verification:** `npm test -- server/integrations/ingest.test.ts` 16/16 pass; `npm run typecheck` clean; `npm run build` clean.
+
+**Next:** F048 — contract-aware wiki ingest proposals.
+
+## Session 2026-07-06-0855 — F048 contract-aware wiki ingest proposals
+
+**Features worked:**
+- **F048** not_started -> passing. Added `server/integrations/wiki-ingest.ts` proposal/approval layer. It reads selected wiki contracts, uses the configured `wikiIngest` prompt via OpenRouter, returns structured create/edit previews, adds raw-copy create proposals for `raw/` or confined custom destinations like `../research/`, and validates every proposed path under the selected wiki or raw destination before approval.
+- Added `POST /api/wiki-ingest/propose`, `POST /api/wiki-ingest/propose-upload`, and `POST /api/wiki-ingest/apply`. Apply writes only through `guardedCreate()`/`guardedEdit()` with approval journaling; reject is a UI no-op and writes nothing.
+- Ingest UI now opens a proposal preview for wiki targets with approve/reject buttons. `Inbox / capture only` still uses the immediate existing ingest route.
+
+**Verification:** `npm test -- server/integrations/wiki-ingest.test.ts server/integrations/write.test.ts` 29/29 pass; `npm run typecheck` clean; `npm run build` clean with the existing Vite chunk-size warning only.
+
+**Next:** F049 — docs for Admin/wiki-aware ingest and trust wording.
+
+## Session 2026-07-06-0858 — F049 docs
+
+**Features worked:**
+- **F049** not_started -> passing. Updated `README.md` with File -> Admin, browser typed-path vs Electron browse, wiki discovery by folders named exactly `wiki`, selected-by-default multi-wiki checklist, contract candidates, per-wiki raw destination defaults/overrides, prompt overrides, capture-only ingest, and approval-based wiki ingest.
+- Updated `CLAUDE.md` so future agents preserve the config/wiki/wiki-ingest modules, OpenRouter egress scope, Admin/wiki config rules, and the single sanctioned write path for capture-only ingest, approved wiki proposals, and orphan links.
+
+**Verification:** `npm run typecheck` clean.
+
+**Result:** F043-F049 all passing; Admin + wiki-aware ingest plan complete pending manual UI polish/review.
+
+## Session 2026-07-06-1420 — raw destination inference + Admin density correction
+
+User feedback: existing wikis like agencia/felo/climatia/skandia/mineralia should not default to `wiki/raw/`; their source folders live beside the wiki, usually `../research/`. Also the Admin modal was too wide and crowded.
+
+**Changes:**
+- Wiki discovery now infers rawDestination in order: `raw/`, `../raw/`, `research/`, `../research/`, `docs/`, `../docs/`, then fallback `../raw/`.
+- Rediscovery replaces stale legacy `raw/` saved defaults when the filesystem indicates a better destination.
+- Manual wiki rows default to `../raw/`.
+- Admin modal narrowed, wiki rows use a compact two-column/two-row layout (path + raw folder, then confidence + contracts), and prompt editing is two-column: prompt list on the left, selected textarea on the right.
+
+**Verification:** `npm test -- server/integrations/wiki.test.ts` 20/20 pass; `npm run typecheck` clean.
+
+## Session 2026-07-06-1455 — Admin vault row cleanup
+
+**Changes:**
+- Simplified Admin vault section to one typed path field; removed duplicate active-path display and separate Switch/Browse controls.
+- Bottom Save now switches/rescans the vault through `/api/vault` when the typed path changes, refreshes integrations/wiki rows, and avoids saving old wiki rows into the new vault.
+- Closing Admin with dirty fields now asks to save first, or discard if save is declined.
+- Removed dead vault-action CSS and unused i18n strings.
+
+**Verification:** `npm run typecheck` clean; `npm run build` clean with the existing Vite chunk-size warning only.

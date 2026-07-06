@@ -67,16 +67,19 @@ let baseUrl = "";
 let win: BrowserWindow | null = null;
 
 // ===== VAULT SCANNING & MANAGEMENT =====
-// Prompt user to select a vault directory and scan it
-async function pickAndScanVault(): Promise<boolean> {
-  // User selects vault directory via native file dialog
+async function pickVaultPath(): Promise<string | null> {
   const result = await dialog.showOpenDialog({
     title: "Open Obsidian vault",
     properties: ["openDirectory"],
   });
-  if (result.canceled || !result.filePaths[0]) return false;
+  return result.canceled ? null : (result.filePaths[0] ?? null);
+}
 
-  const vault = result.filePaths[0];
+// Prompt user to select a vault directory and scan it
+async function pickAndScanVault(): Promise<boolean> {
+  const vault = await pickVaultPath();
+  if (!vault) return false;
+
   const settings = loadSettings();
 
   // Scan vault (incremental by default; only changed files are re-parsed)
@@ -180,7 +183,7 @@ async function start() {
     }
   }
 
-  server = createApp(GRAPH_PATH, WEB_DIST);
+  server = createApp(GRAPH_PATH, WEB_DIST, { pickVault: pickVaultPath });
   const listener = server.app.listen(0, "127.0.0.1", () => {
     const { port } = listener.address() as AddressInfo;
     baseUrl = `http://127.0.0.1:${port}`;

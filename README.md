@@ -145,6 +145,8 @@ colors, and clusters derive from your folder structure and your links.
   link to the current note.
 - **Export & view**: File → **Export Image (PNG)** saves the current view; the
   View menu adds **Reset Camera** and **Toggle Fullscreen**.
+- **Admin**: File → **Admin...** manages the active vault path, detected wikis,
+  per-wiki ingest destinations, and prompt overrides.
 
 ### Built for massive vaults
 
@@ -268,37 +270,56 @@ that turns that note into 3-5 web queries.
 |------|------|--------------|
 | **Semantic** ◈ | [qmd](https://github.com/tobi/qmd) (local) | Semantic search over your notes in the column. Related notes at the end of every note work regardless of the mode button. All local. |
 | **Web** ◍ | [Exa](https://exa.ai) (API key) | Web research in the column, save-as-note into `inbox/`. Never auto-runs while typing. |
-| **Agent** ✦ | [OpenCode](https://opencode.ai) (local + account) | Starts a conversation with your vault (the open note rides along as context). The agent can only *propose* notes and edits; you approve each change (or opt into full access). |
+| **Ingest** ⇩ | markitdown (local) + optional OpenRouter key | Converts a path, URL, or browser upload. Capture-only saves immediately; wiki targets preview proposed writes before anything is applied. |
 
 Two install flavors: **core** (default, nothing extra) and **addons** —
 `npx solaris "<vault>" --addons` or *Settings → install missing addons* —
 which installs only what is missing and never touches an existing setup.
 
+### Admin, wikis, and ingest
+
+Open **File → Admin...** to manage the current vault and wiki settings.
+
+- **Vault switching**: browser/CLI mode accepts a typed local path; the Electron
+  desktop app also offers a native folder picker. Switching rescans and hot-swaps
+  the graph.
+- **Wiki discovery**: Solaris finds folders named exactly `wiki`. All detected
+  wikis start enabled; you can disable, rename, or add manual paths. Contract
+  candidates are `AGENTS.md`, `CLAUDE.md`, `index.md`, and `README.md`.
+- **Raw destination**: Solaris picks the first existing source folder it finds:
+  `raw/`, `../raw/`, `research/`, `../research/`, `docs/`, then `../docs/`.
+  If none exist, it proposes `../raw/` so the source folder sits beside the
+  wiki. You can still override or blank it per wiki.
+- **Prompt overrides**: Admin exposes local prompt text for wiki ingest, note
+  questions, voice, and web research. Reset restores the built-in default.
+- **Wiki-aware ingest**: one enabled wiki is selected automatically. Multiple
+  enabled wikis show a target selector. `Inbox / capture only` keeps the old
+  immediate save behavior. A wiki target converts the source locally with
+  markitdown, reads that wiki's contracts, asks OpenRouter for structured
+  create/edit proposals, shows a preview, and writes only after you approve.
+
 ### Trust model
 
 - **The core uploads nothing.** Scanning, rendering, search, and reading are
   fully local; the server binds to `127.0.0.1` only.
-- **Web and Agent modes send data off-machine only behind explicit,
-  one-time consent gates** shown before the first request: web queries go to
-  Exa with your own key; agent conversations go to the model provider you
-  configured in OpenCode (free Zen models may use conversation data for
-  training).
+- **Optional Web and LLM features are explicit.** Web queries go to Exa only
+  after Web consent and with your own key. OpenRouter-backed note questions and
+  wiki-ingest synthesis use your stored OpenRouter key; the relevant note,
+  source excerpt, and wiki contracts are sent to that provider only for the
+  action you requested.
 - **The vault is written only through one guarded endpoint** (path-confined,
   `.md`-only, never overwrites) and only on your action: saving a web result,
-  approving an agent proposal, or standing consent via full-access mode.
-  Every agent write is journaled in `data/changes.jsonl`, and agent-created
-  notes carry provenance frontmatter.
-- The agent itself cannot write files, run commands, or reach the network:
-  its OpenCode child runs with all write/egress tools denied, scoped to the
-  vault directory.
-- Secrets (the Exa key) live in `~/.solaris/config.json` (mode 600), outside
-  the vault and outside version control, and never appear in API responses.
+  capture-only ingest, approving a wiki-ingest proposal, or confirming an orphan
+  link suggestion. Writes are journaled in `data/changes.jsonl`.
+- Secrets (Exa, OpenRouter, and voice keys) live in `~/.solaris/config.json`
+  (mode 600), outside the vault and outside version control, and never appear in
+  API responses.
 
 ## Privacy
 
 Everything in the core runs on `localhost`; data and files are never copied,
-indexed, or uploaded. The optional Web and Agent modes are opt-in and
-consent-gated, as described in the trust model above.
+indexed, or uploaded. Optional Web and OpenRouter features are opt-in by key and
+action, as described in the trust model above.
 
 ## Stack
 
