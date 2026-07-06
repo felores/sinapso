@@ -4130,8 +4130,36 @@ async function boot() {
       : readerDocked && !leftDocked
         ? readerWNat || rightPanelW
         : rightPanelW;
-    const centerGap = vw - natLeft - natRight;
-    const rail = centerGap < Math.max(groupW, searchWrapW) + 2 * PAD;
+    // Menu column: left = default (no left panel). Center while the left
+    // panel hasn't reached the centered menu's left edge; right the moment it
+    // does — measured to the menu's actual left edge (vw/2 − groupW/2 − PAD),
+    // not the viewport center, so the snap happens on contact instead of
+    // after overlapping the menu. But the right column is only available when
+    // no right panel is open; if one is, the left panel crossing the centered
+    // menu triggers the rail directly (the menu has nowhere else to go).
+    const rightPanelOpen = rightPanelW > 0;
+    let menuCol: "left" | "center" | "right" = "left";
+    if (leftPanelW > 0)
+      menuCol =
+        !rightPanelOpen && natLeft > vw / 2 - groupW / 2 - PAD
+          ? "right"
+          : "center";
+    // Rail: chrome doesn't fit in its column. When the menu is centered, each
+    // panel must independently clear the center half-width — the total gap
+    // isn't enough (a lopsided pair can overlap the centered menu while the
+    // gap still reads "big enough"). When the right panel is open and the
+    // left panel crosses the centered menu, the rail fires directly (menu
+    // can't go right). In left/right columns the chrome lives inside the gap,
+    // so the total gap must fit it.
+    const chromeW = Math.max(groupW, searchWrapW);
+    const rail =
+      menuCol === "center"
+        ? rightPanelOpen
+          ? natLeft > vw / 2 - groupW / 2 - PAD ||
+            natRight > vw / 2 - chromeW / 2 - PAD
+          : natLeft > vw / 2 - chromeW / 2 - PAD ||
+            natRight > vw / 2 - chromeW / 2 - PAD
+        : vw - natLeft - natRight < chromeW + 2 * PAD;
     // Rail offset: a docked right panel shrinks by the rail width (CSS subtracts
     // --rail-w from --dock-w), and the corner buttons clear panel + rail.
     const railW = rail ? 56 : 0;
@@ -4139,10 +4167,6 @@ async function boot() {
     root.style.setProperty("--btn-right-inset", `${rightPanelW + railW}px`);
     // Search slides with the right panel's left edge (--right-inset).
     topbar.style.setProperty("--right-inset", `${rightPanelW}px`);
-    // Menu jumps between three columns by left-panel size (left = default).
-    let menuCol: "left" | "center" | "right" = "left";
-    if (leftPanelW > vw / 2) menuCol = "right";
-    else if (leftPanelW > 0) menuCol = "center";
     // Search collides with the menu (in its column) → wraps to row 2, aligned
     // under the menu's column.
     const menuRightX =
