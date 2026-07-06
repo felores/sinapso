@@ -1703,6 +1703,13 @@ body > :not(#graph) {
 
 /* while the research column is open, a docked reader moves to the left
    edge: the open note is the working context for the column */
+/* Docked reader: CSS owns the width from --reader-w (set by applyGeom). */
+#reader:not(.floating) { width: var(--reader-w, min(440px, 42vw)); }
+/* ctx-left clamps so the right edge — and its resize handle — can't slide
+   under the rail. Keeps the handle grabbable when the panel is dragged wide. */
+#reader.ctx-left:not(.floating) {
+  width: min(var(--reader-w, 440px), calc(100vw - var(--rail-w, 0px) - 18px));
+}
 #reader.ctx-left:not(.floating) {
   /* !important: the geometry engine sets inline inset styles when docked */
   right: auto !important;

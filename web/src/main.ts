@@ -2291,7 +2291,7 @@ async function boot() {
 
     function applyGeom() {
       geom.width = clamp(geom.width, 280, window.innerWidth - 40);
-      reader.style.width = geom.width + "px";
+      reader.style.setProperty("--reader-w", `${geom.width}px`);
       reader.classList.toggle("floating", geom.floating);
       if (geom.floating) {
         geom.height = clamp(geom.height, 220, window.innerHeight - 24);
@@ -2301,12 +2301,16 @@ async function boot() {
           window.innerWidth - 80,
         );
         geom.top = clamp(geom.top, 0, window.innerHeight - 48);
+        reader.style.width = geom.width + "px";
         reader.style.left = geom.left + "px";
         reader.style.top = geom.top + "px";
         reader.style.height = geom.height + "px";
         reader.style.right = "auto";
         reader.style.bottom = "auto";
       } else {
+        // Docked: CSS owns the width via --reader-w (ctx-left clamps it so the
+        // right edge — and its resize handle — can't slide under the rail).
+        reader.style.width = "";
         reader.style.left = "auto";
         reader.style.top = "0";
         reader.style.right = "0";
@@ -4076,10 +4080,6 @@ async function boot() {
   // is covered by a panel or it would collide with the menu, and returns to the
   // right when there is room. Re-run by a MutationObserver on the two panels'
   // class attributes + window resize (see the topbar-reflow wiring below).
-  // topbarRailOn persists across calls so the center-gap is measured against
-  // the panel's NATURAL width (rail shrink subtracted back out), breaking the
-  // rail-on → panel-shrinks → gap-grows → rail-off feedback flicker.
-  let topbarRailOn = false;
   function layoutTopbar() {
     const reader = $("#reader");
     const research = $("#research");
@@ -4117,13 +4117,21 @@ async function boot() {
     const vw = window.innerWidth;
     const groupW = $("#nav-group").offsetWidth;
     const searchWrapW = $("#search-wrap").offsetWidth;
-    // Measure the center gap against the panel's NATURAL width: when the rail
-    // was on last pass the panel is currently shrunk by 56px, so subtract that
-    // shrink back out or the gap reads larger and toggles the rail off (flicker).
-    const shrink = topbarRailOn ? 56 : 0;
-    const centerGap = vw - leftPanelW - rightPanelW - shrink;
+    // Measure the center gap against the panels' NATURAL widths (the --dock-w /
+    // --reader-w CSS vars set by applyRGeom / applyGeom), not the rendered
+    // rail-shrunk offsetWidth — otherwise the rail sees its own shrink and
+    // flickers. Inline-style reads are cheap (no layout recalc).
+    const readerWNat =
+      parseInt(reader.style.getPropertyValue("--reader-w")) || 0;
+    const dockWNat = parseInt(research.style.getPropertyValue("--dock-w")) || 0;
+    const natLeft = leftDocked ? readerWNat || leftPanelW : leftPanelW;
+    const natRight = researchDocked
+      ? dockWNat || rightPanelW
+      : readerDocked && !leftDocked
+        ? readerWNat || rightPanelW
+        : rightPanelW;
+    const centerGap = vw - natLeft - natRight;
     const rail = centerGap < Math.max(groupW, searchWrapW) + 2 * PAD;
-    topbarRailOn = rail;
     // Rail offset: a docked right panel shrinks by the rail width (CSS subtracts
     // --rail-w from --dock-w), and the corner buttons clear panel + rail.
     const railW = rail ? 56 : 0;
