@@ -3762,8 +3762,11 @@ async function boot() {
             currentEntryId = String(p.id ?? "") || null;
             void loadHistory().then(() => {
               historyIdx = 0;
-              updateHistoryNav();
-            });
+                updateHistoryNav();
+              });
+          } else if (action === "open_saved_note") {
+            const note = String(p.note ?? "");
+            if (note) void openAfterIngest(note).then(loadHistory);
           }
         },
       });

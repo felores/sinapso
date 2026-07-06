@@ -297,6 +297,11 @@ Open **File → Admin...** to manage the current vault and wiki settings.
   immediate save behavior. A wiki target converts the source locally with
   markitdown, reads that wiki's contracts, asks OpenRouter for structured
   create/edit proposals, shows a preview, and writes only after you approve.
+- **Voice-aware wiki saves**: the voice assistant receives the enabled wiki
+  paths, raw folders, and contract filenames from Admin. When you ask it to save
+  its working document, it can read the selected wiki contract first, promote the
+  temporary document into the wiki or raw folder, rescan, open the saved note,
+  and remove the temporary history entry.
 
 ### Trust model
 
@@ -309,8 +314,9 @@ Open **File → Admin...** to manage the current vault and wiki settings.
   action you requested.
 - **The vault is written only through one guarded endpoint** (path-confined,
   `.md`-only, never overwrites) and only on your action: saving a web result,
-  capture-only ingest, approving a wiki-ingest proposal, or confirming an orphan
-  link suggestion. Writes are journaled in `data/changes.jsonl`.
+  capture-only ingest, approving a wiki-ingest proposal, promoting a voice
+  working document, or confirming an orphan link suggestion. Writes are
+  journaled in `data/changes.jsonl`.
 - Secrets (Exa, OpenRouter, and voice keys) live in `~/.solaris/config.json`
   (mode 600), outside the vault and outside version control, and never appear in
   API responses.

@@ -30,6 +30,7 @@ export interface ConvertedDocument {
   sourceLabel: string;
   title: string;
   markdown: string;
+  via?: string;
 }
 
 export function resolveIngestDestination(

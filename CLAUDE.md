@@ -37,6 +37,7 @@ Rescan without restarting: `/api/rescan` (or File → Rescan) re-parses changed 
   - `openrouter.ts` — LLM for follow-up questions (`/api/note-questions`, templates fallback) and wiki-ingest synthesis + `/api/llm/models` proxy. OpenAI-compatible chat completions; the BYO key is server-side only, never echoed.
   - `ingest.ts` — Ingest mode: `/api/ingest` (path/URL) and `/api/ingest-upload` (browser bytes) convert via markitdown into a vault note through `write.ts`, or into converted markdown reused by wiki-ingest proposals.
   - `wiki-ingest.ts` — contract-aware proposal layer: reads selected wiki contracts, asks OpenRouter for JSON create/edit proposals, adds raw-copy proposals for per-wiki rawDestination, validates proposal paths under the selected wiki/raw destination, and applies approvals only through `write.ts`.
+  - `voice.ts` — Gemini Live voice relay. Its system prompt is built at session start from the Admin voice prompt plus enabled wiki paths/raw destinations/contract filenames. Voice tools can list wikis, read a selected wiki contract, and promote the current working document to either a structured wiki note or raw copy through the same guarded writer.
   - `write.ts` — **the single sanctioned vault-write path** (`POST/PUT /api/notes`, plus `guardedAppendLink` for orphan links via `POST /api/gaps/link`): path-confined, `.md`-only, symlink-aware, never overwrites, journals to `data/changes.jsonl`. Add append/edit helpers HERE; never a second writer.
   - `install.ts` — addons flavor: installs only missing tools, never touches existing setups.
 
@@ -44,7 +45,7 @@ Data flow: `scanner` → `data/graph.json` → `server` → `web`. **The core up
 
 ## Conventions & gotchas
 
-- **The vault is read-only except through `server/integrations/write.ts`.** Scanner, reader, search, wiki discovery, and proposal generation only read; runtime data goes to `data/` (gitignored). The one write path is user-initiated (save a web result, capture-only ingest, approve wiki-ingest proposal, confirm orphan link) and always journaled. Never add a second write path.
+- **The vault is read-only except through `server/integrations/write.ts`.** Scanner, reader, search, wiki discovery, and proposal generation only read; runtime data goes to `data/` (gitignored). The one write path is user-initiated (save a web result, capture-only ingest, approve wiki-ingest proposal, promote a voice working document, confirm orphan link) and always journaled. Never add a second write path.
 - **Path-traversal guard** (`server/app.ts` `/api/note`, mirrored in `write.ts`): `resolve(vaultRoot, id)` must stay under `vaultRoot + sep` and end in `.md`; `phantom:` ids return 404. Tests live in `server/app.test.ts` and `server/integrations/*.test.ts` — keep them green when touching the server. The trust-model negatives (traversal, consent gates, token enforcement) are release-blocking.
 - **Frontend has no test framework.** `npm test` covers the scanner and all server modules. Verify UI changes manually with `npm run dev`.
 - **Reader HTML is sanitized** with DOMPurify before `innerHTML` — integration-created notes carry untrusted content; keep the sanitizer when touching `openReader()`.

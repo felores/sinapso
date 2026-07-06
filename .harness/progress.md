@@ -352,3 +352,13 @@ User feedback: existing wikis like agencia/felo/climatia/skandia/mineralia shoul
 - Removed dead vault-action CSS and unused i18n strings.
 
 **Verification:** `npm run typecheck` clean; `npm run build` clean with the existing Vite chunk-size warning only.
+
+## Session 2026-07-06-1518 — voice wiki context + promote working document
+
+**Changes:**
+- Voice system prompt now includes Admin voice prompt plus enabled wiki paths, raw destinations, and contract filenames.
+- Added voice tools to list wikis, read a selected wiki contract, and promote the current working document to either a structured wiki note or raw copy.
+- Added guarded `/api/wiki-contracts` read route and `/api/document/:id/promote` mutation route; promotion writes only through `write.ts`, removes the temporary history document after success, and returns the saved note id.
+- Frontend voice action `open_saved_note` rescans, opens the saved vault note, and refreshes history.
+
+**Verification:** `npm run typecheck` clean; `npm test` 207/207 pass; `npm run build` clean with the existing Vite chunk-size warning only.

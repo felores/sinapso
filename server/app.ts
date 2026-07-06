@@ -65,6 +65,7 @@ import {
   ingestText,
   isYoutubeUrl,
   resolveIngestDestination,
+  type ConvertedDocument,
 } from "./integrations/ingest.js";
 import {
   clearEntries,
@@ -113,7 +114,9 @@ import { attachVoiceRelay } from "./integrations/voice.js";
 import { discoverAndMerge } from "./integrations/wiki.js";
 import {
   applyWikiIngestOperations,
+  buildRawOperation,
   buildWikiIngestProposal,
+  readWikiContracts,
   resolveWikiTarget,
 } from "./integrations/wiki-ingest.js";
 
@@ -1046,6 +1049,84 @@ export function createApp(
       res.status(500).json({ error: `${what} failed` });
     }
   };
+
+  const noteSlug = (title: string) =>
+    title
+      .normalize("NFKD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .replace(/[''']/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80)
+      .replace(/-+$/g, "") || "document";
+
+  app.get("/api/wiki-contracts", (req, res) => {
+    try {
+      const cfg = ingestTargetConfig(loadConfig(configPath));
+      const wiki = resolveWikiTarget(vaultRoot, cfg, { wikiId: req.query.wikiId });
+      res.json({
+        wiki: { id: wiki.id, label: wiki.label, path: wiki.path },
+        contracts: readWikiContracts(vaultRoot, wiki),
+      });
+    } catch (e) {
+      writeFail(res, e, "wiki contracts read");
+    }
+  });
+
+  app.post(
+    "/api/document/:id/promote",
+    guarded,
+    express.json({ limit: "5mb" }),
+    (req, res) => {
+      try {
+        const entry = listEntries(dataDir).find(
+          (e) => e.id === req.params.id && e.mode === "document" && e.document,
+        );
+        if (!entry?.document) throw new WriteError(404, "document not found");
+        const b = (req.body ?? {}) as Record<string, unknown>;
+        const kind = b.kind === "raw_copy" ? "raw_copy" : "wiki_note";
+        const cfg = ingestTargetConfig(loadConfig(configPath));
+        const wiki = resolveWikiTarget(vaultRoot, cfg, { wikiId: b.wikiId });
+        const title =
+          (typeof b.title === "string" && b.title.trim()) ||
+          entry.document.title ||
+          entry.query ||
+          "Untitled";
+        const converted: ConvertedDocument = {
+          source: `voice-document:${entry.id}`,
+          sourceLabel: `voice working document: ${title}`,
+          title,
+          markdown: entry.document.content,
+          via: "voice",
+        };
+        const op =
+          kind === "raw_copy"
+            ? buildRawOperation(vaultRoot, wiki, converted, new Date())
+            : {
+                type: "create" as const,
+                path:
+                  typeof b.path === "string" && b.path.trim()
+                    ? b.path.trim()
+                    : `${wiki.path}/${noteSlug(title)}.md`,
+                title,
+                content: converted.markdown,
+              };
+        if (!op) throw new WriteError(400, "selected wiki has no raw destination");
+        const ids = applyWikiIngestOperations(
+          writeDeps(),
+          vaultRoot,
+          wiki,
+          [op],
+          { actor: "agent" },
+        );
+        deleteEntry(dataDir, entry.id);
+        res.json({ ok: true, id: ids[0], ids, removedHistory: true });
+      } catch (e) {
+        writeFail(res, e, "document promote");
+      }
+    },
+  );
 
   async function markitdownBinOrFail(res: express.Response): Promise<string | null> {
     if (!toolCache) toolCache = await detectAll(detectDeps);

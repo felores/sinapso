@@ -56,8 +56,13 @@ export async function buildWikiIngestProposal(
   converted: ConvertedDocument,
   chat: WikiIngestChat,
 ): Promise<WikiIngestProposal> {
-  const contracts = readContracts(deps.vaultRoot, wiki);
-  const raw = rawOperation(deps.vaultRoot, wiki, converted, deps.now?.() ?? new Date());
+  const contracts = readWikiContracts(deps.vaultRoot, wiki);
+  const raw = buildRawOperation(
+    deps.vaultRoot,
+    wiki,
+    converted,
+    deps.now?.() ?? new Date(),
+  );
   const reply = await chat([
     {
       role: "system",
@@ -88,6 +93,7 @@ export function applyWikiIngestOperations(
   vaultRoot: string,
   wiki: WikiConfig,
   operations: unknown,
+  opts: { actor?: "user" | "agent" } = {},
 ): string[] {
   const valid = validateWikiOperations(vaultRoot, wiki, operations);
   return valid.map((op) => {
@@ -96,14 +102,14 @@ export function applyWikiIngestOperations(
         ? guardedEdit(writeDeps, {
             id: op.path,
             content: op.content,
-            actor: "user",
+            actor: opts.actor ?? "user",
             mode: "approval",
           })
         : guardedCreate(writeDeps, {
             path: op.path,
             title: op.title,
             content: op.content,
-            actor: "user",
+            actor: opts.actor ?? "user",
             mode: "approval",
           });
     return result.id;
@@ -149,7 +155,7 @@ export function validateWikiOperations(
   });
 }
 
-function readContracts(
+export function readWikiContracts(
   vaultRoot: string,
   wiki: WikiConfig,
 ): Array<{ path: string; content: string }> {
@@ -228,7 +234,7 @@ function extractJson(text: string): string {
   return text.slice(start, end + 1);
 }
 
-function rawOperation(
+export function buildRawOperation(
   vaultRoot: string,
   wiki: WikiConfig,
   converted: ConvertedDocument,
@@ -249,7 +255,7 @@ function rawOperation(
       "---",
       `source: ${converted.sourceLabel.replace(/\n/g, " ")}`,
       `ingested: ${date}`,
-      "via: markitdown",
+      `via: ${converted.via ?? "markitdown"}`,
       "---",
       "",
       converted.markdown,
