@@ -45,6 +45,7 @@ Answer anything about THEIR OWN notes/vault from the tools — never from your o
   3. CITATIONS: Reference other vault notes by their title in [[brackets]] when mentioning their ideas, so the reader can follow the thread.
   4. STRUCTURE: Use Markdown headings, bullet lists, and short paragraphs. Follow the wiki contract conventions for node types and folders when saving to a wiki.
   5. COMPLETENESS: Don't produce a thin stub and plan to "add links later". Every draft must arrive with its links, sources, and connections already in place. If you lack sources, say so and offer to search the web or vault before writing.
+- To EDIT an existing vault note in place ("edita X", "add sources to that note", "arregla eso", "actualiza la nota") → edit_vault_note. Give the note path (from a previous result or current_view) and the COMPLETE new markdown — never a fragment. Read the note first (open_note or read_passage) so you know its current content before replacing it.
 - To SAVE the working document into a wiki or raw folder ("guárdalo en la wiki de X", "save this to raw", "convierte esto en nota") → list_wikis, choose/infer the wiki, read_wiki_contract, revise the working document if needed, then save_working_document. If there is exactly one enabled wiki, use it by default. If there are multiple and the target is not obvious from the user's words/current topic, ask which wiki. Save raw copies with kind raw_copy; save structured wiki notes with kind wiki_note and pass an explicit path when the contract implies one.
 - To go to the WEB (NOT their vault) → web_research answers a question with sources via Exa deep research ("look it up", "search the web for X", "investiga X en la web", "qué dice internet sobre…"); fetch_url reads the FULL text of a web page OR the TRANSCRIPT of a YouTube video from its URL ("read this link", "summarize this article", "summarize this video", "transcribe este video"). Both spend the user's Exa credit and need Web mode enabled — if one comes back with web-consent-required, tell them to turn on Web mode first. Results also open in the research panel.
 
@@ -183,13 +184,18 @@ const VOICE_TOOLS: FunctionDeclaration[] = [
   {
     name: "find_notes",
     description:
-      "Keyword full-text search across the ENTIRE vault (note titles + full content), returning matches anywhere — INCLUDING folders the semantic tools miss (saas/, edtech/, apps/, …). Use for an exact name, word, or filename, or whenever search_vault / search_passages come up empty. Returns titles + paths + a snippet.",
+      "Keyword full-text search across the ENTIRE vault (note titles + full content), returning matches anywhere — INCLUDING folders the semantic tools miss (saas/, edtech/, apps/, …). Use for an exact name, word, or filename, or whenever search_vault / search_passages come up empty. Pass 'path' to scope results to a folder (e.g. 'felo/wiki'). Returns titles + paths + a snippet.",
     parameters: {
       type: Type.OBJECT,
       properties: {
         query: {
           type: Type.STRING,
           description: "Words, name, or filename to find.",
+        },
+        path: {
+          type: Type.STRING,
+          description:
+            "Optional folder prefix to scope results (e.g. 'felo/wiki' or 'saas/climatia'). Omit to search the whole vault.",
         },
       },
       required: ["query"],
@@ -285,6 +291,25 @@ const VOICE_TOOLS: FunctionDeclaration[] = [
           description: "Optional title override for the saved note.",
         },
       },
+    },
+  },
+  {
+    name: "edit_vault_note",
+    description:
+      "Edit an EXISTING vault note in place — replace its full content. Give 'note' (the vault-relative .md path from a previous result) and 'markdown' (the COMPLETE new body, not a fragment). Use when the user asks to revise, add to, or fix a note that is already in the vault: 'edita X', 'add sources to that note', 'arregla eso', 'actualiza la nota'. Always pass the full markdown including the unchanged parts. On success it rescans and reopens the note.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        note: {
+          type: Type.STRING,
+          description: "Vault-relative .md path of the note to edit.",
+        },
+        markdown: {
+          type: Type.STRING,
+          description: "The complete new markdown body for the note.",
+        },
+      },
+      required: ["note", "markdown"],
     },
   },
   {
@@ -471,11 +496,20 @@ async function callTool(
       const u = new URL(`${base}/api/search`);
       u.searchParams.set("q", String(args.query ?? ""));
       const hits = (await (await fetch(u)).json()) as unknown[];
+      const prefix =
+        typeof args.path === "string" ? args.path.trim().replace(/\/+$/, "") : "";
       return {
-        results: (hits ?? []).slice(0, 8).map((h) => {
-          const x = h as Record<string, unknown>;
-          return { title: x.title, snippet: x.snippet, path: x.id };
-        }),
+        results: (hits ?? [])
+          .filter((h) => {
+            if (!prefix) return true;
+            const x = h as Record<string, unknown>;
+            return String(x.id ?? "").startsWith(prefix + "/");
+          })
+          .slice(0, 8)
+          .map((h) => {
+            const x = h as Record<string, unknown>;
+            return { title: x.title, snippet: x.snippet, path: x.id };
+          }),
       };
     }
     if (name === "list_wikis") {
@@ -663,6 +697,27 @@ async function bridge(
         ids: d.ids,
         removedTemporaryDocument: d.removedHistory === true,
       };
+    }
+    if (name === "edit_vault_note") {
+      const note = String(args.note ?? "").trim();
+      const markdown = String(args.markdown ?? "");
+      if (!note) return { error: "note path required" };
+      if (!markdown.trim()) return { error: "content required" };
+      const r = await fetch(`${base}/api/notes`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          "x-solaris-token": opts.sessionToken,
+        },
+        body: JSON.stringify({ id: note, content: markdown }),
+      });
+      const d = (await r.json().catch(() => ({}))) as {
+        id?: string;
+        error?: string;
+      };
+      if (!r.ok || !d.id) return { error: d.error ?? "could not edit note" };
+      send({ type: "action", action: "open_saved_note", note: d.id });
+      return { ok: true, path: d.id };
     }
     // Web tools (Exa): spend-bearing, so the guarded routes need the session
     // token — they cannot go through the token-less callTool path. fetch_url
