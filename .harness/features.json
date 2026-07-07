@@ -1,7 +1,7 @@
 {
   "project": "solaris-architecture-deepening",
   "created": "2026-07-02T04:37:20Z",
-  "updated": "2026-07-07T07:23:41Z",
+  "updated": "2026-07-07T08:21:41Z",
   "features": [
     {
       "id": "F001",
@@ -1518,12 +1518,17 @@
         "command": "npm test && npm run typecheck",
         "expected": "voice-tools.test.ts passes with fake fetchFn; existing voice.test.ts and voice-promote.test.ts green; manual smoke: a tool round-trip (list wikis) still works in dev"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": ["F055"],
       "files_touched": ["server/integrations/voice-tools.ts", "server/integrations/voice-tools.test.ts", "server/integrations/voice.ts"],
-      "confidence": "needs-review",
+      "confidence": "autonomous",
       "context_note": "KTD8. DI style of detectDeps.run. Do not replace HTTP calls with direct function calls (loopback design is deliberate).",
-      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u8-voice-tool-dispatch-seam"
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u8-voice-tool-dispatch-seam",
+      "evidence": "verifier PASS. npm test 366/366 pass (27 files) on a clean run; +23 new voice-tools.test.ts (read-only tools incl. find_notes URL+params+8-cap+path-prefix-with-trailing-slash-trim+HTTP-error envelope, read_wiki_contract gating incl. reject-before-contract with current error / allow-after-contract / raw_copy bypass / no-working-doc error, write_document incl. doc-<base36-ts>-<slug> minting / same-id-on-reedit / doc-slug-fallback / could-not-save-on-500 / show_document browser action, promote+edit incl. /api/document/:id/promote URL+session-token+body+server-error-propagation + edit_vault_note PUT /api/notes+body + empty-path/empty-body early returns, web tools incl. web_research /api/research+deep:true+historyId-driven+empty-query-reject + fetch_url /api/article+http(s)-guard, default-fetchFn global-fetch fallback, VOICE_TOOLS declaration names); +0 regressions: all 343 prior tests still green incl. voice.test.ts (1/1 buildVoiceSystemPrompt) and voice-promote.test.ts (2/2 full HTTP promote flow with vault fixtures) without modification. npm run typecheck clean (0 errors). voice.ts shrank from 899 -> 296 lines (-603 net): removed VOICE_TOOLS/Args/cap/stripFrontmatter/notePreview/ResearchHist/researchEntries/lastReaderNoteId/wikiSummaries/callTool/runTool/workingDocId/contractWikisRead (all moved to voice-tools.ts); kept BASE_SYSTEM_PROMPT, buildVoiceSystemPrompt (exported, used by voice.test.ts), VoiceWikiSummary, VoiceRelayOpts, loopbackBase, attachVoiceRelay, bridge. bridge() now creates a session via createVoiceToolSession({base, fetchFn: globalThis.fetch.bind(globalThis), getSessionToken: () => opts.sessionToken, send}) and delegates every tool call: await toolSession.run(fc.name, fc.args) instead of inlined runTool. Tiny wikiSummariesForPrompt helper kept inline (used once at bridge startup for the system prompt, not on a tool path). Loopback-HTTP design preserved verbatim: same loopback endpoints (/api/document, /api/document/:id/promote, /api/notes, /api/research, /api/article, /api/note, /api/note-lines, /api/note-grep, /api/tree, /api/search, /api/semantic-search, /api/passages, /api/wikis, /api/wiki-contracts, /api/reader-history, /api/research/history), same params, same error envelopes, same content cap. No second writer; write/edit/promote go through the same /api/notes and /api/document/:id/promote routes the inlined code hit. Static checks I could run instead of the live bridge: npx tsx server/index.ts boots cleanly; npx tsx -e \"import('./server/integrations/voice.ts')\" / \"import('./server/integrations/voice-tools.ts')\" both resolve and export the expected symbols (attachVoiceRelay, buildVoiceSystemPrompt; VOICE_TOOLS, createVoiceToolSession); a curl of an unauthenticated /api/voice/ws WebSocket upgrade returns the expected 403 Forbidden (handler doesn't crash, no Gemini key path entered); npm run build (vite) green. SOFT BLOCKER: full live voice round-trip (list_wikis or a save_working_document) cannot be exercised here because the bridge needs a configured Gemini API key in ~/.solaris/config.json AND browser microphone + WebSocket access, neither of which is available in this environment. That smoke is a manual `npm run dev` + Tools -> Voice Assistant with a valid Gemini key, deferred to a real human session.",
+      "implemented_by": "executor (opencode/minimax-m3)",
+      "implemented_at": "2026-07-07T08:15:00Z",
+      "verified_by": "verifier (npm test + npm run typecheck + voice-tools/voice/voice-promote test suite)",
+      "verified_at": "2026-07-07T08:21:41Z"
     },
     {
       "id": "F058",
