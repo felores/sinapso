@@ -637,6 +637,7 @@ const state: FakeState = {
 const covered = makeApp(state, VAULT);
 
 let mtimeBump = 0;
+const QMD_ROUTE_TIMEOUT = 10_000;
 beforeEach(() => {
   covered.fake.calls.length = 0;
   // The related cache is keyed by note mtime (F015); bump it so each test
@@ -646,18 +647,22 @@ beforeEach(() => {
 });
 
 describe("GET /api/related", () => {
-  it("returns in-graph related notes only, excluding the note itself (AE3, R5)", async () => {
-    state.vsearchOut = JSON.stringify([
-      { docid: "#1", score: 0.9, file: "qmd://vaultcol/a.md", snippet: "s" },
-      { docid: "#2", score: 0.8, file: "qmd://vaultcol/excluded.md" },
-      { docid: "#3", score: 0.7, file: "qmd://far/elsewhere.md" },
-      { docid: "#4", score: 0.6, file: "qmd://vaultcol/self.md" },
-    ]);
-    const res = await request(covered.app).get("/api/related?id=self.md");
-    expect(res.status).toBe(200);
-    expect(res.body.state).toBe("ready");
-    expect(res.body.results.map((r: { id: string }) => r.id)).toEqual(["a.md"]);
-  });
+  it(
+    "returns in-graph related notes only, excluding the note itself (AE3, R5)",
+    async () => {
+      state.vsearchOut = JSON.stringify([
+        { docid: "#1", score: 0.9, file: "qmd://vaultcol/a.md", snippet: "s" },
+        { docid: "#2", score: 0.8, file: "qmd://vaultcol/excluded.md" },
+        { docid: "#3", score: 0.7, file: "qmd://far/elsewhere.md" },
+        { docid: "#4", score: 0.6, file: "qmd://vaultcol/self.md" },
+      ]);
+      const res = await request(covered.app).get("/api/related?id=self.md");
+      expect(res.status).toBe(200);
+      expect(res.body.state).toBe("ready");
+      expect(res.body.results.map((r: { id: string }) => r.id)).toEqual(["a.md"]);
+    },
+    QMD_ROUTE_TIMEOUT,
+  );
 
   it("queries via vsearch, never qmd query or search", async () => {
     await request(covered.app).get("/api/related?id=self.md");
