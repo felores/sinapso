@@ -39,31 +39,11 @@ import * as i18n from "./i18n";
 import { startVoice, type VoiceSession } from "./voice";
 import { THEMES, PALETTE, FALLBACK_COLORS, nodeColorFor, type GNodeLike, type NodeColorDeps } from "./theme";
 import { spectrumComplement, spectrumHslToRgb } from "./spectrum";
+import type { GNode, GLink } from "./types";
+import { filterFields, compileMatcher } from "./filters";
+import { computeSemanticClusters as computeSemanticClustersPure } from "./clusters";
 
 // ===== DATA STRUCTURES =====
-// GNode: A knowledge note (file) in the vault
-interface GNode {
-  id: string;
-  title: string;
-  pillar: string;
-  tags?: string[];
-  words: number;
-  in: number;
-  out: number;
-  phantom?: boolean;
-  x?: number;
-  y?: number;
-  z?: number;
-}
-
-interface GLink {
-  source: string | GNode;
-  target: string | GNode;
-  weight: number;
-  /** true for semantic (mutual-KNN) edges, false/absent for structural links */
-  __sem?: boolean;
-}
-
 interface Graph {
   meta: {
     vaultName: string;
@@ -748,83 +728,11 @@ async function boot() {
   // Each cluster is named by its most common tag (fallback pillar), deduped.
   function computeSemanticClusters() {
     clusterNameOfId.clear();
-    if (!semanticLinks.length) return;
-    const adj = new Map<string, Array<[string, number]>>();
-    const link = (a: string, b: string, w: number) => {
-      (adj.get(a) ?? adj.set(a, []).get(a)!).push([b, w]);
-    };
-    for (const l of semanticLinks) {
-      const a = endNode(l.source).id;
-      const b = endNode(l.target).id;
-      link(a, b, l.weight);
-      link(b, a, l.weight);
-    }
-    const nodes = [...adj.keys()].sort();
-    const label = new Map<string, string>();
-    for (const id of nodes) label.set(id, id);
-    for (let iter = 0; iter < 20; iter++) {
-      let changed = false;
-      for (const id of nodes) {
-        const counts = new Map<string, number>();
-        for (const [nb, w] of adj.get(id)!) {
-          const lab = label.get(nb)!;
-          counts.set(lab, (counts.get(lab) ?? 0) + w);
-        }
-        let best = label.get(id)!;
-        let bestW = -1;
-        for (const [lab, w] of counts) {
-          if (w > bestW || (w === bestW && lab < best)) {
-            best = lab;
-            bestW = w;
-          }
-        }
-        if (best !== label.get(id)) {
-          label.set(id, best);
-          changed = true;
-        }
-      }
-      if (!changed) break;
-    }
-    // Group members by label and name each cluster deterministically.
-    const members = new Map<string, string[]>();
-    for (const [id, lab] of label) {
-      (members.get(lab) ?? members.set(lab, []).get(lab)!).push(id);
-    }
-    const ordered = [...members.entries()].sort(
-      (a, b) => b[1].length - a[1].length || (a[0] < b[0] ? -1 : 1),
-    );
-    const used = new Map<string, number>();
-    const nameOfLabel = new Map<string, string>();
-    for (const [lab, ids] of ordered) {
-      const tally = new Map<string, number>();
-      for (const id of ids)
-        for (const t of byId.get(id)?.tags ?? [])
-          tally.set(t, (tally.get(t) ?? 0) + 1);
-      let name: string;
-      if (tally.size) {
-        name =
-          "#" +
-          [...tally.entries()].sort(
-            (a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1),
-          )[0][0];
-      } else {
-        const pc = new Map<string, number>();
-        for (const id of ids) {
-          const p = byId.get(id)?.pillar;
-          if (p) pc.set(p, (pc.get(p) ?? 0) + 1);
-        }
-        name = pc.size
-          ? [...pc.entries()].sort(
-              (a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1),
-            )[0][0]
-          : "cluster";
-      }
-      const k = (used.get(name) ?? 0) + 1;
-      used.set(name, k);
-      nameOfLabel.set(lab, k > 1 ? `${name} ${k}` : name);
-    }
-    for (const [id, lab] of label)
-      clusterNameOfId.set(id, nameOfLabel.get(lab)!);
+    for (const [id, name] of computeSemanticClustersPure(
+      data.nodes,
+      semanticLinks,
+    ))
+      clusterNameOfId.set(id, name);
   }
 
   async function loadArrangementLayout(
@@ -997,42 +905,10 @@ async function boot() {
   }
 
   // A node's searchable text: title, group (pillar/tag), and its #tags.
-  function filterFields(n: GNode): string[] {
-    return [n.title || "", groupOf(n) || "", ...(n.tags || [])].map((s) =>
-      s.toLowerCase(),
-    );
-  }
   // needle's chars appear in order within hay (loose fuzzy match).
-  function subsequence(needle: string, hay: string): boolean {
-    let i = 0;
-    for (let j = 0; j < hay.length && i < needle.length; j++)
-      if (hay[j] === needle[i]) i++;
-    return i === needle.length;
-  }
   // Compile a pattern to a node predicate: wildcards (*, ?) glob-match a field
   // end to end (macro* = starts with macro); plain text is substring-or-fuzzy.
-  function compileMatcher(pattern: string): (n: GNode) => boolean {
-    const p = pattern.trim().toLowerCase();
-    if (!p) return () => false;
-    if (/[*?]/.test(p)) {
-      const re = new RegExp(
-        "^" +
-          p
-            .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-            .replace(/\*/g, ".*")
-            .replace(/\?/g, ".") +
-          "$",
-      );
-      return (n) => filterFields(n).some((f) => re.test(f));
-    }
-    return (n) => {
-      const fs = filterFields(n);
-      return (
-        fs.some((f) => f.includes(p)) ||
-        (p.length >= 3 && subsequence(p, fs[0]))
-      );
-    };
-  }
+  // All three are imported from ./filters.
 
   // The active chain = persisted filters, plus the live input as a low-priority
   // preview at the end so typing shows its effect before you commit it.
@@ -1051,7 +927,7 @@ async function boot() {
       const hasShow = chain.some((f) => f.mode === "show");
       const rules = chain.map((f) => ({
         keep: f.mode === "show",
-        test: compileMatcher(f.pattern),
+        test: compileMatcher(f.pattern, groupOf),
       }));
       for (const n of data.nodes) {
         let keep = !hasShow;

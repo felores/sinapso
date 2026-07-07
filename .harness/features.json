@@ -1560,12 +1560,17 @@
         "command": "npm test && npm run typecheck",
         "expected": "filters.test.ts + clusters.test.ts pass; manual smoke — type a filter in the UI, results identical; group by: semantic cluster colors unchanged for the same data/semantic.json"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": ["F058"],
-      "files_touched": ["web/src/filters.ts", "web/src/clusters.ts", "web/src/filters.test.ts", "web/src/clusters.test.ts", "web/src/main.ts"],
+      "files_touched": ["web/src/filters.ts", "web/src/clusters.ts", "web/src/filters.test.ts", "web/src/clusters.test.ts", "web/src/types.ts", "web/src/main.ts"],
       "confidence": "needs-review",
       "context_note": "KTD6. Label propagation must stay deterministic.",
-      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u10-pure-frontend-modules-filters--clusters"
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u10-pure-frontend-modules-filters--clusters",
+      "evidence": "npm test 440/440 (31 files; +40 vs prior 400: filters.test.ts 28/28, clusters.test.ts 12/12); npm run typecheck clean; npm run build green (vite dist unchanged envelope). web/src/main.ts shrank -134 / +10 net: GNode+GLink moved to web/src/types.ts (smallest type move); subsequence/filterFields/compileMatcher moved verbatim to web/src/filters.ts with groupOf passed in as second arg to keep them pure per KTD6; computeSemanticClusters body moved to web/src/clusters.ts as computeSemanticClusters(nodes, semanticLinks) -> Map<string, string>; boot-side function is now a 7-line thin composition that calls the pure helper and assigns the result. activeChain() stays in boot as thin composition. Behavior discrepancies accepted as current behavior preserved: (1) plan prose said 'verbatim (one-arg)' but closure's groupOf depends on groupMode/cluster state — both filterFields and compileMatcher now take groupOf as a second param; main.ts passes the same closure function so observable behavior is identical. (2) cluster name prepending '#' to raw tag values is the existing code (e.g. tag '#g' becomes '##g'); tests reflect this. (3) subsequence fallback applies to the title (first field) only when pattern length >= 3; plain substring match scans every field. (4) manual UI smoke (type a filter, toggle group by semantic cluster) deferred — no browser in this environment",
+      "implemented_by": "executor",
+      "implemented_at": "2026-07-07T09:55:25Z",
+      "verified_by": "verifier (PASS)",
+      "verified_at": "2026-07-07T09:55:25Z"
     },
     {
       "id": "F060",
