@@ -17,7 +17,6 @@
  */
 
 import express from "express";
-import MiniSearch from "minisearch";
 import type { Server } from "node:http";
 import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
@@ -137,6 +136,11 @@ import {
   resolveWikiTarget,
 } from "./integrations/wiki-ingest.js";
 import { excerptFor } from "./integrations/excerpt.js";
+import {
+  buildSearchIndex,
+  grepNote,
+  type SearchIndex,
+} from "./integrations/notes-index.js";
 
 interface GraphFile {
   meta: {
@@ -1677,19 +1681,8 @@ export function createApp(
       100,
     );
     try {
-      const lines = readFileSync(full, "utf-8").split("\n");
-      const needle = ignoreCase ? q.toLowerCase() : q;
-      const matches: { line: number; text: string; snippet: string }[] = [];
-      for (let i = 0; i < lines.length && matches.length < limit; i++) {
-        const hay = ignoreCase ? lines[i].toLowerCase() : lines[i];
-        if (!hay.includes(needle)) continue;
-        const from = Math.max(i - ctx, 0);
-        matches.push({
-          line: i + 1,
-          text: lines[i],
-          snippet: lines.slice(from, i + ctx + 1).join("\n"),
-        });
-      }
+      const content = readFileSync(full, "utf-8");
+      const matches = grepNote(content, q, ctx, { ignoreCase, limit });
       res.json({ id, q, count: matches.length, matches });
     } catch (e) {
       console.error(`Failed to grep note ${id}:`, e);
@@ -1700,48 +1693,7 @@ export function createApp(
   // Full-text index over note content (titles boosted). Built lazily on the
   // first search (~1-2s for ~2k notes), held in memory, invalidated by
   // reload(). Contents stay in local memory for snippet extraction.
-  let index: MiniSearch | null = null;
-  let contents = new Map<string, string>();
-
-  function buildIndex() {
-    const ms = new MiniSearch({
-      fields: ["title", "content"],
-      storeFields: ["title"],
-      searchOptions: { boost: { title: 3 }, prefix: true, fuzzy: 0.15 },
-    });
-    contents = new Map();
-    const docs = [];
-    for (const n of graph.nodes) {
-      if (n.phantom) continue;
-      try {
-        const text = readFileSync(resolve(vaultRoot, n.id), "utf-8");
-        contents.set(n.id, text);
-        docs.push({ id: n.id, title: n.title, content: text });
-      } catch {
-        // file moved/deleted since scan; skip it
-      }
-    }
-    ms.addAll(docs);
-    return ms;
-  }
-
-  function snippet(id: string, terms: string[]): string {
-    const text = contents.get(id) ?? "";
-    const lower = text.toLowerCase();
-    for (const t of terms) {
-      const at = lower.indexOf(t.toLowerCase());
-      if (at >= 0) {
-        const start = Math.max(0, at - 50);
-        const end = Math.min(text.length, at + t.length + 70);
-        return (
-          (start > 0 ? "…" : "") +
-          text.slice(start, end).replace(/\s+/g, " ").trim() +
-          (end < text.length ? "…" : "")
-        );
-      }
-    }
-    return "";
-  }
+  let searchIndex: SearchIndex = buildSearchIndex(graph.nodes, vaultRoot);
 
   // GET /api/search?q=...: Full-text search over note titles and content
   // Returns top 20 matches sorted by relevance score with text snippets
@@ -1755,18 +1707,7 @@ export function createApp(
     }
 
     try {
-      // Lazily build full-text index on first search
-      index ??= buildIndex();
-      const hits = index
-        .search(q)
-        .slice(0, 20)
-        .map((h) => ({
-          id: h.id as string,
-          title: h.title as string,
-          score: h.score,
-          snippet: snippet(h.id as string, h.terms),
-        }));
-      res.json(hits);
+      res.json(searchIndex.search(q));
     } catch (e) {
       console.error("Search error:", e);
       res.status(500).json({ error: "search failed" });
@@ -1805,8 +1746,9 @@ export function createApp(
   const reload = () => {
     graph = JSON.parse(readFileSync(graphPath, "utf-8"));
     vaultRoot = graph.meta.vaultPath;
-    index = null; // rebuilt lazily against the new scan
-    contents.clear();
+    // New handle with the new graph's nodes; the MiniSearch index inside
+    // is built lazily on the next /api/search call.
+    searchIndex = buildSearchIndex(graph.nodes, vaultRoot);
     colCache = null;
     maintIdxCache = null;
     relatedCache.clear(); // related notes may change with the graph (F015)

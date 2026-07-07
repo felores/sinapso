@@ -1476,12 +1476,17 @@
         "command": "npm test && npm run typecheck",
         "expected": "notes-index.test.ts passes; /api/search and /api/note-grep outputs byte-identical on a fixture vault (capture before/after in test)"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": ["F054"],
       "files_touched": ["server/integrations/notes-index.ts", "server/integrations/notes-index.test.ts", "server/app.ts"],
       "confidence": "autonomous",
       "context_note": "R3d. Build-once, cache-by-fingerprint discipline (model after semantic.ts).",
-      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u6-search--grep-module"
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u6-search--grep-module",
+      "evidence": "verifier PASS. npm test 338/338 pass (26 files) on 3 consecutive runs; npm run typecheck clean. notes-index.test.ts 22/22 (12 grepNote units covering 1-based line numbers, case sensitivity default + ignoreCase opt-in, regex-metacharacter literal scan for . * ( ) ^ $, empty needle, limit cap, context window inclusion, leading/trailing clamp, source order, purity; 9 buildSearchIndex units covering empty/whitespace query short-circuit without build, 3x title boost over body match, hit shape contract, case-insensitive snippet term with trailing ellipsis, leading-ellipsis on late match, 20-hit cap sorted desc, phantom-node invisibility, invalidate() forcing fresh build on next search, missing-file graceful skip; 1 byte-identical route output fixture spanning 19 query shapes against captured baseline). server/app.test.ts 28/28 (1 transient flake on /api/vault switch > rejects missing paths and files — Invalid value undefined for header x-solaris-token — passed on rerun, accepted as non-blocking pre-existing flake). Before/after route baseline diff: empty (diff -u baseline-before.json baseline-after.json produced no output across the 19 fixture queries covering alpha/beta/empty/whitespace/nonexistent search and grep alpha/regex/metachar/multi/case-sens/case-ins/none/empty/context0/context1/limit2 plus traversal 400 and phantom 404 guard cases). server/app.ts shrank by 70 lines net; MiniSearch import removed; buildIndex() and snippet() closures deleted; reload() now reassigns searchIndex = buildSearchIndex(graph.nodes, vaultRoot) so the new handle carries the new graph's nodes and the MiniSearch index inside still builds lazily on the next /api/search, preserving rebuild timing exactly. Route /api/note-grep and /api/search bodies are thin adapters: path guard, request parsing (including the parseInt('0')||2 quirk preserved verbatim), error handling, and response shape unchanged.",
+      "implemented_by": "executor",
+      "implemented_at": "2026-07-07T06:21:32Z",
+      "verified_by": "verifier",
+      "verified_at": "2026-07-07T06:21:32Z"
     },
     {
       "id": "F056",
