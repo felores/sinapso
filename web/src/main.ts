@@ -42,6 +42,7 @@ import { spectrumComplement, spectrumHslToRgb } from "./spectrum";
 import type { GNode, GLink } from "./types";
 import { filterFields, compileMatcher } from "./filters";
 import { computeSemanticClusters as computeSemanticClustersPure } from "./clusters";
+import { api, apiRaw, ApiError, getApiToken } from "./api";
 
 // ===== DATA STRUCTURES =====
 interface Graph {
@@ -119,13 +120,11 @@ async function boot() {
   // Fetch graph data (scanned vault topology) and cached layout (node positions from previous session)
   // Layout cache is keyed by content fingerprint; if vault unchanged, positions are reused
   const [data, layout] = await Promise.all([
-    fetch("/api/graph").then((r) => r.json()) as Promise<Graph>,
-    fetch("/api/layout")
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null) as Promise<{
+    apiRaw("/api/graph").then((r) => r.json()) as Promise<Graph>,
+    api<{
       fingerprint: string;
       positions: Record<string, number[]>;
-    } | null>,
+    } | null>("/api/layout").catch(() => null),
   ]);
 
   // Layout cache hit: seed every node with its settled position and skip
@@ -701,7 +700,9 @@ async function boot() {
   async function fetchSemantic(): Promise<boolean> {
     if (semanticReady) return true;
     try {
-      const d = await (await fetch("/api/semantic")).json();
+      const d = await api<{ available: boolean; edges?: Array<{ source: string; target: string; score: number }> }>(
+        "/api/semantic",
+      );
       if (!d.available) return false;
       semanticLinks = (
         d.edges as Array<{ source: string; target: string; score: number }>
@@ -740,9 +741,9 @@ async function boot() {
   ): Promise<Record<string, number[]> | null> {
     if (arrLayoutMem.has(mode)) return arrLayoutMem.get(mode)!;
     try {
-      const r = await fetch(`/api/layout?arrangement=${mode}`);
-      if (!r.ok) return null;
-      const d = await r.json();
+      const d = await api<{ fingerprint: string; positions: Record<string, number[]> }>(
+        `/api/layout?arrangement=${mode}`,
+      );
       if (d.fingerprint !== data.meta.fingerprint) return null;
       arrLayoutMem.set(mode, d.positions);
       return d.positions;
@@ -860,14 +861,12 @@ async function boot() {
       ];
     }
     arrLayoutMem.set(arrangement, positions);
-    fetch("/api/layout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    api("/api/layout", {
+      json: {
         arrangement,
         fingerprint: data.meta.fingerprint,
         positions,
-      }),
+      },
     }).catch(() => {});
   }
 
@@ -1343,15 +1342,13 @@ async function boot() {
         reported = true;
         const avg =
           reportSamples.reduce((a, b) => a + b, 0) / reportSamples.length;
-        fetch("/api/fpslog", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        api("/api/fpslog", {
+          json: {
             fps: Math.round(avg * 10) / 10,
             nodes: nodeStyle,
             pc: particleCount,
             quality,
-          }),
+          },
         }).catch(() => {});
       }
     }
@@ -1575,10 +1572,9 @@ async function boot() {
     resetFindBar();
     body.innerHTML = '<p class="muted">loading…</p>';
     try {
-      const res = await fetch(
+      const { markdown } = await api<{ markdown: string }>(
         `/api/note?id=${encodeURIComponent(n.id)}${fromHistory ? "&nolog=1" : ""}`,
       );
-      const { markdown } = await res.json();
       // Strip a leading OKF/YAML frontmatter block so it isn't rendered raw
       // (the node title/type already came from it via the scanner).
       const stripped = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
@@ -1628,8 +1624,9 @@ async function boot() {
     const verSel = $("#reader-versions") as HTMLSelectElement;
     const toggle = $("#reader-versions-toggle");
     try {
-      const res = await fetch(`/api/note-versions?id=${encodeURIComponent(n.id)}`);
-      const data = await res.json();
+      const data = await api<{ available: boolean; versions?: Array<{ commit: string; committedAt: string; subject?: string }> }>(
+        `/api/note-versions?id=${encodeURIComponent(n.id)}`,
+      );
       if (!data.available || !data.versions?.length) return;
       verSel.innerHTML = "";
       const cur = document.createElement("option");
@@ -1654,14 +1651,9 @@ async function boot() {
     const restore = $("#reader-version-restore");
     body.innerHTML = '<p class="muted">loading…</p>';
     try {
-      const res = await fetch(
+      const { markdown } = await api<{ markdown: string }>(
         `/api/note-version?id=${encodeURIComponent(n.id)}&commit=${encodeURIComponent(commit)}`,
       );
-      if (!res.ok) {
-        body.innerHTML = '<p class="muted">could not load version</p>';
-        return;
-      }
-      const { markdown } = await res.json();
       const stripped = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
       const prepped = stripped.replace(
         /\[\[([^\]|#\n]+)(?:#[^\]|\n]*)?(?:\|([^\]\n]*))?\]\]/g,
@@ -1678,18 +1670,7 @@ async function boot() {
   async function restoreVersion(n: GNode, commit: string) {
     if (!confirm(i18n.t("reader.restoreConfirm"))) return;
     try {
-      const res = await fetch("/api/note-version/restore", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-solaris-token": await apiToken(),
-        },
-        body: JSON.stringify({ id: n.id, commit }),
-      });
-      if (!res.ok) {
-        alert(i18n.t("reader.restoreFailed"));
-        return;
-      }
+      await api("/api/note-version/restore", { json: { id: n.id, commit } });
       ($("#reader-versions") as HTMLSelectElement).value = "";
       $("#reader-version-restore").classList.add("hidden");
       $("#reader-find").classList.remove("versions-expanded");
@@ -2651,9 +2632,9 @@ async function boot() {
     // 2) Content matches: debounced hit on the server's full-text index.
     searchTimer = setTimeout(async () => {
       try {
-        const hits: Array<{ id: string; snippet: string }> = await fetch(
+        const hits = await api<Array<{ id: string; snippet: string }>>(
           `/api/search?q=${encodeURIComponent(q)}`,
-        ).then((r) => r.json());
+        );
         if (token !== searchToken) return; // stale response
         for (const h of hits) {
           if (shown.has(h.id) || shown.size >= 16) continue;
@@ -2746,24 +2727,8 @@ async function boot() {
   let webScope: "deep" | "web" =
     localStorage.getItem("akasha-web-scope") === "web" ? "web" : "deep";
 
-  // Per-session token for mutating routes (fetched once, sent as a header).
-  let sessionToken = "";
-  const apiToken = async () => {
-    if (!sessionToken)
-      sessionToken = (await fetch("/api/session").then((r) => r.json())).token;
-    return sessionToken;
-  };
-  async function postConfig(patch: object) {
-    const res = await fetch("/api/integrations/config", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-solaris-token": await apiToken(),
-      },
-      body: JSON.stringify(patch),
-    });
-    if (!res.ok) throw new Error(`config save failed (${res.status})`);
-  }
+  const postConfig = (patch: object) =>
+    api("/api/integrations/config", { json: patch });
 
   const modeReady = (m: ModeName): boolean => {
     const t = integrations?.tools;
@@ -2806,9 +2771,7 @@ async function boot() {
     const select = $("#ingest-target") as HTMLSelectElement;
     const seq = ++ingestTargetSeq;
     try {
-      const r = await fetch("/api/wikis");
-      if (!r.ok) throw new Error(String(r.status));
-      const { wikis } = (await r.json()) as { wikis: AdminWikiConfig[] };
+      const { wikis } = await api<{ wikis: AdminWikiConfig[] }>("/api/wikis");
       if (seq !== ingestTargetSeq || activeMode !== "ingest") return;
       const enabled = wikis.filter((w) => w.enabled);
       select.innerHTML = "";
@@ -3009,15 +2972,13 @@ async function boot() {
     el.textContent = "OpenRouter · testing…";
     el.classList.remove("ok", "warn");
     try {
-      const r: {
+      const r = await api<{
         configured: boolean;
         ok?: boolean;
         usage?: number;
         limit?: number | null;
         unreachable?: boolean;
-      } = await fetch("/api/integrations/test/openrouter").then((x) =>
-        x.json(),
-      );
+      }>("/api/integrations/test/openrouter");
       if (!r.configured) {
         el.textContent = "OpenRouter · no key";
         return;
@@ -3050,9 +3011,9 @@ async function boot() {
 
   async function refreshIntegrations(recheck = false) {
     try {
-      integrations = await fetch(
+      integrations = await api<IntegrationsStatus>(
         `/api/integrations${recheck ? "?refresh=1" : ""}`,
-      ).then((r) => r.json());
+      );
     } catch {
       integrations = null; // server unreachable; buttons stay disabled
     }
@@ -3355,7 +3316,7 @@ async function boot() {
     voiceToggle.disabled = true;
     voiceToggle.title = i18n.t("voice.connecting");
     try {
-      voiceSession = await startVoice(await apiToken(), {
+      voiceSession = await startVoice(await getApiToken(), {
         onReady: () => {
           voiceToggle.disabled = false;
           setVoiceActive(true);
@@ -3461,23 +3422,15 @@ async function boot() {
       btn.disabled = true;
       btn.textContent = "installing…";
       try {
-        const res = await fetch("/api/integrations/install", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-solaris-token": await apiToken(),
-          },
-          body: JSON.stringify({ tools: [tool] }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        const r = (
-          data.results as Array<{
+        const data = await api<{
+          error?: string;
+          results?: Array<{
             tool: string;
             status: string;
             detail: string;
-          }>
-        )[0];
+          }>;
+        }>("/api/integrations/install", { json: { tools: [tool] } });
+        const r = data.results?.[0];
         if (r?.status === "instructions" || r?.status === "failed") {
           showModal(
             `Install ${tool}`,
@@ -3509,7 +3462,9 @@ async function boot() {
       qmdStatus = { state: "missing" };
     } else {
       try {
-        qmdStatus = await fetch("/api/qmd/status").then((r) => r.json());
+        qmdStatus = await api<{ state: QmdState; collections?: string[] }>(
+          "/api/qmd/status",
+        );
       } catch {
         qmdStatus = { state: "error" };
       }
@@ -3533,11 +3488,7 @@ async function boot() {
 
   async function startQmdSetup() {
     try {
-      const res = await fetch("/api/qmd/setup", {
-        method: "POST",
-        headers: { "x-solaris-token": await apiToken() },
-      });
-      if (!res.ok) throw new Error(String(res.status));
+      await api("/api/qmd/setup", { method: "POST" });
       qmdStatus = { state: "indexing" };
       renderQmdSettings();
       showModal(
@@ -3571,7 +3522,7 @@ async function boot() {
   async function refreshMaint() {
     let m: MaintStatus;
     try {
-      m = await fetch("/api/qmd/maintenance").then((r) => r.json());
+      m = await api<MaintStatus>("/api/qmd/maintenance");
     } catch {
       return;
     }
@@ -3623,11 +3574,13 @@ async function boot() {
       if (update) q.set("update", "1");
       if (embed) q.set("embed", "1");
       if (force) q.set("force", "1");
-      const res = await fetch(`/api/qmd/maintenance?${q}`, {
-        method: "POST",
-        headers: { "x-solaris-token": await apiToken() },
-      });
-      if (!res.ok && res.status !== 409) throw new Error(String(res.status));
+      try {
+        await api(`/api/qmd/maintenance?${q}`, { method: "POST" });
+      } catch (e) {
+        // 409 = "already running"; treat as success to match the previous
+        // "if (!res.ok && res.status !== 409)" tolerance.
+        if (!(e instanceof ApiError) || e.status !== 409) throw e;
+      }
       maintMaxPending = 0;
       await refreshMaint();
     } catch {
@@ -3686,13 +3639,11 @@ async function boot() {
       '<h3>Related notes <span class="rel-tag">semantic</span></h3><p class="rel-info muted">finding related notes…</p>';
     body.appendChild(box);
     try {
-      const r = await fetch(`/api/related?id=${encodeURIComponent(n.id)}`);
-      if (token !== relatedToken) return;
-      if (!r.ok) throw new Error(String(r.status));
-      const data: {
+      const data = await api<{
         state: string;
         results?: Array<{ id: string; title: string; snippet: string }>;
-      } = await r.json();
+      }>(`/api/related?id=${encodeURIComponent(n.id)}`);
+      if (token !== relatedToken) return;
       const info = box.querySelector(".rel-info") as HTMLElement;
       if (data.state === "indexing") {
         info.textContent = "index building — results will appear when ready";
@@ -4307,16 +4258,9 @@ async function boot() {
           `[Source](${art.url})`,
           "",
         ].join("\n");
-        const res = await fetch("/api/notes", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-solaris-token": await apiToken(),
-          },
-          body: JSON.stringify({ title: art.title, content: noteBody }),
+        const data = await api<{ id: string }>("/api/notes", {
+          json: { title: art.title, content: noteBody },
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
         save.textContent = i18n.t("research.saved");
         // Move-on-save: once curated into the vault, drop it from history.
         if (currentEntryId) {
@@ -4380,16 +4324,9 @@ async function boot() {
           doc.content,
           "",
         ].join("\n");
-        const res = await fetch("/api/notes", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-solaris-token": await apiToken(),
-          },
-          body: JSON.stringify({ title: doc.title, content: noteBody }),
+        const data = await api<{ id: string }>("/api/notes", {
+          json: { title: doc.title, content: noteBody },
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
         save.textContent = i18n.t("research.saved");
         await openAfterIngest(String(data.id));
       } catch {
@@ -4401,17 +4338,14 @@ async function boot() {
   }
 
   async function apiDelete(url: string) {
-    await fetch(url, {
-      method: "DELETE",
-      headers: { "x-solaris-token": await apiToken() },
-    }).catch(() => {});
+    await api(url, { method: "DELETE" }).catch(() => {});
   }
 
   async function loadHistory() {
     try {
       researchHistory =
-        (await fetch("/api/research/history").then((r) => r.json())).entries ??
-        [];
+        (await api<{ entries?: typeof researchHistory }>("/api/research/history"))
+          .entries ?? [];
     } catch {
       researchHistory = [];
     }
@@ -4506,8 +4440,8 @@ async function boot() {
   async function loadReaderHistory() {
     try {
       readerHistory =
-        (await fetch("/api/reader-history").then((r) => r.json())).entries ??
-        [];
+        (await api<{ entries?: typeof readerHistory }>("/api/reader-history"))
+          .entries ?? [];
     } catch {
       readerHistory = [];
     }
@@ -4589,7 +4523,7 @@ async function boot() {
     const body = $("#research-body");
     body.innerHTML = '<p class="muted">searching semantically…</p>';
     try {
-      const data: {
+      const data = await api<{
         state: string;
         historyId?: string;
         results?: Array<{
@@ -4599,9 +4533,7 @@ async function boot() {
           score?: number;
           snippet: string;
         }>;
-      } = await fetch(`/api/passages?q=${encodeURIComponent(query)}`).then(
-        (r) => r.json(),
-      );
+      }>(`/api/passages?q=${encodeURIComponent(query)}`);
       body.innerHTML = "";
       if (data.state === "indexing") {
         body.innerHTML =
@@ -4629,26 +4561,27 @@ async function boot() {
       deep ? "research.deepBusy" : "research.webBusy",
     )}</p>`;
     try {
-      const res = await fetch("/api/research", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-solaris-token": await apiToken(),
-        },
-        body: JSON.stringify({ query, deep }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        body.innerHTML = "";
-        researchError(data.message ?? "research failed");
-        return;
-      }
+      const data = await api<{
+        answer: ResearchEntry["answer"];
+        results: Array<{
+          title: string;
+          url: string;
+          snippet: string;
+          publishedDate: string | null;
+        }>;
+        historyId?: string;
+      }>("/api/research", { json: { query, deep } });
       body.innerHTML = "";
       renderWebInto(body, data, query);
       if (data.historyId) await noteQueryPersisted(data.historyId);
-    } catch {
+    } catch (e) {
       body.innerHTML = "";
-      researchError("research failed — is the server running?");
+      if (e instanceof ApiError) {
+        const msg = (e.body as { message?: string } | null | undefined)?.message;
+        researchError(msg ?? "research failed");
+      } else {
+        researchError("research failed — is the server running?");
+      }
     }
   }
 
@@ -4664,26 +4597,21 @@ async function boot() {
     const body = $("#research-body");
     body.innerHTML = `<p class="muted">${i18n.t("research.fetching")}</p>`;
     try {
-      const res = await fetch("/api/article", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-solaris-token": await apiToken(),
-        },
-        body: JSON.stringify({ url }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        body.innerHTML = "";
-        researchError(data.message ?? "article fetch failed");
-        return;
-      }
+      const data = await api<ArticleData & { historyId?: string }>(
+        "/api/article",
+        { json: { url } },
+      );
       body.innerHTML = "";
       renderArticleInto(body, data, title);
       if (data.historyId) await noteQueryPersisted(data.historyId);
-    } catch {
+    } catch (e) {
       body.innerHTML = "";
-      researchError("article fetch failed — is the server running?");
+      if (e instanceof ApiError) {
+        const msg = (e.body as { message?: string } | null | undefined)?.message;
+        researchError(msg ?? "article fetch failed");
+      } else {
+        researchError("article fetch failed — is the server running?");
+      }
     }
   }
 
@@ -4757,19 +4685,16 @@ async function boot() {
       approve.disabled = true;
       approve.textContent = "applying…";
       try {
-        const res = await fetch("/api/wiki-ingest/apply", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-solaris-token": await apiToken(),
+        const data = await api<{ ids?: string[]; error?: string }>(
+          "/api/wiki-ingest/apply",
+          {
+            json: {
+              wikiId: proposal.wiki.id,
+              operations: proposal.operations,
+            },
           },
-          body: JSON.stringify({
-            wikiId: proposal.wiki.id,
-            operations: proposal.operations,
-          }),
-        });
-        const data = (await res.json()) as { ids?: string[]; error?: string };
-        if (!res.ok || !data.ids?.length) throw new Error(data.error ?? "apply failed");
+        );
+        if (!data.ids?.length) throw new Error(data.error ?? "apply failed");
         const preferred = proposal.operations.findIndex((op) => !op.raw);
         const id = data.ids[preferred >= 0 ? preferred : 0] ?? data.ids[0];
         body.innerHTML = '<p class="muted">applied — opening the note…</p>';
@@ -4915,16 +4840,10 @@ async function boot() {
     const propose = wantsWikiProposal(target);
     body.innerHTML = `<p class="muted">${propose ? "building wiki proposal…" : "importing…"}</p>`;
     try {
-      const res = await fetch(propose ? "/api/wiki-ingest/propose" : "/api/ingest", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-solaris-token": await apiToken(),
-        },
-        body: JSON.stringify({ source, ...target }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message ?? data.error);
+      const data = await api<{ id?: string; message?: string; error?: string } & Partial<WikiIngestProposal>>(
+        propose ? "/api/wiki-ingest/propose" : "/api/ingest",
+        { json: { source, ...target } },
+      );
       if (propose) renderWikiProposal(body, data as WikiIngestProposal);
       else {
         body.innerHTML = '<p class="muted">saved — opening the note…</p>';
@@ -4959,18 +4878,16 @@ async function boot() {
         const params = new URLSearchParams({ name: file.name });
         if (target.wikiId) params.set("wikiId", target.wikiId);
         if (target.captureOnly) params.set("captureOnly", "1");
-        const res = await fetch(
+        const res = await apiRaw(
           `/${propose ? "api/wiki-ingest/propose-upload" : "api/ingest-upload"}?${params.toString()}`,
           {
             method: "POST",
-            headers: {
-              "content-type": "application/octet-stream",
-              "x-solaris-token": await apiToken(),
-            },
+            headers: { "content-type": "application/octet-stream" },
             body: buf,
+            token: true,
           },
         );
-        const data = await res.json();
+        const data = (await res.json()) as { id?: string; message?: string; error?: string } & Partial<WikiIngestProposal>;
         if (!res.ok) throw new Error(data.message ?? data.error);
         if (propose) renderWikiProposal(body, data as WikiIngestProposal);
         else {
@@ -5043,16 +4960,9 @@ async function boot() {
           ...a.citations.map((c, i) => `${i + 1}. [${c.title}](${c.url})`),
           "",
         ].join("\n");
-        const res = await fetch("/api/notes", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-solaris-token": await apiToken(),
-          },
-          body: JSON.stringify({ title: query, content }),
+        const data = await api<{ id: string }>("/api/notes", {
+          json: { title: query, content },
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
         save.textContent = "saved ✓";
         // Move-on-save: once curated into the vault, drop it from history.
         if (currentEntryId) {
@@ -5124,16 +5034,10 @@ async function boot() {
       btn.disabled = true;
       btn.textContent = "adding…";
       try {
-        const res = await fetch("/api/gaps/link", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-solaris-token": await apiToken(),
-          },
-          body: JSON.stringify({ id: n.id, target: targetBase }),
-        });
-        const d = await res.json();
-        if (!res.ok) throw new Error(d.error);
+        const d = await api<{ added: boolean; error?: string }>(
+          "/api/gaps/link",
+          { json: { id: n.id, target: targetBase } },
+        );
         btn.textContent = d.added
           ? "linked ✓ — rescan to see it"
           : "already linked";
@@ -5164,9 +5068,9 @@ async function boot() {
       btn.disabled = true;
       btn.textContent = "✦ generating…"; // LLM path takes a few seconds (F021)
       try {
-        const data: { questions: string[] } = await fetch(
+        const data = await api<{ questions: string[] }>(
           `/api/note-questions?id=${encodeURIComponent(n.id)}`,
-        ).then((r) => r.json());
+        );
         btn.remove();
         const h = document.createElement("h3");
         h.textContent = "Research questions";
@@ -5421,14 +5325,14 @@ async function boot() {
       // incremental — only changed chunks). Fire the guarded job first so it runs
       // server-side while we diff; progress shows on return.
       if (qmdStatus.state === "ready") {
-        await fetch("/api/qmd/maintenance?update=1&embed=1", {
+        await api("/api/qmd/maintenance?update=1&embed=1", {
           method: "POST",
-          headers: { "x-solaris-token": await apiToken() },
         }).catch(() => {});
       }
-      const r = await fetch(`/api/rescan${full ? "?full=true" : ""}`, {
-        method: "POST",
-      }).then((x) => x.json());
+      const r = await api<{ ok: boolean; error?: string; graph?: Graph }>(
+        `/api/rescan${full ? "?full=true" : ""}`,
+        { method: "POST" },
+      );
       if (!r.ok) throw new Error(r.error);
       // Hot-swap the new graph in place — no reload, no reflow. Fall back to a
       // full reload only if the server didn't return the graph (older build).
@@ -5557,9 +5461,7 @@ async function boot() {
   async function renderAdminWikis() {
     const box = $("#admin-wikis");
     try {
-      const r = await fetch("/api/wikis");
-      if (!r.ok) throw new Error(String(r.status));
-      const { wikis } = (await r.json()) as { wikis: AdminWikiConfig[] };
+      const { wikis } = await api<{ wikis: AdminWikiConfig[] }>("/api/wikis");
       box.innerHTML = "";
       if (!wikis.length) {
         box.innerHTML = `<p class="muted">${i18n.t("admin.empty")}</p>`;
@@ -5666,19 +5568,11 @@ async function boot() {
 
     try {
       if (requestedVaultPath !== vaultPath) {
-        const res = await fetch("/api/vault", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-solaris-token": await apiToken(),
-          },
-          body: JSON.stringify({ path: requestedVaultPath }),
-        });
-        const body = (await res.json().catch(() => ({}))) as {
-          error?: string;
-          graph?: Graph;
-        };
-        if (!res.ok || !body.graph)
+        const body = await api<{ error?: string; graph?: Graph }>(
+          "/api/vault",
+          { json: { path: requestedVaultPath } },
+        );
+        if (!body.graph)
           throw new Error(body.error ?? i18n.t("admin.saveFail"));
         applyGraphUpdate(body.graph);
         await postConfig({ prompts });
