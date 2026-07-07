@@ -413,6 +413,7 @@ export function createVoiceToolSession(
   ): Promise<VoiceResult> {
     try {
       if (name === "search_vault") {
+        send({ type: "status", key: "voice.status.searchingVault", query: String(args.query ?? "") });
         const u = new URL(`${base}/api/semantic-search`);
         u.searchParams.set("q", String(args.query ?? ""));
         const d = (await (await fetchFn(u)).json()) as { results?: unknown[] };
@@ -424,6 +425,7 @@ export function createVoiceToolSession(
         };
       }
       if (name === "search_passages") {
+        send({ type: "status", key: "voice.status.searchingPassages", query: String(args.query ?? "") });
         const u = new URL(`${base}/api/passages`);
         u.searchParams.set("q", String(args.query ?? ""));
         if (args.note) u.searchParams.set("note", String(args.note));
@@ -441,6 +443,7 @@ export function createVoiceToolSession(
         };
       }
       if (name === "read_passage") {
+        send({ type: "status", key: "voice.status.readingPassage", note: String(args.note ?? "") });
         const line = Number(args.line ?? 1);
         const u = new URL(`${base}/api/note-lines`);
         u.searchParams.set("id", String(args.note ?? ""));
@@ -450,6 +453,7 @@ export function createVoiceToolSession(
         return { note: args.note, from: d.from, to: d.to, text: d.text };
       }
       if (name === "grep_note") {
+        send({ type: "status", key: "voice.status.searchingNote", note: String(args.note ?? ""), query: String(args.query ?? "") });
         const u = new URL(`${base}/api/note-grep`);
         u.searchParams.set("id", String(args.note ?? ""));
         u.searchParams.set("q", String(args.query ?? ""));
@@ -463,11 +467,13 @@ export function createVoiceToolSession(
         };
       }
       if (name === "browse_folder") {
+        send({ type: "status", key: "voice.status.browsingFolder", path: String(args.path ?? "/") });
         const u = new URL(`${base}/api/tree`);
         if (args.path) u.searchParams.set("path", String(args.path));
         return (await (await fetchFn(u)).json()) as Record<string, unknown>;
       }
       if (name === "find_notes") {
+        send({ type: "status", key: "voice.status.findingNotes", query: String(args.query ?? "") });
         const u = new URL(`${base}/api/search`);
         u.searchParams.set("q", String(args.query ?? ""));
         const hits = (await (await fetchFn(u)).json()) as unknown[];
@@ -490,6 +496,7 @@ export function createVoiceToolSession(
         };
       }
       if (name === "list_wikis") {
+        send({ type: "status", key: "voice.status.listingWikis" });
         return {
           wikis: (await wikiSummaries()).filter((w) => w.enabled),
         };
@@ -513,6 +520,7 @@ export function createVoiceToolSession(
     args: VoiceArgs,
   ): Promise<VoiceResult> {
     if (name === "current_view") {
+      send({ type: "status", key: "voice.status.currentView" });
       const noteId = await lastReaderNoteId();
       return {
         openNote: noteId ? await notePreview(noteId) : null,
@@ -523,18 +531,21 @@ export function createVoiceToolSession(
     }
     if (name === "open_note") {
       const path = String(args.note ?? "");
+      send({ type: "status", key: "voice.status.openingNote", note: path });
       const preview = await notePreview(path);
       if (!preview.error)
         send({ type: "action", action: "open_note", note: path });
       return preview;
     }
     if (name === "open_last_note") {
+      send({ type: "status", key: "voice.status.openingLastNote" });
       const path = await lastReaderNoteId();
       if (!path) return { error: "no notes have been opened yet" };
       send({ type: "action", action: "open_note", note: path });
       return await notePreview(path);
     }
     if (name === "open_last_research") {
+      send({ type: "status", key: "voice.status.openingLastResearch" });
       const entry = (await researchEntries())[0];
       if (!entry) return { error: "no research yet" };
       send({ type: "action", action: "open_research", id: entry.id });
@@ -545,6 +556,7 @@ export function createVoiceToolSession(
       };
     }
     if (name === "read_wiki_contract") {
+      send({ type: "status", key: "voice.status.readingWiki", wiki: String(args.wikiId ?? "") });
       const result = await callTool(name, args);
       const wiki = result.wiki as Record<string, unknown> | undefined;
       for (const value of [args.wikiId, wiki?.id, wiki?.path]) {
@@ -554,6 +566,7 @@ export function createVoiceToolSession(
     }
     if (name === "write_document") {
       const title = String(args.title ?? "").trim() || "Untitled";
+      send({ type: "status", key: "voice.status.writingDocument", title });
       const content = String(args.markdown ?? "");
       if (!workingDocId) {
         const slug =
@@ -583,6 +596,7 @@ export function createVoiceToolSession(
       return { ok: true, id: workingDocId, chars: content.length };
     }
     if (name === "save_working_document") {
+      send({ type: "status", key: "voice.status.savingDocument" });
       if (!workingDocId) return { error: "no working document to save" };
       if (
         args.kind !== "raw_copy" &&
@@ -628,6 +642,7 @@ export function createVoiceToolSession(
     }
     if (name === "edit_vault_note") {
       const note = String(args.note ?? "").trim();
+      send({ type: "status", key: "voice.status.editingNote", note });
       const markdown = String(args.markdown ?? "");
       if (!note) return { error: "note path required" };
       if (!markdown.trim()) return { error: "content required" };
@@ -657,10 +672,12 @@ export function createVoiceToolSession(
         const url = String(args.url ?? "").trim();
         if (!/^https?:\/\//i.test(url))
           return { error: "a valid http(s) URL is required" };
+        send({ type: "status", key: "voice.status.fetchingUrl", url });
         payload = { url };
       } else {
         const query = String(args.query ?? "").trim();
         if (!query) return { error: "empty query" };
+        send({ type: "status", key: "voice.status.searchingWeb", query });
         payload = { query, deep: true };
       }
       const r = await fetchFn(

@@ -2138,6 +2138,7 @@ async function boot() {
   let openNodeId: string | null = null;
   let voiceStartedAt = 0;
   let voiceTimer: number | null = null;
+  let voiceStatusTimer: number | null = null;
   const countWords = (s: string): number =>
     (s.trim().match(/\S+/g) ?? []).length;
   const fmtTimer = (start: number): string => {
@@ -3129,6 +3130,7 @@ async function boot() {
   const voiceKeyInput = $("#voice-key") as HTMLInputElement;
   const voiceToggle = $("#voice-toggle") as HTMLButtonElement;
   let voiceSession: VoiceSession | null = null;
+  let restartVoiceAfterClose = false;
 
   function renderVoiceConfig() {
     const v = integrations?.voice;
@@ -3143,7 +3145,8 @@ async function boot() {
       o.value = o.textContent = name;
       voiceNameSel.appendChild(o);
     }
-    voiceNameSel.value = v?.voice ?? spec.voices[0];
+    voiceNameSel.value =
+      v?.voice && spec.voices.includes(v.voice) ? v.voice : spec.voices[0];
     const keyed = !!v?.keys[provider as "gemini" | "openai" | "xai"];
     voiceKeyInput.placeholder = i18n.t(
       keyed ? "ph.voiceKeySaved" : "ph.voiceKey",
@@ -3166,16 +3169,29 @@ async function boot() {
     voiceToggle.classList.toggle("active", on);
     voiceToggle.setAttribute("aria-pressed", String(on));
     voiceToggle.title = i18n.t(on ? "voice.stop" : "voice.toggle");
+    const dot = $("#voice-dot");
+    const status = $("#voice-status");
     if (on && voiceSession) {
       voiceStartedAt = Date.now();
       mountVoiceSpectrum(voiceSession);
       if (voiceTimer == null)
         voiceTimer = window.setInterval(updateBrandStats, 1000);
+      if (dot) dot.classList.add("pulse");
+      if (status) status.classList.add("show");
     } else {
       unmountVoiceSpectrum();
       if (voiceTimer != null) {
         clearInterval(voiceTimer);
         voiceTimer = null;
+      }
+      if (dot) dot.classList.remove("pulse");
+      if (status) {
+        status.textContent = "";
+        status.classList.remove("show");
+      }
+      if (voiceStatusTimer != null) {
+        clearTimeout(voiceStatusTimer);
+        voiceStatusTimer = null;
       }
     }
     updateBrandStats();
@@ -3278,11 +3294,7 @@ async function boot() {
         .trim() || "#58a6ff";
     return { accent, complement: spectrumComplement(accent) };
   }
-  voiceToggle.addEventListener("click", async () => {
-    if (voiceSession) {
-      voiceSession.stop(); // onClose resets the button + config-driven state
-      return;
-    }
+  async function startVoiceSession() {
     voiceToggle.disabled = true;
     voiceToggle.title = i18n.t("voice.connecting");
     try {
@@ -3292,13 +3304,32 @@ async function boot() {
           setVoiceActive(true);
         },
         onClose: () => {
+          const shouldRestart = restartVoiceAfterClose;
+          restartVoiceAfterClose = false;
           voiceSession = null;
           setVoiceActive(false);
           renderVoiceConfig(); // restore enabled/title from config
+          if (shouldRestart) void startVoiceSession();
         },
         onError: (msg) => {
           console.warn("[voice]", msg);
           voiceToggle.title = msg;
+        },
+        onStatus: (payload) => {
+          const el = $("#voice-status");
+          if (!el) return;
+          const key = String(payload.key ?? "");
+          const vars: Record<string, string | number> = {};
+          for (const [k, v] of Object.entries(payload)) {
+            if (k !== "key" && k !== "type" && (typeof v === "string" || typeof v === "number"))
+              vars[k] = v;
+          }
+          el.textContent = i18n.t(key, vars);
+          if (voiceStatusTimer != null) clearTimeout(voiceStatusTimer);
+          voiceStatusTimer = window.setTimeout(() => {
+            el.textContent = "";
+            voiceStatusTimer = null;
+          }, 4000);
         },
         onAction: (action, p) => {
           // the agent drives the panels: open a note in the reader, or reopen
@@ -3344,6 +3375,21 @@ async function boot() {
       setVoiceActive(false);
       voiceToggle.disabled = false;
     }
+  }
+
+  function restartLiveVoiceIfKeyed(provider: string) {
+    if (!voiceSession) return;
+    const keyed = !!integrations?.voice?.keys[provider as "gemini" | "openai" | "xai"];
+    restartVoiceAfterClose = keyed;
+    voiceSession.stop(); // provider voices are fixed at session setup
+  }
+
+  voiceToggle.addEventListener("click", async () => {
+    if (voiceSession) {
+      voiceSession.stop(); // onClose resets the button + config-driven state
+      return;
+    }
+    await startVoiceSession();
   });
 
   voiceProviderSel.addEventListener("change", async () => {
@@ -3351,15 +3397,24 @@ async function boot() {
     const voice = VOICE_PROVIDERS[provider].voices[0];
     try {
       await postConfig({ voice: { provider, voice } });
-    } finally {
+      await refreshIntegrations();
+      restartLiveVoiceIfKeyed(provider);
+    } catch {
       await refreshIntegrations();
     }
   });
-  voiceNameSel.addEventListener("change", () => {
+  voiceNameSel.addEventListener("change", async () => {
     // commit the provider alongside the voice so config never lags the UI
-    postConfig({
-      voice: { provider: voiceProviderSel.value, voice: voiceNameSel.value },
-    }).catch(() => refreshIntegrations());
+    const provider = voiceProviderSel.value;
+    try {
+      await postConfig({
+        voice: { provider, voice: voiceNameSel.value },
+      });
+      await refreshIntegrations();
+      restartLiveVoiceIfKeyed(provider);
+    } catch {
+      await refreshIntegrations();
+    }
   });
   voiceKeyInput.addEventListener("keydown", async (e) => {
     if (e.key !== "Enter") return;
@@ -5025,11 +5080,12 @@ async function boot() {
     box.id = "note-questions";
     const btn = document.createElement("button");
     btn.id = "note-questions-btn";
-    btn.textContent = "✦ research questions";
-    btn.title = "Generate research questions from this note";
+    btn.textContent = `✦ ${i18n.t("q.button")}`;
+    btn.title = i18n.t("q.buttonTitle");
     btn.addEventListener("click", async () => {
       btn.disabled = true;
-      btn.textContent = "✦ generating…"; // LLM path takes a few seconds (F021)
+      btn.classList.add("generating");
+      btn.innerHTML = `<span class="q-star">✦</span> ${i18n.t("q.generating")}`; // LLM path takes a few seconds (F021)
       try {
         const data = await api<{ questions: string[] }>(
           `/api/note-questions?id=${encodeURIComponent(n.id)}`,
@@ -5060,16 +5116,16 @@ async function boot() {
           actions.className = "question-actions";
           const semBtn = document.createElement("button");
           semBtn.className = "q-btn q-semantic";
-          semBtn.textContent = "semantic";
-          semBtn.title = "Answer from your vault (semantic search)";
+          semBtn.textContent = i18n.t("q.vault");
+          semBtn.title = i18n.t("q.vaultTitle");
           semBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             void runSemanticQuery(q);
           });
           const webBtn = document.createElement("button");
           webBtn.className = "q-btn q-web";
-          webBtn.textContent = "web";
-          webBtn.title = "Answer from the web (deep research)";
+          webBtn.textContent = i18n.t("q.web");
+          webBtn.title = i18n.t("q.webTitle");
           webBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             startWebResearch(q);
@@ -5080,7 +5136,8 @@ async function boot() {
         }
       } catch {
         btn.disabled = false;
-        btn.textContent = "✦ research questions";
+        btn.classList.remove("generating");
+        btn.textContent = `✦ ${i18n.t("q.button")}`;
       }
     });
     box.appendChild(btn);

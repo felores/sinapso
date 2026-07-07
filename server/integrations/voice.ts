@@ -6,7 +6,8 @@
  * endpoints that already exist (`/api/passages` etc.). Native-audio models do
  * their own VAD / turn-taking / barge-in, so there is no pipeline to build.
  *
- * Gemini-first: only `gemini` is wired here; other providers report "not yet".
+ * Provider adapters live here: Gemini via the GenAI SDK, OpenAI/xAI via raw
+ * Realtime WebSockets.
  * The WS is guarded exactly like the spending HTTP routes — loopback Host/Origin
  * plus the per-session token (as a query param, since the browser WebSocket API
  * cannot set custom headers) — because a session spends the user's key.
@@ -30,6 +31,140 @@ import { isLocalHost, isLocalOrigin } from "./security";
 import { createVoiceToolSession, VOICE_TOOLS } from "./voice-tools";
 
 const GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview";
+const OPENAI_REALTIME_MODEL = "gpt-realtime-2.1";
+const XAI_REALTIME_MODEL = "grok-voice-latest";
+
+const PROVIDER_VOICES = {
+  gemini: [
+    "Aoede",
+    "Charon",
+    "Fenrir",
+    "Kore",
+    "Leda",
+    "Orus",
+    "Puck",
+    "Zephyr",
+    "Achernar",
+    "Achird",
+    "Algenib",
+    "Algieba",
+    "Alnilam",
+    "Autonoe",
+    "Callirrhoe",
+    "Despina",
+    "Enceladus",
+    "Erinome",
+    "Gacrux",
+    "Iapetus",
+    "Laomedeia",
+    "Pulcherrima",
+    "Rasalgethi",
+    "Sadachbia",
+    "Sadaltager",
+    "Schedar",
+    "Sulafat",
+    "Umbriel",
+    "Vindemiatrix",
+    "Zubenelgenubi",
+  ],
+  openai: [
+    "marin",
+    "cedar",
+    "alloy",
+    "ash",
+    "ballad",
+    "coral",
+    "echo",
+    "sage",
+    "shimmer",
+    "verse",
+  ],
+  xai: ["eve", "ara", "rex", "sal", "leo"],
+} as const;
+
+type VoiceProvider = keyof typeof PROVIDER_VOICES;
+
+export function voiceNameForProvider(
+  provider: VoiceProvider,
+  voice: string | null,
+): string {
+  const voices = PROVIDER_VOICES[provider] as readonly string[];
+  return voice && voices.includes(voice) ? voice : voices[0];
+}
+
+function isVoiceProvider(provider: string): provider is VoiceProvider {
+  return provider in PROVIDER_VOICES;
+}
+
+function toJsonSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toJsonSchema);
+  if (!value || typeof value !== "object") return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(value)) {
+    out[key] = key === "type" && typeof val === "string"
+      ? val.toLowerCase()
+      : toJsonSchema(val);
+  }
+  return out;
+}
+
+export function realtimeVoiceTools(): Array<Record<string, unknown>> {
+  return VOICE_TOOLS.map((tool) => ({
+    type: "function",
+    name: tool.name,
+    description: tool.description,
+    parameters: toJsonSchema(
+      tool.parameters ?? { type: "object", properties: {} },
+    ),
+  }));
+}
+
+function pcm16Base64ToInt16(data: string): Int16Array {
+  const buf = Buffer.from(data, "base64");
+  const samples = new Int16Array(Math.floor(buf.length / 2));
+  for (let i = 0; i < samples.length; i++) samples[i] = buf.readInt16LE(i * 2);
+  return samples;
+}
+
+function int16ToBase64(samples: Int16Array): string {
+  const buf = Buffer.alloc(samples.length * 2);
+  for (let i = 0; i < samples.length; i++) buf.writeInt16LE(samples[i], i * 2);
+  return buf.toString("base64");
+}
+
+export function resamplePcm16Base64(
+  data: string,
+  fromRate: number,
+  toRate: number,
+): string {
+  if (fromRate === toRate) return data;
+  const input = pcm16Base64ToInt16(data);
+  if (!input.length) return data;
+  const outLength = Math.max(1, Math.round((input.length * toRate) / fromRate));
+  const output = new Int16Array(outLength);
+  for (let i = 0; i < outLength; i++) {
+    const pos = (i * (input.length - 1)) / Math.max(1, outLength - 1);
+    const left = Math.floor(pos);
+    const right = Math.min(input.length - 1, left + 1);
+    const frac = pos - left;
+    output[i] = Math.round(input[left] + (input[right] - input[left]) * frac);
+  }
+  return int16ToBase64(output);
+}
+
+function parseToolArgs(args: unknown): Record<string, unknown> {
+  if (typeof args === "string") {
+    try {
+      const parsed = JSON.parse(args) as unknown;
+      return parsed && typeof parsed === "object"
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+}
 
 const BASE_SYSTEM_PROMPT = `You are the voice assistant inside Solaris, a 3D visualizer of the user's personal Markdown knowledge vault. They are exploring their notes and talking to you hands-free.
 
@@ -142,7 +277,7 @@ export function attachVoiceRelay(server: Server, opts: VoiceRelayOpts): void {
   });
 }
 
-/** Bridge one browser WebSocket ↔ one Gemini Live session. */
+/** Bridge one browser WebSocket ↔ one provider realtime session. */
 async function bridge(
   browser: WebSocket,
   base: string,
@@ -168,15 +303,31 @@ async function bridge(
     cfg,
     await wikiSummariesForPrompt(base),
   );
-  const provider = cfg.voice.provider ?? "gemini";
-  if (provider !== "gemini") {
+  const configuredProvider = cfg.voice.provider ?? "gemini";
+  if (!isVoiceProvider(configuredProvider)) {
     send({
       type: "error",
-      message: `voice provider '${provider}' is not implemented yet — use Gemini`,
+      message: `unknown voice provider '${configuredProvider}'`,
     });
     browser.close();
     return;
   }
+
+  const provider = configuredProvider;
+  if (provider === "gemini") {
+    await bridgeGemini(browser, cfg, systemInstruction, toolSession, send);
+  } else {
+    bridgeRealtime(browser, cfg, provider, systemInstruction, toolSession, send);
+  }
+}
+
+async function bridgeGemini(
+  browser: WebSocket,
+  cfg: SolarisConfig,
+  systemInstruction: string,
+  toolSession: ReturnType<typeof createVoiceToolSession>,
+  send: (obj: object) => void,
+): Promise<void> {
   const key = cfg.voice.keys.gemini;
   if (!key) {
     send({
@@ -187,8 +338,9 @@ async function bridge(
     return;
   }
 
+  const voice = voiceNameForProvider("gemini", cfg.voice.voice);
   console.log(
-    `[voice] session start: provider=${provider} voice=${cfg.voice.voice ?? "Aoede"}`,
+    `[voice] session start: provider=gemini voice=${voice}`,
   );
   const ai = new GoogleGenAI({ apiKey: key });
 
@@ -236,15 +388,16 @@ async function bridge(
         responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: cfg.voice.voice ?? "Aoede" },
+            prebuiltVoiceConfig: { voiceName: voice },
           },
         },
         systemInstruction,
         tools: [{ functionDeclarations: VOICE_TOOLS }],
       },
       callbacks: {
-        onopen: () =>
-          send({ type: "ready", voice: cfg.voice.voice ?? "Aoede" }),
+        onopen: () => {
+          send({ type: "ready", voice });
+        },
         onmessage: (m) =>
           void onServerMessage(m as Parameters<typeof onServerMessage>[0]),
         onerror: (e: unknown) => {
@@ -293,4 +446,252 @@ async function bridge(
       /* already closed */
     }
   });
+}
+
+function bridgeRealtime(
+  browser: WebSocket,
+  cfg: SolarisConfig,
+  provider: Exclude<VoiceProvider, "gemini">,
+  systemInstruction: string,
+  toolSession: ReturnType<typeof createVoiceToolSession>,
+  send: (obj: object) => void,
+): void {
+  const key = cfg.voice.keys[provider];
+  if (!key) {
+    send({
+      type: "error",
+      message: `no ${provider === "openai" ? "OpenAI" : "xAI"} API key configured (Tools → Voice Assistant)`,
+    });
+    browser.close();
+    return;
+  }
+
+  const voice = voiceNameForProvider(provider, cfg.voice.voice);
+  const model = provider === "openai" ? OPENAI_REALTIME_MODEL : XAI_REALTIME_MODEL;
+  const url = provider === "openai"
+    ? `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`
+    : `wss://api.x.ai/v1/realtime?model=${encodeURIComponent(model)}`;
+  const providerWs = new WebSocket(url, {
+    headers: {
+      Authorization: `Bearer ${key}`,
+      ...(provider === "openai"
+        ? { "OpenAI-Safety-Identifier": "solaris-local-user" }
+        : {}),
+    },
+  });
+  let ready = false;
+  const toolState = { needsResponse: false };
+
+  const sendProvider = (obj: object) => {
+    if (providerWs.readyState === WebSocket.OPEN)
+      providerWs.send(JSON.stringify(obj));
+  };
+  const closeBrowser = () => {
+    if (browser.readyState === WebSocket.OPEN) browser.close();
+  };
+
+  console.log(`[voice] session start: provider=${provider} voice=${voice}`);
+
+  providerWs.on("open", () => {
+    const config = realtimeSessionConfig(provider, model, voice, systemInstruction);
+    console.log(`[voice] sending session.update to ${provider}:`, JSON.stringify(config).slice(0, 1000));
+    sendProvider({
+      type: "session.update",
+      session: config,
+    });
+  });
+
+  providerWs.on("message", (data) => {
+    void handleRealtimeMessage(
+      data.toString(),
+      providerWs,
+      toolSession,
+      toolState,
+      send,
+      () => {
+        if (!ready) {
+          ready = true;
+          send({ type: "ready", voice });
+        }
+      },
+      closeBrowser,
+    );
+  });
+
+  providerWs.on("error", (e) => {
+    send({
+      type: "error",
+      message: e instanceof Error ? e.message : `${provider} connection error`,
+    });
+    closeBrowser();
+  });
+  providerWs.on("unexpected-response", (_req, res) => {
+    let body = "";
+    res.on("data", (chunk) => {
+      body += chunk.toString();
+    });
+    res.on("end", () => {
+      send({
+        type: "error",
+        message: `${provider} realtime rejected connection (${res.statusCode}): ${body || res.statusMessage || "unknown error"}`,
+      });
+      closeBrowser();
+    });
+  });
+  providerWs.on("close", (code, reason) => {
+    console.warn(`[voice] provider ws closed: code=${code} reason=${reason.toString()}`);
+    closeBrowser();
+  });
+
+  browser.on("message", (data) => {
+    let m: { type?: string; data?: string };
+    try {
+      m = JSON.parse(data.toString());
+    } catch {
+      return;
+    }
+    if (m.type === "audio" && m.data) {
+      sendProvider({
+        type: "input_audio_buffer.append",
+        audio: resamplePcm16Base64(m.data, 16000, 24000),
+      });
+    }
+  });
+
+  browser.on("close", () => {
+    console.log(`[voice] session ended (mic off): provider=${provider}`);
+    try {
+      providerWs.close();
+    } catch {
+      /* already closed */
+    }
+  });
+}
+
+export function realtimeSessionConfig(
+  provider: Exclude<VoiceProvider, "gemini">,
+  model: string,
+  voice: string,
+  instructions: string,
+): Record<string, unknown> {
+  const tools = realtimeVoiceTools();
+  return provider === "openai"
+    ? {
+        type: "realtime",
+        model,
+        instructions,
+        output_modalities: ["audio"],
+        audio: {
+          input: {
+            format: { type: "audio/pcm", rate: 24000 },
+            turn_detection: { type: "server_vad" },
+          },
+          output: {
+            format: { type: "audio/pcm", rate: 24000 },
+            voice,
+          },
+        },
+        tools,
+        tool_choice: "auto",
+      }
+    : {
+        model,
+        voice,
+        instructions,
+        turn_detection: { type: "server_vad" },
+        tools,
+        tool_choice: "auto",
+      };
+}
+
+async function handleRealtimeMessage(
+  raw: string,
+  providerWs: WebSocket,
+  toolSession: ReturnType<typeof createVoiceToolSession>,
+  toolState: { needsResponse: boolean },
+  send: (obj: object) => void,
+  markReady: () => void,
+  closeBrowser: () => void,
+): Promise<void> {
+  let msg: Record<string, unknown>;
+  try {
+    msg = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return;
+  }
+  const type = String(msg.type ?? "");
+  console.log(`[voice] provider event: ${type}`, raw.slice(0, 500));
+  if (type === "session.created" || type === "session.updated") markReady();
+  if (type === "input_audio_buffer.speech_started") send({ type: "interrupted" });
+  if (type === "response.output_audio.delta" || type === "response.audio.delta") {
+    const delta = typeof msg.delta === "string" ? msg.delta : msg.audio;
+    if (typeof delta === "string") send({ type: "audio", data: delta });
+  }
+  if (type === "error" || type === "invalid_request_error") {
+    console.warn(`[voice] provider error:`, raw);
+    const error = msg.error as Record<string, unknown> | undefined;
+    send({
+      type: "error",
+      message: String(error?.message ?? msg.message ?? "provider error"),
+    });
+    closeBrowser();
+  }
+  if (type === "response.function_call_arguments.done") {
+    await runRealtimeToolCall(
+      providerWs,
+      toolSession,
+      String(msg.name ?? ""),
+      msg.arguments,
+      msg.call_id,
+    );
+    toolState.needsResponse = true;
+    return;
+  }
+  if (type !== "response.done") return;
+  const response = msg.response as Record<string, unknown> | undefined;
+  const output = Array.isArray(response?.output) ? response.output : [];
+  const calls = output.filter(
+    (item): item is Record<string, unknown> =>
+      !!item && typeof item === "object" &&
+      (item as Record<string, unknown>).type === "function_call",
+  );
+  if (!calls.length) {
+    if (toolState.needsResponse) {
+      toolState.needsResponse = false;
+      providerWs.send(JSON.stringify({ type: "response.create" }));
+    }
+    return;
+  }
+  for (const call of calls) {
+    await runRealtimeToolCall(
+      providerWs,
+      toolSession,
+      String(call.name ?? ""),
+      call.arguments,
+      call.call_id,
+    );
+  }
+  toolState.needsResponse = false;
+  providerWs.send(JSON.stringify({ type: "response.create" }));
+}
+
+async function runRealtimeToolCall(
+  providerWs: WebSocket,
+  toolSession: ReturnType<typeof createVoiceToolSession>,
+  name: string,
+  args: unknown,
+  callId: unknown,
+): Promise<void> {
+  console.log(`[voice] tool ${name}(${String(args ?? "{}")})`);
+  const result = await toolSession.run(name, parseToolArgs(args));
+  providerWs.send(
+    JSON.stringify({
+      type: "conversation.item.create",
+      item: {
+        type: "function_call_output",
+        call_id: callId,
+        output: JSON.stringify(result),
+      },
+    }),
+  );
 }

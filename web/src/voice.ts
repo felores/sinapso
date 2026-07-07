@@ -13,6 +13,8 @@ export interface VoiceHandlers {
   onError?: (message: string) => void;
   // the agent asked the UI to do something (open a note / research panel)
   onAction?: (action: string, payload: Record<string, unknown>) => void;
+  // tool-activity status line (searching, opening, writing, ...)
+  onStatus?: (payload: Record<string, unknown>) => void;
 }
 
 export interface VoiceSession {
@@ -152,6 +154,7 @@ export async function startVoice(
         data?: string;
         message?: string;
         action?: string;
+        key?: string;
       };
       try {
         m = JSON.parse(e.data);
@@ -168,6 +171,8 @@ export async function startVoice(
         handlers.onReady?.();
       } else if (m.type === "action" && m.action) {
         handlers.onAction?.(m.action, m as Record<string, unknown>);
+      } else if (m.type === "status" && m.key) {
+        handlers.onStatus?.(m as Record<string, unknown>);
       } else if (m.type === "error") {
         handlers.onError?.(m.message ?? "voice error");
         cleanup();
