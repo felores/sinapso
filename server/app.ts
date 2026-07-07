@@ -116,6 +116,14 @@ import {
   WriteError,
 } from "./integrations/write.js";
 import { confineNoteId, noteFileOrFail } from "./integrations/paths.js";
+import {
+  requireExaKey,
+  requireMarkitdown,
+  requireOpenRouterKey,
+  requireOpenRouterKeyOrThrow,
+  requireWebConsent,
+  type ToolCacheRef,
+} from "./integrations/gates.js";
 import { attachVoiceRelay } from "./integrations/voice.js";
 import { discoverAndMerge } from "./integrations/wiki.js";
 import {
@@ -215,19 +223,21 @@ export function createApp(
   const dataDir = dirname(graphPath); // data/ — runtime store (history, journal)
 
   // Detection is slow-ish (may spawn a login shell); cache in memory,
-  // re-probe on ?refresh=1 (settings re-check).
-  let toolCache: Record<ToolName, ToolStatus> | null = null;
+  // re-probe on ?refresh=1 (settings re-check). Wrapped in a ref so the
+  // gates seam (U2) can populate / reuse the same cache without a second
+  // closure variable.
+  const toolCache: ToolCacheRef = { current: null };
 
   // GET /api/integrations: per-tool state + config booleans, never key material.
   app.get("/api/integrations", async (req, res) => {
     try {
-      if (!toolCache || req.query.refresh === "1")
-        toolCache = await detectAll(detectDeps);
+      if (!toolCache.current || req.query.refresh === "1")
+        toolCache.current = await detectAll(detectDeps);
       const cfg = loadConfig(configPath);
       res.json({
         tools: {
-          qmd: toolCache.qmd,
-          markitdown: toolCache.markitdown,
+          qmd: toolCache.current.qmd,
+          markitdown: toolCache.current.markitdown,
           exa: { configured: !!cfg.exaKey },
           openrouter: { configured: !!cfg.openrouterKey },
         },
@@ -318,7 +328,7 @@ export function createApp(
             ) as InstallableTool[])
           : undefined;
         const results = await installAddons(detectDeps ?? {}, tools);
-        toolCache = null; // re-probe on next status call
+        toolCache.current = null; // re-probe on next status call
         res.json({ results });
       } catch (e) {
         console.error("addons install failed:", e);
@@ -362,19 +372,14 @@ export function createApp(
       // via Exa /contents, which extracts the transcript. Egress → gated on web
       // consent + an Exa key, same as web research.
       if (isYoutubeUrl(b.source)) {
-        if (!cfg.consents.web) {
-          res.status(403).json({
-            error: "web-consent-required",
-            message:
-              "Fetching a YouTube transcript goes through Exa — activate Web mode once to consent.",
-          });
-          return;
-        }
-        if (!cfg.exaKey) {
-          res.status(400).json({
-            error: "no-exa-key",
-            message: "Add your Exa API key in Tools → Integrations.",
-          });
+        if (
+          !requireWebConsent(
+            cfg,
+            res,
+            "Fetching a YouTube transcript goes through Exa — activate Web mode once to consent.",
+          ) ||
+          !requireExaKey(cfg, res, "Add your Exa API key in Tools → Integrations.")
+        ) {
           return;
         }
         const art = await fetchArticle(cfg.exaKey, b.source.trim());
@@ -398,18 +403,15 @@ export function createApp(
         res.json({ ok: true, id: yr.id });
         return;
       }
-      if (!toolCache) toolCache = await detectAll(detectDeps);
-      if (!toolCache.markitdown.installed || !toolCache.markitdown.path) {
-        res.status(503).json({
-          error: "markitdown-missing",
-          message:
-            "markitdown is not installed — Tools → Integrations offers the install.",
-        });
-        return;
-      }
+      const bin = await requireMarkitdown(
+        toolCache,
+        () => detectAll(detectDeps),
+        res,
+      );
+      if (!bin) return;
       const r = await ingestDocument(
         integrations?.detectDeps?.run ?? realRunner,
-        toolCache.markitdown.path,
+        bin,
         { vaultRoot, dataDir: dirname(graphPath) },
         {
           source: b.source,
@@ -436,15 +438,12 @@ export function createApp(
           res.status(400).json({ error: "file body required" });
           return;
         }
-        if (!toolCache) toolCache = await detectAll(detectDeps);
-        if (!toolCache.markitdown.installed || !toolCache.markitdown.path) {
-          res.status(503).json({
-            error: "markitdown-missing",
-            message:
-              "markitdown is not installed — Tools → Integrations offers the install.",
-          });
-          return;
-        }
+        const bin = await requireMarkitdown(
+          toolCache,
+          () => detectAll(detectDeps),
+          res,
+        );
+        if (!bin) return;
         const name =
           typeof req.query.name === "string" ? req.query.name : "upload";
         const cfg = loadConfig(configPath);
@@ -455,7 +454,7 @@ export function createApp(
         });
         const r = await ingestBytes(
           integrations?.detectDeps?.run ?? realRunner,
-          toolCache.markitdown.path,
+          bin,
           { vaultRoot, dataDir: dirname(graphPath) },
           { name, bytes: req.body, destination },
         );
@@ -475,8 +474,8 @@ export function createApp(
 
   // qmd binary path via the detection cache (GUI launches lack ~/.bun/bin on PATH).
   async function qmdBin(): Promise<string | null> {
-    if (!toolCache) toolCache = await detectAll(detectDeps);
-    return toolCache.qmd.installed ? toolCache.qmd.path : null;
+    if (!toolCache.current) toolCache.current = await detectAll(detectDeps);
+    return toolCache.current.qmd.installed ? toolCache.current.qmd.path : null;
   }
 
   // Collection list spawns one qmd process per collection; cache briefly.
@@ -886,19 +885,14 @@ export function createApp(
   app.post("/api/research", guarded, express.json(), async (req, res) => {
     try {
       const cfg = loadConfig(configPath);
-      if (!cfg.consents.web) {
-        res.status(403).json({
-          error: "web-consent-required",
-          message:
-            "Web mode needs your one-time consent first (activate Web mode to review it).",
-        });
-        return;
-      }
-      if (!cfg.exaKey) {
-        res.status(400).json({
-          error: "no-exa-key",
-          message: "Add your Exa API key in Tools → Integrations.",
-        });
+      if (
+        !requireWebConsent(
+          cfg,
+          res,
+          "Web mode needs your one-time consent first (activate Web mode to review it).",
+        ) ||
+        !requireExaKey(cfg, res, "Add your Exa API key in Tools → Integrations.")
+      ) {
         return;
       }
       const query = String(req.body?.query ?? "").trim();
@@ -939,19 +933,14 @@ export function createApp(
   app.post("/api/article", guarded, express.json(), async (req, res) => {
     try {
       const cfg = loadConfig(configPath);
-      if (!cfg.consents.web) {
-        res.status(403).json({
-          error: "web-consent-required",
-          message:
-            "Web mode needs your one-time consent first (activate Web mode to review it).",
-        });
-        return;
-      }
-      if (!cfg.exaKey) {
-        res.status(400).json({
-          error: "no-exa-key",
-          message: "Add your Exa API key in Tools → Integrations.",
-        });
+      if (
+        !requireWebConsent(
+          cfg,
+          res,
+          "Web mode needs your one-time consent first (activate Web mode to review it).",
+        ) ||
+        !requireExaKey(cfg, res, "Add your Exa API key in Tools → Integrations.")
+      ) {
         return;
       }
       const url = String(req.body?.url ?? "").trim();
@@ -1132,16 +1121,7 @@ export function createApp(
   );
 
   async function markitdownBinOrFail(res: express.Response): Promise<string | null> {
-    if (!toolCache) toolCache = await detectAll(detectDeps);
-    if (!toolCache.markitdown.installed || !toolCache.markitdown.path) {
-      res.status(503).json({
-        error: "markitdown-missing",
-        message:
-          "markitdown is not installed — Tools → Integrations offers the install.",
-      });
-      return null;
-    }
-    return toolCache.markitdown.path;
+    return requireMarkitdown(toolCache, () => detectAll(detectDeps), res);
   }
 
   async function wikiIngestProposal(
@@ -1149,8 +1129,10 @@ export function createApp(
     wikiId: unknown,
   ) {
     const cfg = loadConfig(configPath);
-    if (!cfg.openrouterKey)
-      throw new WriteError(400, "Add an OpenRouter key before wiki ingest");
+    requireOpenRouterKeyOrThrow(
+      cfg,
+      "Add an OpenRouter key before wiki ingest",
+    );
     const merged = ingestTargetConfig(cfg);
     const wiki = resolveWikiTarget(vaultRoot, merged, { wikiId });
     return buildWikiIngestProposal(
@@ -1184,8 +1166,13 @@ export function createApp(
           return;
         }
         const cfg = loadConfig(configPath);
-        if (!cfg.openrouterKey) {
-          res.status(400).json({ error: "Add an OpenRouter key before wiki ingest" });
+        if (
+          !requireOpenRouterKey(
+            cfg,
+            res,
+            "Add an OpenRouter key before wiki ingest",
+          )
+        ) {
           return;
         }
         const bin = await markitdownBinOrFail(res);
@@ -1213,8 +1200,13 @@ export function createApp(
           return;
         }
         const cfg = loadConfig(configPath);
-        if (!cfg.openrouterKey) {
-          res.status(400).json({ error: "Add an OpenRouter key before wiki ingest" });
+        if (
+          !requireOpenRouterKey(
+            cfg,
+            res,
+            "Add an OpenRouter key before wiki ingest",
+          )
+        ) {
           return;
         }
         const bin = await markitdownBinOrFail(res);
@@ -1368,10 +1360,7 @@ export function createApp(
   // the key never reaches the client. A listing is a free read (no credit).
   app.get("/api/llm/models", async (_req, res) => {
     const cfg = loadConfig(configPath);
-    if (!cfg.openrouterKey) {
-      res.status(400).json({ error: "no-openrouter-key" });
-      return;
-    }
+    if (!requireOpenRouterKey(cfg, res, "no-openrouter-key")) return;
     try {
       const models = await listModels(
         cfg.openrouterKey,

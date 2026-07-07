@@ -1392,12 +1392,17 @@
         "command": "npm test && npm run typecheck",
         "expected": "All vitest suites pass; typecheck clean; grep 'markitdown-missing' and 'Add an OpenRouter key' return only gates.ts and tests as matches"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": ["F050"],
       "files_touched": ["server/integrations/gates.ts", "server/integrations/gates.test.ts", "server/app.ts"],
       "confidence": "autonomous",
       "context_note": "KTD3: helper functions, not express middleware. Sequencing in app.ts only, not logical dependency. Defer the message unification to follow-up (R10).",
-      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u2-application-gates-module"
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u2-application-gates-module",
+      "evidence": "verifier PASS. npm test 247/247 pass (15 new gates.test.ts covering blocked/allowed cases for all 5 helpers, exact-body assertions for both divergent 403 messages, both divergent OpenRouter messages, WriteError throw shape, markitdown cache populate-once-then-reuse, and re-probe after cache invalidation; 232 prior all green incl. server/app.test.ts traversal negatives, exa.test.ts consent-gate tests, wiki-ingest.test.ts OpenRouter-key test). npm run typecheck clean (0 errors). Greps confirm gate response bodies are centralized in gates.ts: 'markitdown-missing' matches only gates.ts:128 + gates.test.ts (test body) + pre-existing plan doc + harness features.json; 'Add an OpenRouter key' matches only gates.ts (JSDoc) + gates.test.ts (test) + app.ts as message-string arguments passed to requireOpenRouterKey[OrThrow] (no inline response building); 'web-consent-required' matches only gates.ts:38 (the 403 body) + gates.test.ts (test) + pre-existing JSDoc in voice.ts + pre-existing assertion in exa.test.ts; 'no-exa-key' matches only gates.ts:60 (the 400 body) + gates.test.ts. Routes migrated: /api/ingest (YouTube branch + markitdown), /api/ingest-upload, /api/research, /api/article, /api/wiki-ingest/propose, /api/wiki-ingest/propose-upload, /api/llm/models, plus wikiIngestProposal helper and the factored markitdownBinOrFail (now a 1-line delegate to requireMarkitdown). toolCache refactored from let to const ToolCacheRef so the helper and the closures share one cache. /api/integrations/test/openrouter and /api/note-questions left intact — fall-throughs (200 OK), not gates; /api/note-questions is in U5 scope.",
+      "implemented_by": "executor (opencode/minimax-m3)",
+      "implemented_at": "2026-07-07T04:03:10Z",
+      "verified_by": "verifier (npm test + npm run typecheck + gate-body greps)",
+      "verified_at": "2026-07-07T04:03:10Z"
     },
     {
       "id": "F052",
