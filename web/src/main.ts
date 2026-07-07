@@ -43,6 +43,7 @@ import type { GNode, GLink } from "./types";
 import { filterFields, compileMatcher } from "./filters";
 import { computeSemanticClusters as computeSemanticClustersPure } from "./clusters";
 import { api, apiRaw, ApiError, getApiToken } from "./api";
+import { createPrefs } from "./prefs";
 
 // ===== DATA STRUCTURES =====
 interface Graph {
@@ -149,11 +150,11 @@ async function boot() {
   // --- theme state (drives scene + UI colors; persisted, ?theme= overrides) ---
   // ===== THEME STATE =====
   // Theme drives scene (background, link colors, stars) + UI panel styles
-  // Persisted in localStorage; ?theme= query parameter overrides
+  // Persisted via prefs; ?theme= query parameter overrides
+  const prefs = createPrefs();
   let theme =
     new URLSearchParams(window.location.search).get("theme") ||
-    localStorage.getItem("akasha-theme") ||
-    "midnight";
+    prefs.getTheme();
   if (!THEMES[theme]) theme = "midnight";
   const T = () => THEMES[theme];
 
@@ -166,8 +167,7 @@ async function boot() {
   // User picks a grouping mode (persisted); group colors are customizable and persisted
   type GroupMode = "folder" | "tag" | "cluster";
   let groupMode = (new URLSearchParams(window.location.search).get("group") ||
-    localStorage.getItem("akasha-group") ||
-    "folder") as GroupMode;
+    prefs.getGroup()) as GroupMode;
   if (!["folder", "tag", "cluster"].includes(groupMode)) groupMode = "folder";
   let groups: string[] = [];
   let groupCounts = new Map<string, number>();
@@ -213,9 +213,7 @@ async function boot() {
   }
 
   // user-picked colors override theme + defaults; persisted per browser
-  const customColors: Record<string, string> = JSON.parse(
-    localStorage.getItem("akasha-colors") ?? "{}",
-  );
+  const customColors: Record<string, string> = prefs.getColors();
   const colorOf: Record<string, string> = {};
   function recomputeColors() {
     let fb = 0;
@@ -253,8 +251,8 @@ async function boot() {
   // --- view state ---
   const pillarOn: Record<string, boolean> = {};
   for (const p of data.meta.pillars) pillarOn[p] = true;
-  let showPhantoms = localStorage.getItem("akasha-phantoms") === "1"; // default off
-  let showOrphans = localStorage.getItem("akasha-orphans") !== "0"; // default on
+  let showPhantoms = prefs.getPhantoms(); // default off
+  let showOrphans = prefs.getOrphans(); // default on
   let minWeight = 1; // hide links mentioned fewer than N times
   let hoverNode: GNode | null = null;
   let selected: GNode | null = null;
@@ -262,11 +260,7 @@ async function boot() {
   // research-driven ctx-left, this persists after research closes.
   let readerLeftPinned = false;
   let focusSet: Set<string> | null = null; // depth-limited neighborhood of selected
-  let focusDepth = [1, 2, 3].includes(
-    Number(localStorage.getItem("akasha-depth")),
-  )
-    ? Number(localStorage.getItem("akasha-depth"))
-    : 2;
+  let focusDepth = prefs.getDepth();
 
   // --- node filters: an ordered list of show/ignore rules (topmost wins) ---
   type Filter = { mode: "show" | "ignore"; pattern: string };
@@ -311,7 +305,7 @@ async function boot() {
   // ---- graphics quality tiers (persisted; antialias applies on reload) ----
   // ===== GRAPHICS QUALITY TIERS =====
   // Allow users to trade visual fidelity for frame rate
-  // Persisted in localStorage; applied on boot and when changed
+  // Persisted via prefs; applied on boot and when changed
   type QKey = "low" | "medium" | "high";
   const QUALITY: Record<
     QKey,
@@ -349,8 +343,7 @@ async function boot() {
       pc: 16384,
     },
   };
-  let quality: QKey =
-    (localStorage.getItem("akasha-quality") as QKey) || "medium";
+  let quality: QKey = prefs.getQuality();
   if (!QUALITY[quality]) quality = "medium";
 
   // ---- rendering: 3D scene setup ----
@@ -422,7 +415,7 @@ async function boot() {
     0.3, // threshold
   );
   graph.postProcessingComposer().addPass(bloom);
-  let glowOn = localStorage.getItem("akasha-glow") !== "0"; // default on
+  let glowOn = prefs.getGlow(); // default on
   bloom.enabled = QUALITY[quality].bloom;
 
   // Starfield shells far behind the graph: a faint base field for the dark
@@ -478,19 +471,19 @@ async function boot() {
 
   function applyQuality(k: QKey) {
     quality = k;
-    localStorage.setItem("akasha-quality", k);
+    prefs.setQuality(k);
     const q = QUALITY[k];
     graph.renderer().setPixelRatio(q.pixelRatio);
     maxLabels = q.labels;
     // particle count follows the tier unless the user pinned a value
-    if (!localStorage.getItem("akasha-pc")) particleCount = q.pc;
+    if (prefs.getPc() === null) particleCount = q.pc;
     rebuildNodes(); // geometry resolution follows the tier
     syncEnvironment();
   }
 
   function applyTheme(k: string) {
     theme = THEMES[k] ? k : "midnight";
-    localStorage.setItem("akasha-theme", theme);
+    prefs.setTheme(theme);
     document.documentElement.dataset.theme = theme; // lets CSS target a theme
     const t = T();
     for (const [prop, val] of Object.entries(t.css)) {
@@ -646,7 +639,7 @@ async function boot() {
   let arrangement: Arrangement = "links"; // boot always simulates structural
   let semanticLinks: GLink[] = [];
   let semanticReady = false;
-  let semLinesOn = localStorage.getItem("akasha-sem-lines") !== "0";
+  let semLinesOn = prefs.getSemLines();
   let semGeo: THREE.BufferGeometry | null = null;
   let semPos: Float32Array | null = null;
   let semLines: THREE.LineSegments | null = null;
@@ -761,12 +754,12 @@ async function boot() {
         // semantic layer unavailable: stay on links
         arrangement = "links";
         ($("#arrange") as HTMLSelectElement).value = "links";
-        localStorage.setItem("akasha-arrangement", "links");
+        prefs.setArrangement("links");
         return;
       }
     }
     arrangement = mode;
-    localStorage.setItem("akasha-arrangement", mode);
+    prefs.setArrangement(mode);
     updateSemanticVisibility();
 
     // Active sim edge set: structural for links/hybrid, semantic for semantic/hybrid.
@@ -885,22 +878,10 @@ async function boot() {
 
   // ---- node filters ----
   function loadFilters(): Filter[] {
-    try {
-      const raw = JSON.parse(localStorage.getItem("akasha-filters") || "[]");
-      if (Array.isArray(raw))
-        return raw.filter(
-          (f) =>
-            f &&
-            (f.mode === "show" || f.mode === "ignore") &&
-            typeof f.pattern === "string",
-        );
-    } catch {
-      /* ignore corrupt value */
-    }
-    return [];
+    return prefs.getFilters();
   }
   function saveFilters() {
-    localStorage.setItem("akasha-filters", JSON.stringify(filters));
+    prefs.setFilters(filters);
   }
 
   // A node's searchable text: title, group (pillar/tag), and its #tags.
@@ -947,7 +928,7 @@ async function boot() {
   // Every node carries a text sprite; a per-frame loop fades each label by
   // its distance to the camera, so names appear as you approach, matching
   // Obsidian's behavior in 3D. Selection/hover force labels on.
-  let labelsOn = localStorage.getItem("akasha-labels") !== "0"; // default on
+  let labelsOn = prefs.getLabels(); // default on
   let labelDist = 700; // world units at which a label has fully faded out
   let labelSize = 4;
   const sprites = new Map<string, SpriteText>();
@@ -998,7 +979,7 @@ async function boot() {
   // along inside each node's group.
   type NodeStyle = "classic" | "dodecahedron" | "starlight" | "particles";
   let nodeStyle = (new URLSearchParams(window.location.search).get("nodes") ||
-    localStorage.getItem("akasha-nodes") ||
+    prefs.getNodeStyle() ||
     "classic") as NodeStyle;
   if ((nodeStyle as string) === "crystal") nodeStyle = "dodecahedron"; // pre-rename saved setting
   if (
@@ -1012,18 +993,7 @@ async function boot() {
   // Each factor is log-normalized against the vault max (counts are heavy-
   // tailed; raw scaling would make a few hubs flatten everything else),
   // then blended by user-adjustable weights.
-  const sizeWeights: {
-    in: number;
-    out: number;
-    words: number;
-    contrast: number;
-  } = {
-    in: 1,
-    out: 0.5,
-    words: 0.5,
-    contrast: 1.5,
-    ...JSON.parse(localStorage.getItem("akasha-size-weights") ?? "{}"),
-  };
+  const sizeWeights = prefs.getSizeWeights();
   let maxLogIn = 1;
   let maxLogOut = 1;
   let maxLogWords = 1;
@@ -1094,7 +1064,7 @@ async function boot() {
   // draw calls + close-range fill rate, so tiers map to GPU class).
   const pcExplicit =
     new URLSearchParams(window.location.search).get("pc") ||
-    localStorage.getItem("akasha-pc");
+    prefs.getPc();
   const tierPc = () => QUALITY[quality].pc;
   let particleCount =
     pcExplicit && pcExplicit !== "auto" ? Number(pcExplicit) : tierPc();
@@ -1927,9 +1897,7 @@ async function boot() {
     const clamp = (v: number, lo: number, hi: number) =>
       Math.max(lo, Math.min(hi, v));
 
-    const saved: ReaderGeom | null = JSON.parse(
-      localStorage.getItem("akasha-reader") ?? "null",
-    );
+    const saved: ReaderGeom | null = prefs.getReader();
     const geom: ReaderGeom = saved ?? {
       floating: false,
       width: Math.min(440, window.innerWidth * 0.42),
@@ -1937,8 +1905,7 @@ async function boot() {
       left: 80,
       top: 60,
     };
-    const persist = () =>
-      localStorage.setItem("akasha-reader", JSON.stringify(geom));
+    const persist = () => prefs.setReader(geom);
 
     // dock/undock icon: docked shows "float free", floating shows "dock to edge"
     const DOCK_SVG =
@@ -2235,7 +2202,7 @@ async function boot() {
       pick.addEventListener("click", (e) => e.stopPropagation());
       pick.addEventListener("input", () => {
         customColors[g] = pick.value;
-        localStorage.setItem("akasha-colors", JSON.stringify(customColors));
+        prefs.setColors(customColors);
         recomputeColors();
         repaint();
       });
@@ -2266,7 +2233,7 @@ async function boot() {
       computeSemanticClusters();
     }
     groupMode = mode;
-    localStorage.setItem("akasha-group", groupMode);
+    prefs.setGroup(groupMode);
     for (const k of Object.keys(pillarOn)) delete pillarOn[k]; // all visible again
     computeGroups();
     recomputeColors();
@@ -2276,14 +2243,14 @@ async function boot() {
   });
   $("#reset-colors").addEventListener("click", () => {
     for (const k of Object.keys(customColors)) delete customColors[k];
-    localStorage.removeItem("akasha-colors");
+    prefs.removeColors();
     recomputeColors();
     buildLegend();
     repaint();
   });
 
   // --- arrangement mode (links / semantic / hybrid) ---
-  const arrangementPref = validArr(localStorage.getItem("akasha-arrangement"));
+  const arrangementPref = validArr(prefs.getArrangement());
   const arrSel = $("#arrange") as HTMLSelectElement;
   arrSel.value = arrangementPref;
   arrSel.addEventListener("change", (e) => {
@@ -2297,7 +2264,7 @@ async function boot() {
   semLinesToggle.checked = semLinesOn;
   semLinesToggle.addEventListener("change", () => {
     semLinesOn = semLinesToggle.checked;
-    localStorage.setItem("akasha-sem-lines", semLinesOn ? "1" : "0");
+    prefs.setSemLines(semLinesOn);
     updateSemanticVisibility();
     repaint();
   });
@@ -2328,26 +2295,26 @@ async function boot() {
 
   // --- controls ---
   // Each toggle reflects its persisted state on boot (the state vars are read
-  // from localStorage above) and writes back on change, so preferences stick.
+  // from prefs above) and writes back on change, so preferences stick.
   const phantomsToggle = $("#toggle-phantoms") as HTMLInputElement;
   phantomsToggle.checked = showPhantoms;
   phantomsToggle.addEventListener("change", () => {
     showPhantoms = phantomsToggle.checked;
-    localStorage.setItem("akasha-phantoms", showPhantoms ? "1" : "0");
+    prefs.setPhantoms(showPhantoms);
     refreshVisibility();
   });
   const orphansToggle = $("#toggle-orphans") as HTMLInputElement;
   orphansToggle.checked = showOrphans;
   orphansToggle.addEventListener("change", () => {
     showOrphans = orphansToggle.checked;
-    localStorage.setItem("akasha-orphans", showOrphans ? "1" : "0");
+    prefs.setOrphans(showOrphans);
     refreshVisibility();
   });
   const glowToggle = $("#toggle-glow") as HTMLInputElement;
   glowToggle.checked = glowOn;
   glowToggle.addEventListener("change", () => {
     glowOn = glowToggle.checked;
-    localStorage.setItem("akasha-glow", glowOn ? "1" : "0");
+    prefs.setGlow(glowOn);
     bloom.enabled = glowOn && QUALITY[quality].bloom;
   });
   const gfxSel = $("#gfx") as HTMLSelectElement;
@@ -2363,14 +2330,14 @@ async function boot() {
   nodesSel.value = nodeStyle;
   nodesSel.addEventListener("change", () => {
     nodeStyle = nodesSel.value as NodeStyle;
-    localStorage.setItem("akasha-nodes", nodeStyle);
+    prefs.setNodeStyle(nodeStyle);
     rebuildNodes();
   });
   const labelsToggle = $("#toggle-labels") as HTMLInputElement;
   labelsToggle.checked = labelsOn;
   labelsToggle.addEventListener("change", () => {
     labelsOn = labelsToggle.checked;
-    localStorage.setItem("akasha-labels", labelsOn ? "1" : "0");
+    prefs.setLabels(labelsOn);
   });
 
   // ---- filters panel ----
@@ -2505,12 +2472,12 @@ async function boot() {
     id: string,
     fmt: (v: number) => string,
     apply: (v: number) => void,
+    rw: { read: () => number | null; write: (v: number) => void },
   ) => {
     const el = $(`#${id}`) as HTMLInputElement;
-    const key = `akasha-${id}`;
     // Restore a persisted value on boot (apply it so the graph reflects it).
-    const saved = localStorage.getItem(key);
-    if (saved !== null) el.value = saved;
+    const saved = rw.read();
+    if (saved !== null) el.value = String(saved);
     const v0 = Number(el.value);
     $(`#${id}-val`).textContent = fmt(v0);
     apply(v0);
@@ -2518,18 +2485,21 @@ async function boot() {
       const v = Number(el.value);
       $(`#${id}-val`).textContent = fmt(v);
       apply(v);
-      localStorage.setItem(key, el.value);
+      rw.write(v);
     });
   };
-  bindRange("label-distance", String, (v) => (labelDist = v));
+  bindRange("label-distance", String, (v) => (labelDist = v), {
+    read: prefs.getLabelDistance,
+    write: prefs.setLabelDistance,
+  });
   bindRange("label-size", String, (v) => {
     labelSize = v;
     for (const s of sprites.values()) s.textHeight = v;
-  });
+  }, { read: prefs.getLabelSize, write: prefs.setLabelSize });
   bindRange("node-size", String, (v) => {
     sizeFactor = v;
     rescaleNodes();
-  });
+  }, { read: prefs.getNodeSize, write: prefs.setNodeSize });
   const bindWeight = (id: string, key: "in" | "out" | "words" | "contrast") => {
     const el = $(`#${id}`) as HTMLInputElement;
     el.value = String(sizeWeights[key]);
@@ -2537,7 +2507,7 @@ async function boot() {
     el.addEventListener("input", () => {
       sizeWeights[key] = Number(el.value);
       $(`#${id}-val`).textContent = sizeWeights[key].toFixed(1);
-      localStorage.setItem("akasha-size-weights", JSON.stringify(sizeWeights));
+      prefs.setSizeWeights(sizeWeights);
       rescaleNodes();
     });
   };
@@ -2552,11 +2522,11 @@ async function boot() {
   if (pcSel.value === "") pcSel.value = "auto"; // value not among presets
   pcSel.addEventListener("change", () => {
     if (pcSel.value === "auto") {
-      localStorage.removeItem("akasha-pc");
+      prefs.removePc();
       particleCount = tierPc();
     } else {
       particleCount = Number(pcSel.value);
-      localStorage.setItem("akasha-pc", String(particleCount));
+      prefs.setPc(particleCount);
     }
     if (nodeStyle === "particles") rebuildNodes();
   });
@@ -2564,16 +2534,17 @@ async function boot() {
     "link-opacity",
     (v) => `${v}%`,
     (v) => (lineMat.opacity = v / 100),
+    { read: prefs.getLinkOpacity, write: prefs.setLinkOpacity },
   );
   bindRange("min-weight", String, (v) => {
     minWeight = v;
     refreshVisibility();
-  });
+  }, { read: prefs.getMinWeight, write: prefs.setMinWeight });
   const depthSel = $("#depth") as HTMLSelectElement;
   depthSel.value = String(focusDepth); // reflect the persisted choice on boot
   depthSel.addEventListener("change", (e) => {
     focusDepth = Number((e.target as HTMLSelectElement).value);
-    localStorage.setItem("akasha-depth", String(focusDepth));
+    prefs.setDepth(focusDepth);
     if (selected) {
       focusSet = bfs(selected.id, focusDepth);
       repaint();
@@ -2723,9 +2694,8 @@ async function boot() {
     webResearch: "Web research",
   };
   let integrations: IntegrationsStatus | null = null;
-  let activeMode = localStorage.getItem("akasha-mode") as ModeName | null;
-  let webScope: "deep" | "web" =
-    localStorage.getItem("akasha-web-scope") === "web" ? "web" : "deep";
+  let activeMode = prefs.getMode();
+  let webScope: "deep" | "web" = prefs.getWebScope();
 
   const postConfig = (patch: object) =>
     api("/api/integrations/config", { json: patch });
@@ -2808,8 +2778,8 @@ async function boot() {
       return;
     }
     activeMode = m && modeReady(m) ? m : null;
-    if (activeMode) localStorage.setItem("akasha-mode", activeMode);
-    else localStorage.removeItem("akasha-mode");
+    if (activeMode) prefs.setMode(activeMode);
+    else prefs.removeMode();
     renderModes();
     updateSearchField();
     // Mode only retargets the search field; it never hides a panel. Each query
@@ -2830,7 +2800,7 @@ async function boot() {
   }
   function setWebScope(s: "deep" | "web") {
     webScope = s;
-    localStorage.setItem("akasha-web-scope", s);
+    prefs.setWebScope(s);
     renderWebScope();
   }
   $("#scope-deep").addEventListener("click", () => setWebScope("deep"));
@@ -3598,12 +3568,8 @@ async function boot() {
 
   // One-time prompt (R6): qmd installed but nothing covers this vault.
   function maybePromptSetup() {
-    if (
-      qmdStatus.state !== "uncovered" ||
-      localStorage.getItem("akasha-qmd-prompted")
-    )
-      return;
-    localStorage.setItem("akasha-qmd-prompted", "1");
+    if (qmdStatus.state !== "uncovered" || prefs.wasQmdPrompted()) return;
+    prefs.markQmdPrompted();
     showModal(
       "Enable semantic search?",
       `<p>qmd is installed, but no collection covers this vault yet. Solaris can create one and index it in the background to power related notes and semantic search.</p>
@@ -3883,9 +3849,7 @@ async function boot() {
   // Research panel: attach (docked right) / detach (floating, draggable window).
   {
     const research = $("#research");
-    const rGeom = (JSON.parse(
-      localStorage.getItem("akasha-research") ?? "null",
-    ) as {
+    const rGeom = (prefs.getResearch() as {
       floating: boolean;
       left: number;
       top: number;
@@ -3907,8 +3871,7 @@ async function boot() {
     const UNDOCK =
       '<svg viewBox="0 0 16 16" width="15" height="15"><rect x="1.5" y="1.5" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="5" y="5" width="6" height="6" fill="currentColor"/></svg>';
     const dockBtn = $("#research-dock");
-    const persistR = () =>
-      localStorage.setItem("akasha-research", JSON.stringify(rGeom));
+    const persistR = () => prefs.setResearch(rGeom);
     function applyRGeom() {
       research.classList.toggle("floating", rGeom.floating);
       dockBtn.innerHTML = rGeom.floating ? DOCK : UNDOCK;
@@ -5752,11 +5715,11 @@ async function boot() {
   // ---- interface zoom (Ctrl +/-/0): scales the UI chrome + panels via CSS
   // zoom (see style.css `body > :not(#graph)`), never the 3D canvas. Persisted
   // like a browser's zoom level. ----
-  let uiZoom = Number(localStorage.getItem("akasha-ui-zoom")) || 1;
+  let uiZoom = prefs.getUiZoom();
   function setUiZoom(z: number) {
     uiZoom = Math.min(2, Math.max(0.6, Math.round(z * 20) / 20));
     document.documentElement.style.setProperty("--ui-zoom", String(uiZoom));
-    localStorage.setItem("akasha-ui-zoom", String(uiZoom));
+    prefs.setUiZoom(uiZoom);
   }
   const bumpUiZoom = (d: number) => setUiZoom(uiZoom + d);
   setUiZoom(uiZoom); // restore on boot
