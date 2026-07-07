@@ -1,7 +1,7 @@
 {
   "project": "solaris-architecture-deepening",
   "created": "2026-07-02T04:37:20Z",
-  "updated": "2026-07-07T05:08:00Z",
+  "updated": "2026-07-07T05:22:53Z",
   "features": [
     {
       "id": "F001",
@@ -1455,12 +1455,17 @@
         "command": "npm test && npm run typecheck",
         "expected": "questions.test.ts passes; /api/note-questions responses unchanged for: no key (templates), invalid id (templates), LLM success (llm), LLM garbage reply (templates)"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": ["F053"],
       "files_touched": ["server/integrations/questions.ts", "server/integrations/questions.test.ts", "server/app.ts"],
       "confidence": "autonomous",
       "context_note": "R3c. Follow DI style of wiki-ingest.ts. Phantom line omitted when none.",
-      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u5-note-questions-module"
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u5-note-questions-module",
+      "evidence": "verifier PASS. npm test 316/316 pass (25 files); npm run typecheck clean. questions.test.ts 21/21 (4 prompt-build incl. phantom-line inclusion/omission, 10 parse incl. clean/prose-wrapped/code-fence-wrapped/5-cap/non-string-filter/no-delimiter/mismatched-brackets/unparseable/empty-after-filter, 7 orchestrator incl. success path with system+user message shape, LLM throw -> templates + warn, LLM garbage -> templates + warn, unparseable JSON -> templates, no-string-items -> templates, phantom-titles embedded in prompt, phantom-titles omitted when empty, templates() not called on llm-success path). Module exports buildNoteQuestionsPrompt (pure: instruction lines + phantom-hint line omitted when phantomTitles=[], title, excerpt, language + JSON-only directives) and parseQuestionsReply (first-[ to last-] slice, 5-item cap, typeof==string + .trim().length>0 filter, returns string[]|null on any failure). noteQuestionsViaLLM(deps) takes chat:(messages)=>Promise<string> DI in WikiIngestChat style + warn?(msg,err)=>void injectable (so tests don't bind to console). server/app.ts route keeps: no-key guard -> templates; confineNoteId+existsSync invalid-id guard -> templates; reads 1500-char excerpt; computes phantomTitles (slice 0..8) from graph.links.filter(source===id)->nodes.find->filter(phantom)->map(title); injects chatCompletion as the chat function; res.json's the module result. {questions, source} shape byte-identical. Existing api.test.ts note-questions regressions 3/3 (no-key templates, LLM success, default-model fallback) all green. Two accepted discrepancies: (1) 'non-array -> null' parse branch is unreachable from the public surface (first-[ to last-] extraction guarantees bracket-delimited slice -> always an array) so the test for it was dropped; defensive !Array.isArray(parsed) line retained. (2) Original code threw distinct messages inside the try so the catch logged them via e.message; refactor returns null from parseQuestionsReply so orchestrator logs a single 'llm questions fell back to templates: parse failed' for all parse-failure causes (slightly less specific log; response shape + fallback behavior identical).",
+      "implemented_by": "executor",
+      "implemented_at": "2026-07-07T05:22:53Z",
+      "verified_by": "verifier",
+      "verified_at": "2026-07-07T05:22:53Z"
     },
     {
       "id": "F055",

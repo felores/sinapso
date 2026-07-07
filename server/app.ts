@@ -101,6 +101,7 @@ import {
   requireToken,
 } from "./integrations/security.js";
 import { computeGaps, noteQuestions } from "./integrations/topology.js";
+import { noteQuestionsViaLLM } from "./integrations/questions.js";
 import {
   openQmdVectors,
   type QmdVectorsHandle,
@@ -1311,57 +1312,27 @@ export function createApp(
     const excerpt = readFileSync(full, "utf-8")
       .replace(/^---\n[\s\S]*?\n---\n?/, "")
       .slice(0, 1500);
-    const phantoms = (graph.links ?? [])
+    const phantomTitles = (graph.links ?? [])
       .filter((l) => l.source === id)
       .map((l) => graph.nodes.find((n) => n.id === l.target))
-      .filter((n) => n?.phantom)
-      .map((n) => n!.title)
+      .filter((n): n is NonNullable<typeof n> => Boolean(n?.phantom))
+      .map((n) => n.title)
       .slice(0, 8);
-    const prompt = [
-      "Generate 3-5 web-research questions that would close the knowledge gaps around this note from my knowledge vault.",
-      "Focus on what is missing, unresolved, or worth investigating further — not on summarizing what the note already covers.",
-      phantoms.length
-        ? `The note references these topics that have no note of their own yet: ${phantoms.join(", ")}.`
-        : "",
-      `Note title: ${note?.title ?? id}`,
-      `Note content (excerpt):\n${excerpt}`,
-      "Write the questions in the same language as the note content.",
-      'Reply with ONLY a JSON array of question strings, e.g. ["question one?", "question two?"]. No other text.',
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-    try {
-      const text = await chatCompletion(
-        cfg.openrouterKey,
-        cfg.defaultModel || DEFAULT_MODEL,
-        [
-          {
-            role: "system",
-            content:
-              "You generate concise web-research questions. Reply with ONLY a JSON array of strings.",
-          },
-          { role: "user", content: prompt },
-        ],
-        integrations?.openrouter,
-      );
-      const start = text.indexOf("[");
-      const end = text.lastIndexOf("]");
-      if (start < 0 || end <= start) throw new Error("no JSON array in reply");
-      const parsed: unknown = JSON.parse(text.slice(start, end + 1));
-      const questions = (Array.isArray(parsed) ? parsed : [])
-        .filter(
-          (q): q is string => typeof q === "string" && q.trim().length > 0,
-        )
-        .slice(0, 5);
-      if (!questions.length) throw new Error("empty question list");
-      res.json({ questions, source: "llm" });
-    } catch (e) {
-      console.warn(
-        "llm questions fell back to templates:",
-        e instanceof Error ? e.message : e,
-      );
-      res.json({ questions: templates(), source: "templates" });
-    }
+    const result = await noteQuestionsViaLLM({
+      chat: (messages) =>
+        chatCompletion(
+          cfg.openrouterKey!,
+          cfg.defaultModel || DEFAULT_MODEL,
+          messages,
+          integrations?.openrouter,
+        ),
+      note: note ? { title: note.title } : { title: id },
+      excerpt,
+      phantomTitles,
+      templates,
+      warn: (msg, err) => console.warn(msg, err),
+    });
+    res.json(result);
   });
 
   // GET /api/gaps/enrich?q=: qmd context for one gap suggestion (F016) —
