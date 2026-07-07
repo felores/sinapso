@@ -13,6 +13,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -252,14 +253,25 @@ function sanitizeWiki(value: unknown): WikiConfig | null {
 /** Read config; a corrupt file yields defaults plus a logged warning, never a crash. */
 export function loadConfig(path = defaultConfigPath()): SolarisConfig {
   if (!existsSync(path)) return defaultConfig();
+  let mtimeMs: number;
   try {
-    return merge(defaultConfig(), JSON.parse(readFileSync(path, "utf-8")));
+    mtimeMs = statSync(path).mtimeMs;
+  } catch {
+    return defaultConfig();
+  }
+  const cached = configCache.get(path);
+  if (cached && cached.mtimeMs === mtimeMs) return cached.value;
+  let value: SolarisConfig;
+  try {
+    value = merge(defaultConfig(), JSON.parse(readFileSync(path, "utf-8")));
   } catch (e) {
     console.warn(
       `Solaris config at ${path} is unreadable, using defaults: ${e instanceof Error ? e.message : String(e)}`,
     );
     return defaultConfig();
   }
+  configCache.set(path, { mtimeMs, value });
+  return value;
 }
 
 /** Apply a sanitized patch and persist with 600 perms. Returns the new config. */
@@ -271,5 +283,23 @@ export function updateConfig(
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n", { mode: 0o600 });
   chmodSync(path, 0o600); // { mode } only applies on create; enforce on rewrite too
+  // Refresh the memo with the post-write mtime so the next loadConfig hits
+  // the cache. Skip if the file vanished between write and stat (rare).
+  try {
+    configCache.set(path, { mtimeMs: statSync(path).mtimeMs, value: cfg });
+  } catch {
+    /* stat failed: leave the cache untouched; next loadConfig will re-read */
+  }
   return cfg;
 }
+
+interface ConfigCacheEntry {
+  mtimeMs: number;
+  value: SolarisConfig;
+}
+
+// ponytail: module-level memo keyed by path. stat per call, read+parse only
+// on mtime change. No invalidation API — mtime is the source of truth.
+// Missing/corrupt results are not cached, so external fixes are seen on the
+// next call without an explicit reset.
+const configCache = new Map<string, ConfigCacheEntry>();

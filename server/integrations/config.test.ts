@@ -5,6 +5,7 @@ import {
   statSync,
   writeFileSync,
   readFileSync,
+  utimesSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -149,5 +150,57 @@ describe("integrations config", () => {
     expect(loadConfig(p)).toEqual(defaultConfig());
     expect(warn).toHaveBeenCalledOnce();
     warn.mockRestore();
+  });
+
+  it("caches loadConfig on repeated calls without file change (U7)", () => {
+    const p = join(DIR, "cache-hit.json");
+    updateConfig({ exaKey: "cache-me" }, p);
+    const a = loadConfig(p);
+    const b = loadConfig(p);
+    // Reference equality is the strongest cache-hit signal: a fresh
+    // read+parse would produce a new object. (Spying fs.readFileSync is
+    // blocked in vitest's module env, so reference identity is the test.)
+    expect(a).toBe(b);
+    expect(a.exaKey).toBe("cache-me");
+  });
+
+  it("re-reads when an external edit bumps the mtime (U7)", () => {
+    const p = join(DIR, "cache-invalidate.json");
+    updateConfig({ exaKey: "first" }, p);
+    expect(loadConfig(p).exaKey).toBe("first");
+    const cfg = JSON.parse(readFileSync(p, "utf-8"));
+    cfg.exaKey = "second";
+    writeFileSync(p, JSON.stringify(cfg, null, 2) + "\n");
+    // mtime resolution can be coarse; force a strictly later mtime.
+    const future = new Date(Date.now() + 5000);
+    utimesSync(p, future, future);
+    expect(loadConfig(p).exaKey).toBe("second");
+  });
+
+  it("updateConfig refreshes the memo so the next loadConfig returns the new value (U7)", () => {
+    const p = join(DIR, "cache-refresh.json");
+    updateConfig({ exaKey: "v1" }, p);
+    expect(loadConfig(p).exaKey).toBe("v1");
+    updateConfig({ exaKey: "v2" }, p);
+    expect(loadConfig(p).exaKey).toBe("v2");
+  });
+
+  it("missing file still yields defaults (U7)", () => {
+    const p = join(DIR, "absent.json");
+    expect(loadConfig(p)).toEqual(defaultConfig());
+    // Repeated calls keep yielding defaults; nothing crashes.
+    expect(loadConfig(p)).toEqual(defaultConfig());
+  });
+
+  it("cached value keeps secrets in their proper fields, not in non-secret paths (U7)", () => {
+    const p = join(DIR, "secrets.json");
+    updateConfig({ exaKey: "sk-test-1", openrouterKey: "or-test-1" }, p);
+    const fromCache = loadConfig(p);
+    expect(fromCache.exaKey).toBe("sk-test-1");
+    expect(fromCache.openrouterKey).toBe("or-test-1");
+    // DefaultModel / writeDestination / consents must not absorb secret values.
+    expect(fromCache.defaultModel).toBeNull();
+    expect(fromCache.writeDestination).toBe("inbox");
+    expect(fromCache.consents).toEqual({ web: false });
   });
 });

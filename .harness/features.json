@@ -1,7 +1,7 @@
 {
   "project": "solaris-architecture-deepening",
   "created": "2026-07-02T04:37:20Z",
-  "updated": "2026-07-07T05:22:53Z",
+  "updated": "2026-07-07T07:23:41Z",
   "features": [
     {
       "id": "F001",
@@ -1497,12 +1497,17 @@
         "command": "npm test && npm run typecheck",
         "expected": "config.test.ts passes: two loadConfig calls without file change hit the cache; external file edit (bump mtime) picked up; updateConfig then loadConfig returns new value; missing file -> defaults; secrets still never appear in sanitized output paths; /api/config GET/POST unchanged"
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": ["F051"],
       "files_touched": ["server/integrations/config.ts", "server/integrations/config.test.ts"],
       "confidence": "autonomous",
       "context_note": "KTD9. Sequencing only — independent of U3-U6. All 17 call sites untouched.",
-      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u7-config-mtime-cache"
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u7-config-mtime-cache",
+      "evidence": "verifier PASS. npm test 343/343 (+5 config cache tests vs prior 338). typecheck clean. config cache tests +5: cache-hit (reference equality on two loadConfig calls), external-mtime-bump (utimesSync +5s), updateConfig-then-load returns v2, missing file still defaults (x2), secrets stay in proper fields (exaKey/openrouterKey populated, non-secret fields untouched). Reference equality accepted as cache-hit proof: vi.spyOn(fs, 'readFileSync') is blocked in vitest's module env, so toBe on the returned object is the strongest direct signal — a fresh read+parse would produce a new object. 17 call sites untouched (16 loadConfig in app.ts, 1 in voice.ts; 2 updateConfig in app.ts).",
+      "implemented_by": "executor",
+      "implemented_at": "2026-07-07T07:23:41Z",
+      "verified_by": "verifier",
+      "verified_at": "2026-07-07T07:23:41Z"
     },
     {
       "id": "F057",
