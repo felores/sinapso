@@ -20,7 +20,7 @@ import express from "express";
 import MiniSearch from "minisearch";
 import type { Server } from "node:http";
 import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { dirname, relative, resolve, sep } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { scanVault } from "../scanner/scan.js";
 import {
   defaultPrompts,
@@ -115,6 +115,7 @@ import {
   guardedEdit,
   WriteError,
 } from "./integrations/write.js";
+import { confineNoteId, noteFileOrFail } from "./integrations/paths.js";
 import { attachVoiceRelay } from "./integrations/voice.js";
 import { discoverAndMerge } from "./integrations/wiki.js";
 import {
@@ -760,22 +761,7 @@ export function createApp(
   app.get("/api/related", async (req, res) => {
     try {
       const id = String(req.query.id ?? "");
-      if (!id || id.startsWith("phantom:")) {
-        res.status(404).json({ error: "note not found" });
-        return;
-      }
-      const full = resolve(vaultRoot, id);
-      if (
-        !full.startsWith(resolve(vaultRoot) + sep) ||
-        !full.toLowerCase().endsWith(".md")
-      ) {
-        res.status(400).json({ error: "invalid note id" });
-        return;
-      }
-      if (!existsSync(full)) {
-        res.status(404).json({ error: "note not found" });
-        return;
-      }
+      const full = noteFileOrFail(vaultRoot, id);
       // Per-note cache (F015): keyed by content mtime + collections filter;
       // cleared on reload()/rescan. Repeat opens of a note are instant.
       const colParam =
@@ -832,8 +818,7 @@ export function createApp(
       }
       res.status(r.status).json(r.body);
     } catch (e) {
-      console.error("related failed:", e);
-      res.status(500).json({ error: "related failed" });
+      writeFail(res, e, "related");
     }
   });
 
@@ -1055,15 +1040,7 @@ export function createApp(
     }
   };
 
-  const notePathOrFail = (id: string) => {
-    if (!id || id.startsWith("phantom:")) throw new WriteError(404, "note not found");
-    const full = resolve(vaultRoot, id);
-    const vaultBase = resolve(vaultRoot) + sep;
-    if (!full.startsWith(vaultBase) || !full.toLowerCase().endsWith(".md"))
-      throw new WriteError(400, "invalid note id");
-    if (!existsSync(full)) throw new WriteError(404, "note not found");
-    return full;
-  };
+  const notePathOrFail = (id: string) => noteFileOrFail(vaultRoot, id);
 
   const gitContextForNote = async (id: string) => {
     const full = notePathOrFail(id);
@@ -1441,12 +1418,8 @@ export function createApp(
       res.json({ questions: templates(), source: "templates" });
       return;
     }
-    const full = resolve(vaultRoot, id);
-    if (
-      !full.startsWith(resolve(vaultRoot) + sep) ||
-      !full.toLowerCase().endsWith(".md") ||
-      !existsSync(full)
-    ) {
+    const full = confineNoteId(vaultRoot, id);
+    if (!full || !existsSync(full)) {
       res.json({ questions: templates(), source: "templates" });
       return;
     }
@@ -1763,26 +1736,11 @@ export function createApp(
   // Security: Validates that the path stays within vault root (no traversal)
   app.get("/api/note", (req, res) => {
     const id = String(req.query.id ?? "");
-
-    // Reject phantom nodes (unwritten link targets) and empty ids
-    if (!id || id.startsWith("phantom:")) {
-      res.status(404).json({ error: "note not found" });
-      return;
-    }
-
-    // Construct full path and validate it stays within vault
-    const full = resolve(vaultRoot, id);
-    const vaultBase = resolve(vaultRoot) + sep;
-
-    // Security check: prevent directory traversal attacks
-    if (!full.startsWith(vaultBase) || !full.toLowerCase().endsWith(".md")) {
-      res.status(400).json({ error: "invalid note id" });
-      return;
-    }
-
-    // Check file exists
-    if (!existsSync(full)) {
-      res.status(404).json({ error: "note not found" });
+    let full: string;
+    try {
+      full = noteFileOrFail(vaultRoot, id);
+    } catch (e) {
+      writeFail(res, e, "note");
       return;
     }
 
@@ -1804,18 +1762,11 @@ export function createApp(
   // path-traversal guard as /api/note; read-only. `count` capped at 400 lines.
   app.get("/api/note-lines", (req, res) => {
     const id = String(req.query.id ?? "");
-    if (!id || id.startsWith("phantom:")) {
-      res.status(404).json({ error: "note not found" });
-      return;
-    }
-    const full = resolve(vaultRoot, id);
-    const vaultBase = resolve(vaultRoot) + sep;
-    if (!full.startsWith(vaultBase) || !full.toLowerCase().endsWith(".md")) {
-      res.status(400).json({ error: "invalid note id" });
-      return;
-    }
-    if (!existsSync(full)) {
-      res.status(404).json({ error: "note not found" });
+    let full: string;
+    try {
+      full = noteFileOrFail(vaultRoot, id);
+    } catch (e) {
+      writeFail(res, e, "note-lines");
       return;
     }
     const from = Math.max(parseInt(String(req.query.from ?? "1"), 10) || 1, 1);
@@ -1849,18 +1800,11 @@ export function createApp(
   // limit 1-100 (def 30).
   app.get("/api/note-grep", (req, res) => {
     const id = String(req.query.id ?? "");
-    if (!id || id.startsWith("phantom:")) {
-      res.status(404).json({ error: "note not found" });
-      return;
-    }
-    const full = resolve(vaultRoot, id);
-    const vaultBase = resolve(vaultRoot) + sep;
-    if (!full.startsWith(vaultBase) || !full.toLowerCase().endsWith(".md")) {
-      res.status(400).json({ error: "invalid note id" });
-      return;
-    }
-    if (!existsSync(full)) {
-      res.status(404).json({ error: "note not found" });
+    let full: string;
+    try {
+      full = noteFileOrFail(vaultRoot, id);
+    } catch (e) {
+      writeFail(res, e, "note-grep");
       return;
     }
     const q = String(req.query.q ?? "");

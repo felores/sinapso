@@ -18,14 +18,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { confineNoteId, WriteError } from "./paths.js";
 
-export class WriteError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+// Re-export WriteError from its new canonical home in paths.ts so every
+// existing import site (`import { WriteError } from "./write"`) keeps working
+// without churn.
+export { WriteError } from "./paths.js";
 
 export interface WriteDeps {
   vaultRoot: string;
@@ -66,14 +64,16 @@ export function readChangeLog(dataDir: string): ChangeLogEntry[] {
 
 /** Resolve a vault-relative md path under the confinement guard, or throw 400. */
 function confine(vaultRoot: string, rel: string): string {
-  if (!rel || rel.startsWith("phantom:"))
-    throw new WriteError(400, "invalid note path");
-  const base = resolve(vaultRoot);
-  const full = resolve(base, rel);
-  if (!full.startsWith(base + sep) || !full.toLowerCase().endsWith(".md"))
-    throw new WriteError(400, "invalid note path");
+  // Shared invariant (resolve under root + startsWith + .md) lives in
+  // paths.ts so the six read-route guards and the writer share one
+  // implementation. The writer wraps the result in its own 400
+  // "invalid note path" message (which is distinct from the read routes'
+  // "invalid note id" / "note not found" pair — do NOT unify, R10).
+  const full = confineNoteId(vaultRoot, rel);
+  if (!full) throw new WriteError(400, "invalid note path");
   // Symlink escape: the nearest existing ancestor must realpath inside the
   // vault (the vault root itself may legitimately be a symlink, e.g. /tmp).
+  const base = resolve(vaultRoot);
   let dir = dirname(full);
   while (!existsSync(dir)) dir = dirname(dir);
   const real = realpathSync(dir);

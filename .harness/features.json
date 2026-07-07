@@ -1,7 +1,7 @@
 {
-  "project": "solaris-optional-integrations",
+  "project": "solaris-architecture-deepening",
   "created": "2026-07-02T04:37:20Z",
-  "updated": "2026-07-06T14:22:50Z",
+  "updated": "2026-07-06T22:06:14Z",
   "features": [
     {
       "id": "F001",
@@ -1356,6 +1356,208 @@
       "implemented_at": "2026-07-06T08:58:20Z",
       "verified_by": "harness-progress verify (npm run typecheck, exit 0)",
       "verified_at": "2026-07-06T08:58:20Z"
+    },
+    {
+      "id": "F050",
+      "priority": 50,
+      "category": "Server Seam (U1)",
+      "behavior": "U1 Vault-path guard module: one confinement seam for every vault-note path check. server/integrations/paths.ts exports confineNoteId(vaultRoot, id) (pure, returns resolved absolute path or null when empty / phantom: / escapes resolve(vaultRoot)+sep / non-.md) and noteFileOrFail(vaultRoot, id) (throws WriteError 404 on empty/phantom/missing, 400 on escape/extension). Six inline guards in server/app.ts (/api/related, /api/note-questions, /api/note, /api/note-lines, /api/note-grep, notePathOrFail) delegate to it. write.ts confine() shares the primitive for the resolve+startsWith+.md check, keeping its write-specific 400 'invalid note path' messages and symlink/realpath checks. Behavior preserved: every route's exact status codes and response bodies; the existing trust-model traversal tests stay green.",
+      "verification": {
+        "command": "npm test && npm run typecheck && grep -cE 'startsWith\\(resolve\\(vaultRoot\\) \\+ sep\\)|startsWith\\(vaultBase\\)' server/app.ts",
+        "expected": "All vitest suites pass (incl. server/app.test.ts path-traversal negatives on /api/note, /api/note-lines, /api/note-grep and server/integrations/write.test.ts symlink-escape + missing-vault 503); typecheck zero errors; the inline-guard grep returns 0"
+      },
+      "state": "passing",
+      "depends_on": [],
+      "files_touched": [
+        "server/integrations/paths.ts",
+        "server/integrations/paths.test.ts",
+        "server/app.ts",
+        "server/integrations/write.ts"
+      ],
+      "confidence": "autonomous",
+      "context_note": "KTD1: pure primitive + error-throwing wrapper. KTD2: write.ts keeps its interface; confine() reuses the primitive for the shared invariant only, its error messages stay 'invalid note path' (do NOT unify with app.ts 'invalid note id'). Move WriteError canonical home to paths.ts and re-export from write.ts to avoid circular import (ESM). One unit only in this session; do not mark passing here.",
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u1-vault-path-guard-module",
+      "evidence": "npm test 232/232 pass (19 new paths.test.ts + 213 prior incl. all server/app.test.ts path-traversal negatives on /api/note, /api/note-lines, /api/note-grep and server/integrations/write.test.ts symlink-escape + missing-vault 503); npm run typecheck clean (0 errors); grep -cE 'startsWith\\(resolve\\(vaultRoot\\) \\+ sep\\)|startsWith\\(vaultBase\\)' server/app.ts = 0 (was 6). One pre-existing qmd.test.ts AE3 timeout flake observed on a single busy run — passes in isolation and on most full runs, unrelated to U1 (qmd child-spawn fallback vs 5s default test timeout).",
+      "implemented_by": "executor (opencode/minimax-m3)",
+      "implemented_at": "2026-07-07T03:40:45Z",
+      "verified_by": "verifier (npm test + npm run typecheck + inline-guard grep)",
+      "verified_at": "2026-07-07T03:40:45Z"
+    },
+    {
+      "id": "F051",
+      "priority": 51,
+      "category": "Server Seam (U2)",
+      "behavior": "U2 Application gates module: one seam for the web-consent+Exa-key, OpenRouter-key, and markitdown gates. server/integrations/gates.ts exports helpers (requireWebConsentAndExaKey, requireOpenRouterKey with message, requireMarkitdown) that take (cfg, res) and return false after writing the route's current error body, matching the markitdownBinOrFail call style. Each route's current error body and status preserved verbatim — do NOT unify the divergent OpenRouter messages.",
+      "verification": {
+        "command": "npm test && npm run typecheck",
+        "expected": "All vitest suites pass; typecheck clean; grep 'markitdown-missing' and 'Add an OpenRouter key' return only gates.ts and tests as matches"
+      },
+      "state": "not_started",
+      "depends_on": ["F050"],
+      "files_touched": ["server/integrations/gates.ts", "server/integrations/gates.test.ts", "server/app.ts"],
+      "confidence": "autonomous",
+      "context_note": "KTD3: helper functions, not express middleware. Sequencing in app.ts only, not logical dependency. Defer the message unification to follow-up (R10).",
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u2-application-gates-module"
+    },
+    {
+      "id": "F052",
+      "priority": 52,
+      "category": "Server Seam (U3)",
+      "behavior": "U3 Excerpt/snippet module: extract excerptFor/norm/stripSnippet/clip from server/app.ts into server/integrations/excerpt.ts. excerptFor(vaultRoot, id, title) reads the file with try/catch -> '' on failure (exact current behavior).",
+      "verification": {
+        "command": "npm test && npm run typecheck",
+        "expected": "excerpt.test.ts passes (frontmatter description wins at >=25 chars and not a title echo; quoted values unquoted; body fallback accumulates paragraphs to ~280 chars; norm/stripSnippet/clip behaviors preserved); /api/related responses unchanged (qmd.test.ts fixtures green)"
+      },
+      "state": "not_started",
+      "depends_on": ["F051"],
+      "files_touched": ["server/integrations/excerpt.ts", "server/integrations/excerpt.test.ts", "server/app.ts"],
+      "confidence": "autonomous",
+      "context_note": "R3a. Mirror existing implementation in tests; do not invent behavior.",
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u3-excerptsnippet-module"
+    },
+    {
+      "id": "F053",
+      "priority": 53,
+      "category": "Server Seam (U4)",
+      "behavior": "U4 Merge qmd query duplicates: collapse semanticQuery and passagesQuery closures in server/app.ts into one parameterized function in server/integrations/qmd.ts. Preserve vec: query typing (see docs/solutions/qmd-vsearch-latency.md) and defensive JSON parsing.",
+      "verification": {
+        "command": "npm test && npm run typecheck",
+        "expected": "Merged function issues vec:-typed query (assert on fake runner argv); both former shapes map fixture output identically to before; malformed JSON with progress noise still parses from the first [; /api/semantic-search and /api/passages behavior unchanged"
+      },
+      "state": "not_started",
+      "depends_on": ["F052"],
+      "files_touched": ["server/integrations/qmd.ts", "server/integrations/qmd.test.ts", "server/app.ts"],
+      "confidence": "autonomous",
+      "context_note": "R3b. Diff the two closures line-by-line first; mechanical merge only — leave collections()/qmdSearch() in place unless they fall out naturally.",
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u4-merge-qmd-query-duplicates"
+    },
+    {
+      "id": "F054",
+      "priority": 54,
+      "category": "Server Seam (U5)",
+      "behavior": "U5 Note-questions module: server/integrations/questions.ts exports buildNoteQuestionsPrompt(note, excerpt, phantomTitles), parseQuestionsReply(text) (returns string[] or null), and noteQuestionsViaLLM(deps) with chatCompletion as DI. Route keeps the guard branch, templates fallback, and {questions, source} response shape.",
+      "verification": {
+        "command": "npm test && npm run typecheck",
+        "expected": "questions.test.ts passes; /api/note-questions responses unchanged for: no key (templates), invalid id (templates), LLM success (llm), LLM garbage reply (templates)"
+      },
+      "state": "not_started",
+      "depends_on": ["F053"],
+      "files_touched": ["server/integrations/questions.ts", "server/integrations/questions.test.ts", "server/app.ts"],
+      "confidence": "autonomous",
+      "context_note": "R3c. Follow DI style of wiki-ingest.ts. Phantom line omitted when none.",
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u5-note-questions-module"
+    },
+    {
+      "id": "F055",
+      "priority": 55,
+      "category": "Server Seam (U6)",
+      "behavior": "U6 Search + grep module: extract MiniSearch buildIndex/snippet and /api/note-grep's literal-scan-with-context-windows into server/integrations/notes-index.ts. Exports buildSearchIndex(nodes, vaultRoot) -> handle with .search(query), and grepNote(content, query, contextLines) -> matches. Index rebuild timing on reload()/rescan preserved.",
+      "verification": {
+        "command": "npm test && npm run typecheck",
+        "expected": "notes-index.test.ts passes; /api/search and /api/note-grep outputs byte-identical on a fixture vault (capture before/after in test)"
+      },
+      "state": "not_started",
+      "depends_on": ["F054"],
+      "files_touched": ["server/integrations/notes-index.ts", "server/integrations/notes-index.test.ts", "server/app.ts"],
+      "confidence": "autonomous",
+      "context_note": "R3d. Build-once, cache-by-fingerprint discipline (model after semantic.ts).",
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u6-search--grep-module"
+    },
+    {
+      "id": "F056",
+      "priority": 56,
+      "category": "Server Seam (U7)",
+      "behavior": "U7 Config mtime cache: loadConfig() in server/integrations/config.ts gains internal {path, mtimeMs, value} memo; statSync the file, return the cached parse when mtime is unchanged, re-read otherwise; missing file keeps returning defaults; updateConfig() invalidates. Transparent to all 17 call sites (16 in app.ts, 1 in voice.ts).",
+      "verification": {
+        "command": "npm test && npm run typecheck",
+        "expected": "config.test.ts passes: two loadConfig calls without file change hit the cache; external file edit (bump mtime) picked up; updateConfig then loadConfig returns new value; missing file -> defaults; secrets still never appear in sanitized output paths; /api/config GET/POST unchanged"
+      },
+      "state": "not_started",
+      "depends_on": ["F051"],
+      "files_touched": ["server/integrations/config.ts", "server/integrations/config.test.ts"],
+      "confidence": "autonomous",
+      "context_note": "KTD9. Sequencing only — independent of U3-U6. All 17 call sites untouched.",
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u7-config-mtime-cache"
+    },
+    {
+      "id": "F057",
+      "priority": 57,
+      "category": "Server Seam (U8)",
+      "behavior": "U8 Voice tool-dispatch seam: server/integrations/voice-tools.ts exports VOICE_TOOLS, createVoiceToolSession(ctx) -> {run(name, args)}, where ctx carries base, fetchFn, session token getter, config access. voice.ts keeps Gemini session + audio relay and delegates every tool call. Loopback-HTTP design preserved.",
+      "verification": {
+        "command": "npm test && npm run typecheck",
+        "expected": "voice-tools.test.ts passes with fake fetchFn; existing voice.test.ts and voice-promote.test.ts green; manual smoke: a tool round-trip (list wikis) still works in dev"
+      },
+      "state": "not_started",
+      "depends_on": ["F055"],
+      "files_touched": ["server/integrations/voice-tools.ts", "server/integrations/voice-tools.test.ts", "server/integrations/voice.ts"],
+      "confidence": "needs-review",
+      "context_note": "KTD8. DI style of detectDeps.run. Do not replace HTTP calls with direct function calls (loopback design is deliberate).",
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u8-voice-tool-dispatch-seam"
+    },
+    {
+      "id": "F058",
+      "priority": 58,
+      "category": "Frontend Seam (U9)",
+      "behavior": "U9 Pure frontend modules: theme + spectrum. Move THEMES, PALETTE, FALLBACK_COLORS, ThemeDef from web/src/main.ts into web/src/theme.ts. Extract nodeColor(n) closure dependency reads into nodeColorFor(n, deps). Move spectrumComplement and spectrumHslToRgb verbatim into web/src/spectrum.ts. No vitest config change needed (existing root vitest.config.ts already includes web/src/*.test.ts).",
+      "verification": {
+        "command": "npm test && npm run typecheck",
+        "expected": "theme.test.ts + spectrum.test.ts visible in vitest output and pass; typecheck clean; manual smoke — themes switch identically, node colors unchanged for a known vault"
+      },
+      "state": "not_started",
+      "depends_on": [],
+      "files_touched": ["web/src/theme.ts", "web/src/spectrum.ts", "web/src/theme.test.ts", "web/src/spectrum.test.ts", "web/src/main.ts"],
+      "confidence": "needs-review",
+      "context_note": "KTD6, KTD7. Follow import style of web/src/i18n.ts and web/src/voice.ts.",
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u9-pure-frontend-modules-theme--spectrum"
+    },
+    {
+      "id": "F059",
+      "priority": 59,
+      "category": "Frontend Seam (U10)",
+      "behavior": "U10 Pure frontend modules: filters + clusters. Move subsequence, filterFields, compileMatcher into web/src/filters.ts. Move computeSemanticClusters into web/src/clusters.ts as computeSemanticClusters(nodes, semanticLinks) returning id->cluster map. activeChain() stays in boot() as a thin composition. GNode type moves to web/src/types.ts if needed.",
+      "verification": {
+        "command": "npm test && npm run typecheck",
+        "expected": "filters.test.ts + clusters.test.ts pass; manual smoke — type a filter in the UI, results identical; group by: semantic cluster colors unchanged for the same data/semantic.json"
+      },
+      "state": "not_started",
+      "depends_on": ["F058"],
+      "files_touched": ["web/src/filters.ts", "web/src/clusters.ts", "web/src/filters.test.ts", "web/src/clusters.test.ts", "web/src/main.ts"],
+      "confidence": "needs-review",
+      "context_note": "KTD6. Label propagation must stay deterministic.",
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u10-pure-frontend-modules-filters--clusters"
+    },
+    {
+      "id": "F060",
+      "priority": 60,
+      "category": "Frontend Seam (U11)",
+      "behavior": "U11 Frontend api() module + migration. web/src/api.ts exports api(path, opts?) (GET by default; {json} triggers POST/PUT with content-type + x-solaris-token; token memoized internally; non-OK throws ApiError with status+body) and apiRaw(path, init?) (passes through plain fetch semantics). Migrate all 40 fetch() sites in web/src/main.ts per Step 0 classification: ok-checking -> api() (throw-on-non-OK preserves their existing branch), no-ok-check -> apiRaw (preserve current non-throwing behavior; do NOT add error surfacing).",
+      "verification": {
+        "command": "npm test && npm run typecheck",
+        "expected": "api.test.ts passes (GET returns parsed JSON; first mutating call fetches /api/session once and memoizes; non-OK throws ApiError; apiRaw passes through); grep -c 'x-solaris-token' web/src/main.ts -> 0; grep -cE '\\bfetch\\(' web/src/main.ts -> 0; manual smoke — save a note, rescan, semantic search, one wiki-ingest proposal round-trip, orphan link confirm"
+      },
+      "state": "not_started",
+      "depends_on": ["F059"],
+      "files_touched": ["web/src/api.ts", "web/src/api.test.ts", "web/src/main.ts"],
+      "confidence": "needs-review",
+      "context_note": "KTD4. Step 0 first — grep -n 'fetch(' web/src/main.ts and classify each site (a/b/c) before editing.",
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u11-frontend-api-module--migration"
+    },
+    {
+      "id": "F061",
+      "priority": 61,
+      "category": "Frontend Seam (U12)",
+      "behavior": "U12 Typed prefs module + migration. web/src/prefs.ts defines one typed accessor per existing akasha-* key (key names and stored formats byte-identical). Storage-like {getItem, setItem, removeItem} injected, defaulting to window.localStorage. Migrate all web/src/main.ts sites.",
+      "verification": {
+        "command": "npm test && npm run typecheck",
+        "expected": "prefs.test.ts passes (Map-backed storage round-trips each accessor; JSON keys survive parse/stringify identity; missing key returns the boot default; corrupted JSON falls back as current inline try/catches do; no accessor ever writes a key not prefixed akasha-); grep -c 'localStorage' web/src/main.ts -> 0; manual smoke — set theme, arrangement, custom colors, reader geometry; reload; all restored identically"
+      },
+      "state": "not_started",
+      "depends_on": ["F060"],
+      "files_touched": ["web/src/prefs.ts", "web/src/prefs.test.ts", "web/src/main.ts"],
+      "confidence": "needs-review",
+      "context_note": "KTD5. Key list in CLAUDE.md. akasha-* prefix preserved — never rename. Verify reader-geometry dock/undock/persist manually after migration.",
+      "spec_ref": "docs/plans/2026-07-06-009-refactor-architecture-deepening-plan.md#u12-typed-prefs-module--migration"
     }
   ]
 }

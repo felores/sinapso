@@ -362,3 +362,16 @@ User feedback: existing wikis like agencia/felo/climatia/skandia/mineralia shoul
 - Frontend voice action `open_saved_note` rescans, opens the saved vault note, and refreshes history.
 
 **Verification:** `npm run typecheck` clean; `npm test` 207/207 pass; `npm run build` clean with the existing Vite chunk-size warning only.
+
+## Plan: solaris-architecture-deepening (2026-07-06-009)
+
+Initialized tracking for the architecture-deepening refactor plan: 12 units (U1–U12) → F050–F061 (F050 active, rest not_started). Pre-U1 baseline: `npm test` 213/213 pass; `npm test && npm run typecheck` clean. Existing F001–F012 are already in use by the previous plan, so the new entries use F050–F061 to avoid collision — semantically the 12 units of the new plan, dependency order preserved (U1 → U2 → U3 → U4 → U5 → U6; U7 depends on U2; U8 depends on U6; U9 → U10 → U11 → U12).
+
+This session implements U1 only (Vault-path guard module). Subsequent units land one per session, in dependency order.
+
+## U1 completion — Vault-path guard module
+
+**Features:**
+- F050: active -> passing. Created `server/integrations/paths.ts` (WriteError canonical home + `confineNoteId` pure primitive + `noteFileOrFail` error-throwing wrapper, 61 lines) and `server/integrations/paths.test.ts` (19 tests covering happy path, nested, `.MD` case-insensitive, empty, `phantom:`, `..`/deep traversal, absolute, vaultRoot-resolving `..`/`.`, prefix-valid-looking traversal, non-md/no-extension, plus `noteFileOrFail` 404/400 split). Migrated the six inline guards in `server/app.ts` (`notePathOrFail`, `/api/related`, `/api/note-questions`, `/api/note`, `/api/note-lines`, `/api/note-grep`); `write.ts` `confine()` shares `confineNoteId` for the resolve+startsWith+.md invariant and keeps its 400 `"invalid note path"` messages + realpath/symlink check verbatim. `WriteError` re-exported from `write.ts` to avoid circular import.
+
+**Verifier result:** `npm test` 232/232 pass (one pre-existing qmd.test.ts AE3 timeout flake on a single busy run — unrelated to U1; passes in isolation); `npm run typecheck` clean; inline-guard grep returns 0 (was 6).
