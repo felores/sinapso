@@ -56,7 +56,6 @@ import {
   hasSelectionContext,
   selectedText,
   selectionSlot,
-  sourceChips,
   updateSelectionSlot,
   type SelectionContext,
   type SelectionContextState,
@@ -2579,7 +2578,6 @@ async function boot() {
   const results = $("#search-results");
   const selectionStrip = $("#selection-context-strip");
   const selectionToggle = $("#selection-context-toggle") as HTMLInputElement;
-  const selectionChips = $("#selection-context-chips");
   let selectionContextState: SelectionContextState = emptySelectionState();
   let includeSelectionContext = true;
 
@@ -2621,13 +2619,6 @@ async function boot() {
     const show = hasSelectionContext(snap) && document.activeElement === searchBox;
     selectionStrip.classList.toggle("hidden", !show);
     selectionToggle.checked = includeSelectionContext;
-    selectionChips.innerHTML = "";
-    for (const chip of sourceChips(snap)) {
-      const span = document.createElement("span");
-      span.className = "selection-chip";
-      span.textContent = chip;
-      selectionChips.appendChild(span);
-    }
   }
 
   selectionToggle.addEventListener("change", () => {
@@ -2763,6 +2754,11 @@ async function boot() {
         : null;
   }
 
+  function sourcePreview(host: HTMLElement): string | undefined {
+    const text = host.innerText.replace(/\s+/g, " ").trim();
+    return text.split(/\s+/).slice(0, 100).join(" ") || undefined;
+  }
+
   function readDomSelection(): SelectionContext | null {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
@@ -2774,7 +2770,8 @@ async function boot() {
       if (!h || (host && h !== host)) return null;
       host = h;
     }
-    const source = host && sourceFromHost(host);
+    if (!host) return null;
+    const source = sourceFromHost(host);
     if (!source) return null;
     const text = sel.toString();
     if (source === "reader") {
@@ -2782,6 +2779,7 @@ async function boot() {
       return selectionSlot({
         source,
         text,
+        sourcePreview: sourcePreview(host),
         noteId: openNodeId ?? undefined,
         noteTitle: note?.title,
       });
@@ -2791,6 +2789,7 @@ async function boot() {
     return selectionSlot({
       source,
       text,
+      sourcePreview: sourcePreview(host),
       entryId: entry?.id,
       mode: entry?.mode,
       title: article?.title ?? entry?.query,

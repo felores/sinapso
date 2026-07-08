@@ -443,7 +443,7 @@ body > :not(#graph) {
 
 #search {
   pointer-events: auto;
-  width: 280px;
+  width: 240px;
   padding: 8px 12px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -1281,10 +1281,10 @@ body > :not(#graph) {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  width: min(520px, calc(100vw - 36px));
+  width: max-content;
+  max-width: min(100%, calc(100vw - 36px));
   display: flex;
   align-items: center;
-  gap: 8px;
   padding: 6px 8px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -1294,17 +1294,6 @@ body > :not(#graph) {
   backdrop-filter: blur(8px);
 }
 #selection-context-strip label { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
-#selection-context-chips { display: flex; gap: 5px; overflow: hidden; }
-.selection-chip {
-  max-width: 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 2px 6px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--fg);
-}
 
 /* Voice toggle: mic when idle, bot (accent) when a session is live. Sits right
    of the search field, mirroring the left mode group; the browse button (ingest

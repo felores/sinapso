@@ -45,6 +45,7 @@ type SelectionSource = "reader" | "research";
 interface SelectedSlot {
   source: SelectionSource;
   text: string;
+  sourcePreview?: string;
   noteId?: string;
   noteTitle?: string;
   entryId?: string;
@@ -58,9 +59,7 @@ interface SelectedSlot {
 }
 
 interface SelectedContextState {
-  reader: SelectedSlot | null;
-  research: SelectedSlot | null;
-  lastSource: SelectionSource | null;
+  current: SelectedSlot | null;
 }
 
 /** Cap tool text sent back to the voice model: articles/transcripts run 20k+
@@ -72,9 +71,7 @@ function cap(s: string, n = 6000): string {
 const SELECTED_WORDS = 300;
 const SELECTED_CHARS = 3000;
 const emptySelectedContext = (): SelectedContextState => ({
-  reader: null,
-  research: null,
-  lastSource: null,
+  current: null,
 });
 const clean = (s: unknown): string | undefined =>
   typeof s === "string" && s.trim() ? s.replace(/\s+/g, " ").trim() : undefined;
@@ -82,14 +79,16 @@ const words = (s: string): string[] => s.split(/\s+/).filter(Boolean);
 const count = (n: unknown): number | undefined =>
   typeof n === "number" && Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
 
-function normalizeSlot(raw: unknown, source: SelectionSource): SelectedSlot | null {
+function normalizeSlot(raw: unknown): SelectedSlot | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
+  const source = r.source === "reader" || r.source === "research" ? r.source : null;
   const text = clean(r.text);
-  if (!text) return null;
+  if (!source || !text) return null;
   return {
     source,
     text,
+    sourcePreview: clean(r.sourcePreview),
     noteId: clean(r.noteId),
     noteTitle: clean(r.noteTitle),
     entryId: clean(r.entryId),
@@ -117,23 +116,9 @@ function capSelectedSlot(slot: SelectedSlot, wordLeft: number, charLeft: number)
 }
 
 function capSelectedContext(state: SelectedContextState): SelectedContextState {
-  const order: SelectionSource[] = state.lastSource === "research"
-    ? ["research", "reader"]
-    : ["reader", "research"];
-  const out = emptySelectedContext();
-  let wordLeft = SELECTED_WORDS;
-  let charLeft = SELECTED_CHARS;
-  for (const source of order) {
-    const slot = state[source];
-    if (!slot) continue;
-    const capped = capSelectedSlot(slot, wordLeft, charLeft);
-    if (!capped) continue;
-    out[source] = capped;
-    out.lastSource = out.lastSource ?? source;
-    wordLeft -= words(capped.text).length;
-    charLeft -= capped.text.length;
-  }
-  return out;
+  return {
+    current: state.current ? capSelectedSlot(state.current, SELECTED_WORDS, SELECTED_CHARS) : null,
+  };
 }
 
 function stripFrontmatter(md: string): string {
@@ -171,7 +156,7 @@ export const VOICE_TOOLS: FunctionDeclaration[] = [
   {
     name: "current_view",
     description:
-      "What the user is looking at RIGHT NOW: the note open in the reader, their recent research, and selectedContext from highlighted reader/research passages. Call this FIRST whenever they refer to what's on screen or selected text: 'this note', 'what I'm reading', 'this', 'compare these', 'the research I just did', 'esto', 'lo seleccionado'. Then use the open note's path or selectedContext with the other tools to answer specifics.",
+      "What the user is looking at RIGHT NOW: the note open in the reader, their recent research, and selectedContext.current from the one highlighted reader/research passage. Call this FIRST whenever they refer to what's on screen or selected text: 'this note', 'what I'm reading', 'this', 'the research I just did', 'esto', 'lo seleccionado'. Then use the open note's path or selectedContext with the other tools to answer specifics.",
     parameters: { type: Type.OBJECT, properties: {} },
   },
   {
@@ -441,21 +426,8 @@ export function createVoiceToolSession(
   function setSelectedContext(context: unknown): void {
     if (!context || typeof context !== "object") return;
     const raw = context as Record<string, unknown>;
-    const hasReader = Object.prototype.hasOwnProperty.call(raw, "reader");
-    const hasResearch = Object.prototype.hasOwnProperty.call(raw, "research");
-    if (!hasReader && !hasResearch) return;
-    const next = { ...selectedContext };
-    if (hasReader) next.reader = normalizeSlot(raw.reader, "reader");
-    if (hasResearch) next.research = normalizeSlot(raw.research, "research");
-    const last = raw.lastSource === "reader" || raw.lastSource === "research"
-      ? raw.lastSource
-      : hasReader && next.reader
-        ? "reader"
-        : hasResearch && next.research
-          ? "research"
-          : next.lastSource;
-    next.lastSource = last;
-    selectedContext = capSelectedContext(next);
+    if (!Object.prototype.hasOwnProperty.call(raw, "current")) return;
+    selectedContext = capSelectedContext({ current: normalizeSlot(raw.current) });
   }
 
   // ---- shared context helpers (reused by current_view + the open_* tools) ----

@@ -6,24 +6,18 @@ import {
 } from "./contextual-query";
 
 const contexts = {
-  reader: {
-    source: "reader",
-    text: "selected note passage",
-    noteTitle: "Note A",
-  },
-  research: {
+  current: {
     source: "research",
     text: "selected research passage",
     title: "Prior research",
+    sourcePreview: "first hundred source words",
     truncated: true,
   },
-  lastSource: "research",
 };
 
 describe("contextual query helpers", () => {
   it("sanitizes selected context slots", () => {
     expect(selectedSlots(contexts).map((s) => [s.source, s.label, s.text])).toEqual([
-      ["reader", "Note A", "selected note passage"],
       ["research", "Prior research", "selected research passage"],
     ]);
   });
@@ -31,8 +25,9 @@ describe("contextual query helpers", () => {
   it("builds a deterministic fallback query", () => {
     const out = fallbackContextQuery("zettelkasten", contexts);
     expect(out).toContain("zettelkasten");
-    expect(out).toContain("Reader (Note A): selected note passage");
-    expect(out).toContain("Research (Prior research): selected research passage");
+    expect(out).toContain("Research (Prior research)");
+    expect(out).toContain("Source preview: first hundred source words");
+    expect(out).toContain("Selected text: selected research passage");
   });
 
   it("uses OpenRouter rewrite when configured", async () => {
@@ -55,7 +50,7 @@ describe("contextual query helpers", () => {
   it("falls back when no OpenRouter key is configured", async () => {
     const out = await buildContextualQuery("original", contexts);
     expect(out.contextRewriteSource).toBe("fallback");
-    expect(out.effectiveQuery).toContain("selected note passage");
+    expect(out.effectiveQuery).toContain("selected research passage");
   });
 
   it("leaves plain queries unchanged without context", async () => {

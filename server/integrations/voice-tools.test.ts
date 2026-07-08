@@ -130,24 +130,29 @@ describe("VOICE_TOOLS declarations", () => {
 });
 
 describe("createVoiceToolSession — selected context", () => {
-  it("current_view returns both selected slots", async () => {
+  it("current_view returns the selected slot", async () => {
     const { ctx, fake } = makeCtx();
     fake.on("/api/reader-history", () => jsonResponse({ entries: [] }));
     fake.on("/api/research/history", () => jsonResponse({ entries: [] }));
     const session = createVoiceToolSession(ctx);
 
     session.setSelectedContext({
-      reader: { source: "reader", text: "reader selected", noteId: "a.md" },
-      research: { source: "research", text: "research selected", title: "Q" },
-      lastSource: "research",
+      current: {
+        source: "research",
+        text: "research selected",
+        title: "Q",
+        sourcePreview: "first hundred source words",
+      },
     });
     const out = (await session.run("current_view", {})) as {
-      selectedContext: { reader: { text: string }; research: { text: string }; lastSource: string };
+      selectedContext: { current: { source: string; text: string; sourcePreview: string } };
     };
 
-    expect(out.selectedContext.reader.text).toBe("reader selected");
-    expect(out.selectedContext.research.text).toBe("research selected");
-    expect(out.selectedContext.lastSource).toBe("research");
+    expect(out.selectedContext.current).toMatchObject({
+      source: "research",
+      text: "research selected",
+      sourcePreview: "first hundred source words",
+    });
   });
 
   it("current_view preserves client-side truncation metadata", async () => {
@@ -157,7 +162,7 @@ describe("createVoiceToolSession — selected context", () => {
     const session = createVoiceToolSession(ctx);
 
     session.setSelectedContext({
-      reader: {
+      current: {
         source: "reader",
         text: "trimmed text",
         truncated: true,
@@ -167,34 +172,32 @@ describe("createVoiceToolSession — selected context", () => {
     });
     const out = (await session.run("current_view", {})) as {
       selectedContext: {
-        reader: { truncated: boolean; originalWordCount: number; originalCharCount: number };
+        current: { truncated: boolean; originalWordCount: number; originalCharCount: number };
       };
     };
 
-    expect(out.selectedContext.reader).toMatchObject({
+    expect(out.selectedContext.current).toMatchObject({
       truncated: true,
       originalWordCount: 500,
       originalCharCount: 5000,
     });
   });
 
-  it("new reader context replaces only reader and ignores invalid context", async () => {
+  it("new context replaces the old context and ignores invalid context", async () => {
     const { ctx, fake } = makeCtx();
     fake.on("/api/reader-history", () => jsonResponse({ entries: [] }));
     fake.on("/api/research/history", () => jsonResponse({ entries: [] }));
     const session = createVoiceToolSession(ctx);
     session.setSelectedContext({
-      reader: { source: "reader", text: "old reader" },
-      research: { source: "research", text: "research selected" },
+      current: { source: "research", text: "research selected" },
     });
-    session.setSelectedContext({ reader: { source: "reader", text: "new reader" } });
+    session.setSelectedContext({ current: { source: "reader", text: "new reader" } });
     session.setSelectedContext({ nope: true });
 
     const out = (await session.run("current_view", {})) as {
-      selectedContext: { reader: { text: string }; research: { text: string } };
+      selectedContext: { current: { source: string; text: string } };
     };
-    expect(out.selectedContext.reader.text).toBe("new reader");
-    expect(out.selectedContext.research.text).toBe("research selected");
+    expect(out.selectedContext.current).toMatchObject({ source: "reader", text: "new reader" });
   });
 
   it("starts a new voice tool session with no selected context", async () => {
@@ -203,9 +206,9 @@ describe("createVoiceToolSession — selected context", () => {
     fake.on("/api/research/history", () => jsonResponse({ entries: [] }));
     const session = createVoiceToolSession(ctx);
     const out = (await session.run("current_view", {})) as {
-      selectedContext: { reader: null; research: null; lastSource: null };
+      selectedContext: { current: null };
     };
-    expect(out.selectedContext).toEqual({ reader: null, research: null, lastSource: null });
+    expect(out.selectedContext).toEqual({ current: null });
   });
 });
 

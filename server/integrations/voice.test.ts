@@ -28,7 +28,7 @@ describe("voice system prompt", () => {
     expect(prompt).toContain("raw=../research/");
     expect(prompt).toContain("agencia/wiki/AGENTS.md");
     expect(prompt).toContain("read that wiki's contract files");
-    expect(prompt).toContain("selectedContext.reader");
+    expect(prompt).toContain("selectedContext.current");
   });
 });
 

@@ -7,7 +7,6 @@ import {
   clearSelectionSlot,
   emptySelectionState,
   selectionSlot,
-  sourceChips,
   updateSelectionSlot,
 } from "./selection-context";
 
@@ -19,7 +18,7 @@ describe("selection context helpers", () => {
     expect(selectionSlot({ source: "reader", text: " \n\t " })).toBeNull();
   });
 
-  it("keeps reader and research slots independent", () => {
+  it("keeps only the latest selected slot", () => {
     let state = emptySelectionState();
     state = updateSelectionSlot(
       state,
@@ -40,13 +39,12 @@ describe("selection context helpers", () => {
       }),
     );
 
-    expect(state.reader?.text).toBe("reader text");
-    expect(state.research?.text).toBe("research text");
-    expect(state.lastSource).toBe("research");
+    expect(state.current?.source).toBe("research");
+    expect(state.current?.text).toBe("research text");
 
     const next = clearSelectionSlot(state, "reader");
-    expect(next.reader).toBeNull();
-    expect(next.research?.text).toBe("research text");
+    expect(next.current?.text).toBe("research text");
+    expect(clearSelectionSlot(next, "research").current).toBeNull();
   });
 
   it("caps a long single slot to 300 words", () => {
@@ -55,9 +53,9 @@ describe("selection context helpers", () => {
       selectionSlot({ source: "reader", text: words(400) }),
     );
     const snap = buildSelectionSnapshot(state);
-    expect(snap.reader?.text.split(/\s+/)).toHaveLength(MAX_CONTEXT_WORDS);
-    expect(snap.reader?.truncated).toBe(true);
-    expect(snap.reader?.originalWordCount).toBe(400);
+    expect(snap.current?.text.split(/\s+/)).toHaveLength(MAX_CONTEXT_WORDS);
+    expect(snap.current?.truncated).toBe(true);
+    expect(snap.current?.originalWordCount).toBe(400);
   });
 
   it("caps a long unbroken slot by 3000 characters", () => {
@@ -67,12 +65,12 @@ describe("selection context helpers", () => {
       selectionSlot({ source: "reader", text }),
     );
     const snap = buildSelectionSnapshot(state);
-    expect(snap.reader?.text).toHaveLength(3000);
-    expect(snap.reader?.truncated).toBe(true);
-    expect(snap.reader?.originalCharCount).toBe(4000);
+    expect(snap.current?.text).toHaveLength(3000);
+    expect(snap.current?.truncated).toBe(true);
+    expect(snap.current?.originalCharCount).toBe(4000);
   });
 
-  it("caps two long slots with last-source priority", () => {
+  it("replaces a long slot instead of combining contexts", () => {
     let state = emptySelectionState();
     state = updateSelectionSlot(
       state,
@@ -84,26 +82,9 @@ describe("selection context helpers", () => {
     );
     const snap = buildSelectionSnapshot(state);
 
-    expect(snap.research?.text.split(/\s+/)).toHaveLength(200);
-    expect(snap.reader?.text.split(/\s+/)).toHaveLength(100);
-    expect(snap.reader?.truncated).toBe(true);
-    expect(snap.lastSource).toBe("research");
-  });
-
-  it("builds readable source chips", () => {
-    let state = emptySelectionState();
-    state = updateSelectionSlot(
-      state,
-      selectionSlot({ source: "reader", text: "a", noteId: "x.md", noteTitle: "X" }),
-    );
-    state = updateSelectionSlot(
-      state,
-      selectionSlot({ source: "research", text: "b", title: "Research Q" }),
-    );
-    expect(sourceChips(buildSelectionSnapshot(state))).toEqual([
-      "Reader: X",
-      "Research: Research Q",
-    ]);
+    expect(snap.current?.source).toBe("research");
+    expect(snap.current?.text.split(/\s+/)).toHaveLength(200);
+    expect(snap.current?.truncated).toBeUndefined();
   });
 
   it("builds typed semantic and keyword effective queries", () => {
@@ -112,6 +93,7 @@ describe("selection context helpers", () => {
       selectionSlot({
         source: "reader",
         text: "selected passage",
+        sourcePreview: "first hundred words about the source",
         noteId: "notes/a.md",
         noteTitle: "A",
       }),
@@ -121,9 +103,10 @@ describe("selection context helpers", () => {
     const semantic = buildSemanticQuery("typed question", snap);
     expect(semantic.startsWith("vec:")).toBe(true);
     expect(semantic).toContain("typed question");
-    expect(semantic).toContain("Reader: A");
+    expect(semantic).toContain("Source: Reader: A");
     expect(semantic).toContain("Note: notes/a.md");
-    expect(semantic).toContain("selected passage");
+    expect(semantic).toContain("Source preview: first hundred words about the source");
+    expect(semantic).toContain("Selected text: selected passage");
 
     const keyword = buildKeywordQuery("typed question", snap);
     expect(keyword.startsWith("vec:")).toBe(false);

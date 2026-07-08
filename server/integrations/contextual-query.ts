@@ -20,6 +20,7 @@ interface Slot {
   source: "reader" | "research";
   text: string;
   label: string;
+  sourcePreview?: string;
   truncated?: boolean;
 }
 
@@ -28,23 +29,23 @@ const MAX_QUERY_CHARS = 1200;
 const clean = (value: unknown): string =>
   typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
 
-function slot(raw: unknown, source: "reader" | "research"): Slot | null {
+function slot(raw: unknown): Slot | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
+  const source = r.source === "reader" || r.source === "research" ? r.source : null;
   const text = clean(r.text);
-  if (!text) return null;
+  if (!source || !text) return null;
   const label = source === "reader"
     ? clean(r.noteTitle) || clean(r.noteId) || "reader selection"
     : clean(r.title) || clean(r.query) || clean(r.url) || "research selection";
-  return { source, text, label, truncated: r.truncated === true };
+  return { source, text, label, sourcePreview: clean(r.sourcePreview) || undefined, truncated: r.truncated === true };
 }
 
 export function selectedSlots(contexts: unknown): Slot[] {
   if (!contexts || typeof contexts !== "object") return [];
   const c = contexts as Record<string, unknown>;
-  return [slot(c.reader, "reader"), slot(c.research, "research")].filter(
-    Boolean,
-  ) as Slot[];
+  const current = slot(c.current);
+  return current ? [current] : [];
 }
 
 function clamp(s: string): string {
@@ -58,7 +59,11 @@ export function fallbackContextQuery(query: string, contexts: unknown): string {
     [
       query,
       ...slots.map(
-        (s) => `${s.source === "reader" ? "Reader" : "Research"} (${s.label}): ${s.text}`,
+        (s) => [
+          `${s.source === "reader" ? "Reader" : "Research"} (${s.label})`,
+          s.sourcePreview ? `Source preview: ${s.sourcePreview}` : "",
+          `Selected text: ${s.text}`,
+        ].filter(Boolean).join("\n"),
       ),
     ]
       .filter(Boolean)
@@ -100,7 +105,11 @@ export async function buildContextualQuery(
         "Rewrite the user's web research query using the selected context.",
         "Return only JSON: {\"query\":\"...\"}.",
         `User query: ${query}`,
-        ...slots.map((s) => `${s.source} ${s.label}: ${s.text}`),
+        ...slots.map((s) => [
+          `Selected ${s.source}: ${s.label}`,
+          s.sourcePreview ? `Source preview: ${s.sourcePreview}` : "",
+          `Selected text: ${s.text}`,
+        ].filter(Boolean).join("\n")),
       ].join("\n\n");
       const raw = await (opts.chat ?? chatCompletion)(
         opts.openrouterKey,

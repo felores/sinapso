@@ -237,7 +237,7 @@ describe("POST /api/research", () => {
         query: "typed query",
         displayQuery: "Readable query",
         contexts: {
-          reader: { source: "reader", text: "selected note text", noteTitle: "Note" },
+          current: { source: "reader", text: "selected note text", noteTitle: "Note" },
         },
       });
 
@@ -263,7 +263,7 @@ describe("POST /api/research", () => {
       .send({
         query: "typed query",
         contexts: {
-          research: { source: "research", text: "selected research text", title: "Research" },
+          current: { source: "research", text: "selected research text", title: "Research" },
         },
       });
 
