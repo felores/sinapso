@@ -61,6 +61,8 @@ export interface SolarisConfig {
   defaultModel: string | null;
   /** Vault-relative destination folder for created notes (R12). */
   writeDestination: string;
+  /** Vault-relative destination folder for archived notes. */
+  archiveDestination: string;
   /** Addon install markers (qmd/markitdown), managed by the installer. */
   addons: Record<string, string>;
   voice: VoiceConfig;
@@ -76,6 +78,7 @@ export interface ConfigPatch {
   consents?: Partial<SolarisConfig["consents"]>;
   defaultModel?: string | null;
   writeDestination?: string;
+  archiveDestination?: string;
   addons?: Record<string, string>;
   voice?: {
     provider?: string | null;
@@ -121,6 +124,7 @@ export function defaultConfig(): SolarisConfig {
     consents: { web: false },
     defaultModel: null,
     writeDestination: "inbox",
+    archiveDestination: "archive",
     addons: {},
     voice: {
       provider: null,
@@ -165,6 +169,8 @@ function merge(base: SolarisConfig, patch: unknown): SolarisConfig {
     out.defaultModel = p.defaultModel;
   if (typeof p.writeDestination === "string" && p.writeDestination)
     out.writeDestination = p.writeDestination;
+  if (typeof p.archiveDestination === "string" && p.archiveDestination)
+    out.archiveDestination = p.archiveDestination;
   if (typeof p.addons === "object" && p.addons !== null) {
     for (const [k, v] of Object.entries(p.addons))
       if (typeof v === "string") out.addons[k] = v;

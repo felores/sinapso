@@ -16,6 +16,7 @@ import { TOKEN_HEADER } from "./security";
 import {
   guardedAppendLink,
   guardedCreate,
+  guardedMove,
   readChangeLog,
   WriteError,
 } from "./write";
@@ -181,6 +182,38 @@ describe("PUT /api/notes (edit)", () => {
   });
 });
 
+describe("POST /api/archive", () => {
+  it("rejects a request without the session token", async () => {
+    const res = await request(app).post("/api/archive").send({ id: "existing.md" });
+    expect(res.status).toBe(403);
+  });
+
+  it("moves a note to archive/ and journals the old and new paths", async () => {
+    writeFileSync(join(VAULT, "route-archive.md"), "route body");
+    const res = await request(app)
+      .post("/api/archive")
+      .set(TOKEN_HEADER, await token())
+      .send({ id: "route-archive.md" });
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(join("archive", "route-archive.md"));
+    expect(existsSync(join(VAULT, "route-archive.md"))).toBe(false);
+    expect(existsSync(join(VAULT, "archive", "route-archive.md"))).toBe(true);
+    expect(readChangeLog(DATA).at(-1)).toMatchObject({
+      action: "archive",
+      path: "route-archive.md",
+      newPath: join("archive", "route-archive.md"),
+    });
+  });
+
+  it("rejects traversal archive ids", async () => {
+    const res = await request(app)
+      .post("/api/archive")
+      .set(TOKEN_HEADER, await token())
+      .send({ id: "../escape.md" });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("write module edge cases", () => {
   it("fails cleanly (503) when the vault root is missing", () => {
     expect(() =>
@@ -209,6 +242,23 @@ describe("write module edge cases", () => {
     expect(res.body.id.startsWith("inbox/")).toBe(true);
     expect(res.body.id).not.toContain("*");
     expect(res.body.id.split("/").length).toBe(2); // no extra path segments
+  });
+
+  it("guardedMove never overwrites collisions", () => {
+    writeFileSync(join(VAULT, "move-me.md"), "source");
+    mkdirSync(join(VAULT, "done"), { recursive: true });
+    writeFileSync(join(VAULT, "done", "move-me.md"), "existing");
+    const r = guardedMove(
+      { vaultRoot: VAULT, dataDir: DATA },
+      { id: "move-me.md", destination: "done", actor: "user" },
+    );
+    expect(r.id).toBe(join("done", "move-me-2.md"));
+    expect(readFileSync(join(VAULT, "done", "move-me.md"), "utf-8")).toBe(
+      "existing",
+    );
+    expect(readFileSync(join(VAULT, "done", "move-me-2.md"), "utf-8")).toBe(
+      "source",
+    );
   });
 });
 

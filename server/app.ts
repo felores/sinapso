@@ -116,6 +116,7 @@ import {
   guardedAppendLink,
   guardedCreate,
   guardedEdit,
+  guardedMove,
   WriteError,
 } from "./integrations/write.js";
 import { confineNoteId, noteFileOrFail } from "./integrations/paths.js";
@@ -254,6 +255,7 @@ export function createApp(
         consents: cfg.consents,
         defaultModel: cfg.defaultModel,
         writeDestination: cfg.writeDestination,
+        archiveDestination: cfg.archiveDestination,
         admin: {
           activeVaultPath: cfg.activeVaultPath,
           vaults: cfg.vaults,
@@ -287,6 +289,7 @@ export function createApp(
         consents: cfg.consents,
         defaultModel: cfg.defaultModel,
         writeDestination: cfg.writeDestination,
+        archiveDestination: cfg.archiveDestination,
         activeVaultPath: cfg.activeVaultPath,
         vaults: cfg.vaults,
         promptDefaults: defaultPrompts(),
@@ -1217,6 +1220,25 @@ export function createApp(
       res.json({ ok: true, id: r.id });
     } catch (e) {
       writeFail(res, e, "edit");
+    }
+  });
+
+  app.post("/api/archive", guarded, express.json({ limit: "1mb" }), (req, res) => {
+    try {
+      const { id } = (req.body ?? {}) as Record<string, unknown>;
+      if (typeof id !== "string") {
+        res.status(400).json({ error: "id required" });
+        return;
+      }
+      const cfg = loadConfig(configPath);
+      const r = guardedMove(writeDeps(), {
+        id,
+        destination: cfg.archiveDestination,
+        actor: "user",
+      });
+      res.json({ ok: true, id: r.id });
+    } catch (e) {
+      writeFail(res, e, "archive");
     }
   });
 

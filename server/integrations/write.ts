@@ -11,13 +11,16 @@
 
 import {
   appendFileSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { confineNoteId, WriteError } from "./paths.js";
 
 // Re-export WriteError from its new canonical home in paths.ts so every
@@ -35,8 +38,9 @@ export interface ChangeLogEntry {
   at: string;
   actor: "user" | "agent";
   mode?: "approval" | "full";
-  action: "create" | "edit";
+  action: "create" | "edit" | "archive";
   path: string;
+  newPath?: string;
 }
 
 const CHANGELOG = "changes.jsonl";
@@ -181,6 +185,52 @@ export function guardedEdit(
     path: id,
   });
   return { id };
+}
+
+export interface MoveOptions {
+  id: string;
+  /** Vault-relative destination folder, e.g. "archive". */
+  destination: string;
+  actor: ChangeLogEntry["actor"];
+}
+
+export function guardedMove(
+  deps: WriteDeps,
+  opts: MoveOptions,
+): { id: string } {
+  requireVault(deps.vaultRoot);
+  const full = confine(deps.vaultRoot, opts.id);
+  if (!existsSync(full)) throw new WriteError(404, "note not found");
+
+  let destFull = confine(deps.vaultRoot, join(opts.destination, basename(full)));
+  if (destFull !== full && existsSync(destFull)) {
+    const stem = destFull.slice(0, -3);
+    let n = 2;
+    while (existsSync(`${stem}-${n}.md`)) n++;
+    destFull = confine(
+      deps.vaultRoot,
+      relative(resolve(deps.vaultRoot), `${stem}-${n}.md`),
+    );
+  }
+  mkdirSync(dirname(destFull), { recursive: true });
+  if (destFull !== full) {
+    try {
+      renameSync(full, destFull);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EXDEV") throw e;
+      copyFileSync(full, destFull);
+      unlinkSync(full);
+    }
+  }
+  const newId = relative(resolve(deps.vaultRoot), destFull);
+  appendChangeLog(deps.dataDir, {
+    at: new Date().toISOString(),
+    actor: opts.actor,
+    action: "archive",
+    path: opts.id,
+    newPath: newId,
+  });
+  return { id: newId };
 }
 
 export interface AppendLinkOptions {

@@ -51,6 +51,17 @@ describe("integrations config", () => {
     expect(cfg.exaKey).toBe("keep-me");
   });
 
+  it("persists inbox and archive destination folders", () => {
+    const p = join(DIR, "folders.json");
+    const cfg = updateConfig(
+      { writeDestination: "capture", archiveDestination: "done" },
+      p,
+    );
+    expect(cfg.writeDestination).toBe("capture");
+    expect(cfg.archiveDestination).toBe("done");
+    expect(loadConfig(p).archiveDestination).toBe("done");
+  });
+
   it("ignores mistyped or unknown patch fields", () => {
     const p = join(DIR, "sanitize.json");
     const cfg = updateConfig(
@@ -201,6 +212,7 @@ describe("integrations config", () => {
     // DefaultModel / writeDestination / consents must not absorb secret values.
     expect(fromCache.defaultModel).toBeNull();
     expect(fromCache.writeDestination).toBe("inbox");
+    expect(fromCache.archiveDestination).toBe("archive");
     expect(fromCache.consents).toEqual({ web: false });
   });
 });

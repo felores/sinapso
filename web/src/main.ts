@@ -2150,6 +2150,19 @@ async function boot() {
     "click",
     () => selected && openInObsidian(selected),
   );
+  $("#reader-archive").addEventListener("click", async () => {
+    const id = openNodeId;
+    if (!id) return;
+    const folder = integrations?.archiveDestination ?? "archive";
+    if (!confirm(i18n.t("reader.archiveConfirm", { folder }))) return;
+    try {
+      await api("/api/archive", { json: { id } });
+      clearSelection();
+      await rescan(false);
+    } catch (e) {
+      $("#reader-body").innerHTML = `<p class="muted">${escapeHtml(e instanceof Error ? e.message : i18n.t("reader.archiveFailed"))}</p>`;
+    }
+  });
   graph.onNodeRightClick((n: GNode) => openInObsidian(n));
 
   // ---- tap-to-select: a click that survives a shaky hand ----
@@ -2925,6 +2938,8 @@ async function boot() {
     };
     consents: { web: boolean };
     defaultModel: string | null;
+    writeDestination: string;
+    archiveDestination: string;
     admin?: {
       activeVaultPath: string | null;
       vaults: Record<
@@ -5962,14 +5977,20 @@ async function boot() {
   async function openAdmin() {
     const T = (k: string) => i18n.t(k);
     const vaultPath = integrations?.admin?.activeVaultPath ?? data.meta.vaultPath ?? "";
+    const inboxFolder = integrations?.writeDestination ?? "inbox";
+    const archiveFolder = integrations?.archiveDestination ?? "archive";
     const body = $("#modal-body");
     showModal(T("admin.title"), "");
     $("#modal").classList.add("admin-modal");
     body.innerHTML = `
       <section class="admin-section">
-        <h3>${T("admin.vault")}</h3>
+        <h3>${T("admin.vault")} <span class="muted admin-section-hint">${T("admin.foldersHint")}</span></h3>
         <div class="admin-vault">
           <label class="admin-vault-picker"><span>${T("admin.vaultPath")}</span><input id="admin-vault-input" type="text" value="${escapeHtml(vaultPath)}" placeholder="${T("admin.vaultPathPlaceholder")}"></label>
+          <div class="admin-folder-row">
+            <label class="admin-folder-field"><span>${T("admin.inboxFolder")}</span><input id="admin-inbox-input" type="text" value="${escapeHtml(inboxFolder)}"></label>
+            <label class="admin-folder-field"><span>${T("admin.archiveFolder")}</span><input id="admin-archive-input" type="text" value="${escapeHtml(archiveFolder)}"></label>
+          </div>
         </div>
       </section>
       <section class="admin-section">
@@ -6130,6 +6151,8 @@ async function boot() {
     status.textContent = i18n.t("admin.saving");
     const vaultPath = integrations?.admin?.activeVaultPath ?? data.meta.vaultPath ?? "";
     const requestedVaultPath = ($("#admin-vault-input") as HTMLInputElement).value.trim();
+    const inboxFolder = ($("#admin-inbox-input") as HTMLInputElement).value.trim() || "inbox";
+    const archiveFolder = ($("#admin-archive-input") as HTMLInputElement).value.trim() || "archive";
     const prompts: Record<string, string | null> = {};
     const defaults = integrations?.admin?.promptDefaults ?? {};
     for (const row of document.querySelectorAll(
@@ -6151,7 +6174,11 @@ async function boot() {
         if (!body.graph)
           throw new Error(body.error ?? i18n.t("admin.saveFail"));
         applyGraphUpdate(body.graph);
-        await postConfig({ prompts });
+        await postConfig({
+          prompts,
+          writeDestination: inboxFolder,
+          archiveDestination: archiveFolder,
+        });
         await refreshIntegrations();
         ($("#admin-vault-input") as HTMLInputElement).value = body.graph.meta.vaultPath;
         await renderAdminWikis();
@@ -6191,6 +6218,8 @@ async function boot() {
           ? { [vaultPath]: { path: vaultPath, wikis } }
           : {},
         prompts,
+        writeDestination: inboxFolder,
+        archiveDestination: archiveFolder,
       });
       await refreshIntegrations();
       adminDirty = false;
