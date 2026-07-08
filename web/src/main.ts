@@ -3685,7 +3685,7 @@ async function boot() {
   });
 
   $("#integ-recheck").addEventListener("click", () =>
-    refreshIntegrations(true).then(refreshQmdStatus),
+    refreshIntegrations(true).then(() => refreshQmdStatus()),
   );
   // Per-tool installs (KTD8): each missing integration offers its own
   // install button; existing installs are never touched. Extensible: new
@@ -3714,7 +3714,7 @@ async function boot() {
           );
           ($("#modal-body .muted") as HTMLElement).textContent = r.detail;
         }
-        await refreshIntegrations(true).then(refreshQmdStatus);
+        await refreshIntegrations(true).then(() => refreshQmdStatus());
       } catch {
         showModal(
           "Install failed",
@@ -3726,14 +3726,15 @@ async function boot() {
       }
     });
   }
-  const integrationsLoaded = refreshIntegrations().then(refreshQmdStatus);
+  const integrationsLoaded = refreshIntegrations().then(() => refreshQmdStatus());
 
   // ---- semantic surfaces: related notes, setup prompt, collection toggles (U4) ----
   type QmdState = "missing" | "uncovered" | "indexing" | "error" | "ready";
   let qmdStatus: { state: QmdState; collections?: string[] } = {
     state: "missing",
   };
-  async function refreshQmdStatus() {
+  let autoMaintFired = false;
+  async function refreshQmdStatus(skipAutoMaint = false) {
     if (!integrations?.tools.qmd.installed) {
       qmdStatus = { state: "missing" };
     } else {
@@ -3748,6 +3749,12 @@ async function boot() {
     renderQmdSettings();
     maybePromptSetup();
     void refreshMaint();
+    if (!skipAutoMaint && !autoMaintFired && qmdStatus.state === "ready") {
+      autoMaintFired = true;
+      const update = prefs.getAutoUpdate();
+      const embed = prefs.getAutoEmbed();
+      if (update || embed) void startMaint(update, embed);
+    }
   }
 
   function renderQmdSettings() {
@@ -3795,6 +3802,7 @@ async function boot() {
   }
   let maintPoll: number | null = null;
   let maintMaxPending = 0;
+  let maintForceRunning = false;
   async function refreshMaint() {
     let m: MaintStatus;
     try {
@@ -3806,6 +3814,7 @@ async function boot() {
     // Only meaningful once the vault is actually covered by qmd.
     if (!m.available || qmdStatus.state !== "ready") {
       wrap.classList.add("hidden");
+      if (!rescanRunning) setOpsStatus(null);
       return;
     }
     wrap.classList.remove("hidden");
@@ -3828,6 +3837,20 @@ async function boot() {
       fill.style.width = Math.max(6, pct) + "%";
       $("#qmd-maint-status").textContent =
         `${m.op === "embed" ? "embedding" : "updating"}… ${pending} pending`;
+      if (!rescanRunning) {
+        setOpsStatus({
+          label: i18n.t(
+            m.op === "embed"
+              ? maintForceRunning
+                ? "ops.qmdReembed"
+                : "ops.qmdEmbed"
+              : "ops.qmdUpdate",
+          ),
+          detail: i18n.t("ops.pending", { count: pending }),
+          pct: m.op === "embed" ? Math.max(6, pct) : undefined,
+          indeterminate: m.op !== "embed",
+        });
+      }
       if (maintPoll == null) maintPoll = window.setInterval(refreshMaint, 2000);
     } else {
       if (maintPoll != null) {
@@ -3835,6 +3858,7 @@ async function boot() {
         maintPoll = null;
       }
       maintMaxPending = 0;
+      maintForceRunning = false;
       bar.classList.add("hidden");
       fill.style.width = "0";
       $("#qmd-maint-status").textContent = m.error
@@ -3842,6 +3866,7 @@ async function boot() {
         : pending
           ? `${pending} pending${stale}`
           : `index up to date${stale}`;
+      if (!rescanRunning) setOpsStatus(null);
     }
   }
   async function startMaint(update: boolean, embed: boolean, force = false) {
@@ -3853,24 +3878,35 @@ async function boot() {
       try {
         await api(`/api/qmd/maintenance?${q}`, { method: "POST" });
       } catch (e) {
-        // 409 = "already running"; treat as success to match the previous
-        // "if (!res.ok && res.status !== 409)" tolerance.
+        // Incremental maintenance can piggyback on an existing job; forced
+        // re-embed must not pretend it started if another job is already busy.
+        if (force && e instanceof ApiError && e.status === 409) {
+          await refreshMaint();
+          return false;
+        }
         if (!(e instanceof ApiError) || e.status !== 409) throw e;
       }
+      maintForceRunning = force && embed;
       maintMaxPending = 0;
       await refreshMaint();
+      return true;
     } catch {
+      maintForceRunning = false;
+      if (!rescanRunning) setOpsStatus(null);
       $("#qmd-maint-status").textContent =
         "could not start — check the server log";
+      return false;
     }
   }
   // update: re-index changed notes (BM25). embed: new/changed chunks only.
-  // re-embed: rebuild ALL embeddings from scratch (qmd embed -f).
   $("#qmd-update").addEventListener("click", () => startMaint(true, false));
   $("#qmd-embed").addEventListener("click", () => startMaint(false, true));
-  $("#qmd-re-embed").addEventListener("click", () =>
-    startMaint(false, true, true),
-  );
+  const cbUpd = $("#qmd-auto-update") as HTMLInputElement;
+  const cbEmb = $("#qmd-auto-embed") as HTMLInputElement;
+  cbUpd.checked = prefs.getAutoUpdate();
+  cbEmb.checked = prefs.getAutoEmbed();
+  cbUpd.addEventListener("change", () => prefs.setAutoUpdate(cbUpd.checked));
+  cbEmb.addEventListener("change", () => prefs.setAutoEmbed(cbEmb.checked));
 
   // One-time prompt (R6): qmd installed but nothing covers this vault.
   function maybePromptSetup() {
@@ -3883,7 +3919,7 @@ async function boot() {
        <p class="muted">You can enable it later in Tools → Integrations.</p>`,
     );
     $("#qmd-setup-yes").addEventListener("click", () => {
-      hideModal();
+      void hideModal();
       void startQmdSetup();
     });
     $("#qmd-setup-no").addEventListener("click", hideModal);
@@ -3964,7 +4000,7 @@ async function boot() {
        <p style="display:flex;gap:8px"><button id="web-consent-yes">Enable Web mode</button><button id="web-consent-no">Cancel</button></p>`,
     );
     $("#web-consent-yes").addEventListener("click", async () => {
-      hideModal();
+      void hideModal();
       try {
         await postConfig({ consents: { web: true } });
         await refreshIntegrations();
@@ -5680,7 +5716,7 @@ async function boot() {
   };
   let adminDirty = false;
   let adminSaving = false;
-  const hideModal = async () => {
+  const hideModal = async (): Promise<boolean> => {
     if (
       $("#modal").classList.contains("admin-modal") &&
       adminDirty &&
@@ -5690,30 +5726,72 @@ async function boot() {
         adminSaving = true;
         const saved = await saveAdmin();
         adminSaving = false;
-        if (!saved) return;
-      } else if (!confirm(i18n.t("admin.unsavedDiscard"))) return;
+        if (!saved) return false;
+      } else if (!confirm(i18n.t("admin.unsavedDiscard"))) return false;
     }
     adminDirty = false;
     $("#modal-backdrop").classList.add("hidden");
+    return true;
   };
   $("#modal-close").addEventListener("click", () => void hideModal());
   $("#modal-backdrop").addEventListener("click", (e) => {
     if (e.target === e.currentTarget) void hideModal();
   });
 
+  type OpsStatus = {
+    label: string;
+    detail?: string;
+    pct?: number;
+    indeterminate?: boolean;
+  } | null;
+  let rescanRunning = false;
+  function setOpsStatus(status: OpsStatus): void {
+    const wrap = $("#ops-status");
+    const bar = $("#ops-bar");
+    const fill = bar.querySelector("span") as HTMLElement;
+    if (!status) {
+      wrap.classList.add("hidden");
+      wrap.classList.remove("indeterminate");
+      fill.style.width = "0";
+      bar.removeAttribute("aria-valuenow");
+      return;
+    }
+    wrap.classList.remove("hidden");
+    wrap.classList.toggle("indeterminate", !!status.indeterminate);
+    $("#ops-label").textContent = status.label;
+    $("#ops-detail").textContent = status.detail ?? "";
+    if (status.indeterminate) {
+      fill.style.width = "";
+      bar.removeAttribute("aria-valuenow");
+      return;
+    }
+    const pct = Math.max(0, Math.min(100, status.pct ?? 0));
+    fill.style.width = `${pct}%`;
+    bar.setAttribute("aria-valuenow", String(pct));
+  }
+
   // ---- File ----
   async function rescan(full: boolean) {
     closeMenus();
+    rescanRunning = true;
+    setOpsStatus({
+      label: i18n.t(full ? "ops.fullRescan" : "ops.rescan"),
+      indeterminate: true,
+    });
     showModal(
       full ? "Full rescan…" : "Rescanning vault…",
       '<p class="muted">Re-reading the vault and rebuilding the graph…</p>',
     );
     try {
-      // When qmd covers this vault, always refresh its index on rescan (embed is
-      // incremental — only changed chunks). Fire the guarded job first so it runs
-      // server-side while we diff; progress shows on return.
-      if (qmdStatus.state === "ready") {
-        await api("/api/qmd/maintenance?update=1&embed=1", {
+      // When enabled, refresh qmd alongside the Solaris graph rescan. This also
+      // covers notes created inside Solaris because those paths call rescan().
+      const autoUpdate = prefs.getAutoUpdate();
+      const autoEmbed = prefs.getAutoEmbed();
+      if (qmdStatus.state === "ready" && (autoUpdate || autoEmbed)) {
+        const q = new URLSearchParams();
+        if (autoUpdate) q.set("update", "1");
+        if (autoEmbed) q.set("embed", "1");
+        await api(`/api/qmd/maintenance?${q}`, {
           method: "POST",
         }).catch(() => {});
       }
@@ -5726,7 +5804,7 @@ async function boot() {
       // full reload only if the server didn't return the graph (older build).
       if (r.graph) {
         applyGraphUpdate(r.graph as Graph);
-        hideModal();
+        void hideModal();
       } else {
         window.location.reload();
       }
@@ -5735,10 +5813,13 @@ async function boot() {
         "Rescan failed",
         "<p>Could not rescan. The server needs access to the original vault path.</p>",
       );
+    } finally {
+      rescanRunning = false;
+      setOpsStatus(null);
+      if (qmdStatus.state === "ready") void refreshMaint();
     }
   }
   $("#mi-rescan").addEventListener("click", () => rescan(false));
-  $("#mi-rescan-full").addEventListener("click", () => rescan(true));
   $("#mi-reload").addEventListener("click", () => window.location.reload());
   $("#mi-export").addEventListener("click", () => {
     closeMenus();
@@ -5822,6 +5903,10 @@ async function boot() {
         <div id="admin-prompts"></div>
       </section>
       <div class="admin-save-row">
+        <div class="admin-maint-actions">
+          <button id="admin-rescan-full">${T("admin.rescanFull")}</button>
+          ${qmdStatus.state === "ready" ? `<button id="admin-reembed-full">${T("admin.reembedFull")}</button>` : ""}
+        </div>
         <span id="admin-status" class="muted"></span>
         <button id="admin-save">${T("admin.save")}</button>
       </div>`;
@@ -5844,6 +5929,27 @@ async function boot() {
     });
     $("#admin-rediscover").addEventListener("click", renderAdminWikis);
     $("#admin-save").addEventListener("click", saveAdmin);
+    $("#admin-rescan-full").addEventListener("click", async () => {
+      if (await hideModal()) void rescan(true);
+    });
+    const reembed = document.querySelector("#admin-reembed-full");
+    reembed?.addEventListener("click", async () => {
+      if (!(await hideModal())) return;
+      await refreshQmdStatus(true);
+      if (qmdStatus.state !== "ready") {
+        showModal(
+          i18n.t("qmd.notReadyTitle"),
+          `<p>${i18n.t("qmd.notReadyBody")}</p>`,
+        );
+        return;
+      }
+      if (!(await startMaint(false, true, true))) {
+        showModal(
+          i18n.t("qmd.busyTitle"),
+          `<p>${i18n.t("qmd.busyBody")}</p>`,
+        );
+      }
+    });
   }
 
   async function renderAdminWikis() {
@@ -6170,7 +6276,7 @@ async function boot() {
     }
     if (e.key === "Escape" && !typing) {
       // standard escape order: modal, menus, research column, selection
-      if (!$("#modal-backdrop").classList.contains("hidden")) hideModal();
+      if (!$("#modal-backdrop").classList.contains("hidden")) void hideModal();
       else if (menus.some((m) => m.classList.contains("open"))) closeMenus();
       else if (!$("#research").classList.contains("hidden")) closeResearch();
       else clearSelection();

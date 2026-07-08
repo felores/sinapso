@@ -68,6 +68,8 @@ const KEY = {
   webScope: `${PREFIX}web-scope`,
   vaultScope: `${PREFIX}vault-scope`,
   qmdPrompted: `${PREFIX}qmd-prompted`,
+  autoUpdate: `${PREFIX}qmd-auto-update`,
+  autoEmbed: `${PREFIX}qmd-auto-embed`,
   uiZoom: `${PREFIX}ui-zoom`,
   labelDistance: `${PREFIX}label-distance`,
   labelSize: `${PREFIX}label-size`,
@@ -152,6 +154,12 @@ export interface Prefs {
 
   wasQmdPrompted(): boolean;
   markQmdPrompted(): void;
+
+  getAutoUpdate(): boolean;
+  setAutoUpdate(v: boolean): void;
+
+  getAutoEmbed(): boolean;
+  setAutoEmbed(v: boolean): void;
 
   getUiZoom(): number;
   setUiZoom(v: number): void;
@@ -388,6 +396,20 @@ export function createPrefs(storage: PrefsStorage = defaultStorage()): Prefs {
     },
     markQmdPrompted() {
       set(KEY.qmdPrompted, "1");
+    },
+
+    getAutoUpdate() {
+      return notOffFlag(get(KEY.autoUpdate));
+    },
+    setAutoUpdate(v) {
+      set(KEY.autoUpdate, v ? "1" : "0");
+    },
+
+    getAutoEmbed() {
+      return notOffFlag(get(KEY.autoEmbed));
+    },
+    setAutoEmbed(v) {
+      set(KEY.autoEmbed, v ? "1" : "0");
     },
 
     getUiZoom() {

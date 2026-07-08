@@ -69,6 +69,8 @@ const ALL_KEYS = [
   "akasha-web-scope",
   "akasha-vault-scope",
   "akasha-qmd-prompted",
+  "akasha-qmd-auto-update",
+  "akasha-qmd-auto-embed",
   "akasha-ui-zoom",
   "akasha-label-distance",
   "akasha-label-size",
@@ -113,6 +115,8 @@ describe("prefs: namespace guard", () => {
     prefs.setWebScope("web");
     prefs.setVaultScope("keyword");
     prefs.markQmdPrompted();
+    prefs.setAutoUpdate(false);
+    prefs.setAutoEmbed(false);
     prefs.setUiZoom(1.4);
     prefs.setLabelDistance(500);
     prefs.setLabelSize(6);
@@ -291,6 +295,28 @@ describe("prefs: qmd-prompted one-shot flag", () => {
     prefs.markQmdPrompted();
     expect(prefs.wasQmdPrompted()).toBe(true);
     expect(storage.getItem("akasha-qmd-prompted")).toBe("1");
+  });
+});
+
+describe("prefs: qmd auto maintenance flags", () => {
+  it("auto update defaults on and round-trips", () => {
+    expect(prefs.getAutoUpdate()).toBe(true);
+    prefs.setAutoUpdate(false);
+    expect(storage.getItem("akasha-qmd-auto-update")).toBe("0");
+    expect(prefs.getAutoUpdate()).toBe(false);
+    prefs.setAutoUpdate(true);
+    expect(storage.getItem("akasha-qmd-auto-update")).toBe("1");
+    expect(prefs.getAutoUpdate()).toBe(true);
+  });
+
+  it("auto embed defaults on and round-trips", () => {
+    expect(prefs.getAutoEmbed()).toBe(true);
+    prefs.setAutoEmbed(false);
+    expect(storage.getItem("akasha-qmd-auto-embed")).toBe("0");
+    expect(prefs.getAutoEmbed()).toBe(false);
+    prefs.setAutoEmbed(true);
+    expect(storage.getItem("akasha-qmd-auto-embed")).toBe("1");
+    expect(prefs.getAutoEmbed()).toBe(true);
   });
 });
 
@@ -498,6 +524,8 @@ describe("prefs: bytes-on-the-wire identity (catch regressions vs current storag
     prefs.setMode("ingest");
     prefs.setWebScope("web");
     prefs.markQmdPrompted();
+    prefs.setAutoUpdate(false);
+    prefs.setAutoEmbed(false);
     prefs.setLabelDistance(700);
     expect(storage.getItem("akasha-theme")).toBe("cosmos");
     expect(storage.getItem("akasha-group")).toBe("tag");
@@ -514,6 +542,8 @@ describe("prefs: bytes-on-the-wire identity (catch regressions vs current storag
     expect(storage.getItem("akasha-mode")).toBe("ingest");
     expect(storage.getItem("akasha-web-scope")).toBe("web");
     expect(storage.getItem("akasha-qmd-prompted")).toBe("1");
+    expect(storage.getItem("akasha-qmd-auto-update")).toBe("0");
+    expect(storage.getItem("akasha-qmd-auto-embed")).toBe("0");
     expect(storage.getItem("akasha-label-distance")).toBe("700");
   });
 });
