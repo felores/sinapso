@@ -1236,23 +1236,14 @@ body > :not(#graph) {
 ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 
-/* ---------- integration modes (Semantic / Web / Ingest) ---------- */
+/* ---------- integration modes (Vault / Web / Ingest) ---------- */
 #search-wrap { display: flex; align-items: center; gap: 6px; }
 #search-results { left: auto; right: 0; }
 #ingest-file { display: none; } /* native input is just a mechanism */
 #ingest-browse.hidden { display: none; }
-#ingest-target.hidden { display: none; }
+#search-send.hidden { display: none; }
+#selection-context-strip.hidden { display: none; }
 #llm-model.hidden { display: none; }
-#ingest-target {
-  max-width: 170px;
-  height: 34px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--fg);
-  font-size: 12px;
-  outline: none;
-}
 #ingest-browse {
   position: absolute;
   right: 4px;
@@ -1287,6 +1278,49 @@ body > :not(#graph) {
 .mode-btn.active { border-color: var(--accent); color: var(--accent); }
 .mode-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+#search-send {
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+}
+#search-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+#selection-context-strip {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(520px, calc(100vw - 36px));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  backdrop-filter: blur(8px);
+}
+#selection-context-strip label { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+#selection-context-chips { display: flex; gap: 5px; overflow: hidden; }
+.selection-chip {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--fg);
+}
+
 /* Voice toggle: mic when idle, bot (accent) when a session is live. Sits right
    of the search field, mirroring the left mode group; the browse button (ingest
    mode) clears it so they never overlap. */
@@ -1299,7 +1333,8 @@ body > :not(#graph) {
    segmented control docked at the search field's right edge, clearing the voice
    button — mirrors the ingest browse button's slot, and the two never coexist
    (modes are mutually exclusive). Default-active button is filled with --accent. */
-#web-scope {
+#web-scope,
+#vault-scope {
   position: absolute;
   right: 44px;
   top: 50%;
@@ -1312,7 +1347,8 @@ body > :not(#graph) {
   border: 1px solid var(--border);
   border-radius: 7px;
 }
-#web-scope.hidden { display: none; }
+#web-scope.hidden,
+#vault-scope.hidden { display: none; }
 .scope-btn {
   pointer-events: auto;
   display: grid;
@@ -1329,6 +1365,40 @@ body > :not(#graph) {
 .scope-btn.active { background: var(--accent); color: #fff; }
 .scope-btn svg { display: block; }
 #search.with-scope { padding-right: 112px; }
+
+#selection-context-menu {
+  position: fixed;
+  z-index: 70;
+  min-width: 180px;
+  padding: 5px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+#selection-context-menu.hidden { display: none; }
+#selection-context-menu button {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+#selection-context-menu button:hover { background: rgba(125, 125, 160, 0.14); }
+
+.research-notice {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
 
 /* Custom tooltip (replaces native title=): appears instantly below the target,
    centered, with an up-arrow. Positioned in JS; --arrow-dx re-aims the arrow at
@@ -1718,6 +1788,37 @@ body > :not(#graph) {
   padding: 8px;
 }
 .wiki-proposal-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 8px; }
+.ingest-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.ingest-choice select {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  font-size: 12px;
+}
+.ingest-choice button {
+  height: 30px;
+  padding: 0 14px;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ingest-choice button:disabled { opacity: 0.6; cursor: default; }
 
 /* ---------- agent chat styles (inside the research column) ---------- */
 #agent-banner {

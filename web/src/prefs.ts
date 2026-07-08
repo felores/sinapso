@@ -8,12 +8,13 @@
  * `try/catch` (or lack thereof) for each key.
  */
 
-export type ModeName = "semantic" | "web" | "ingest";
+export type ModeName = "vault" | "web" | "ingest";
 export type GroupMode = "folder" | "tag" | "cluster";
 export type QualityKey = "low" | "medium" | "high";
 export type NodeStyle = "classic" | "dodecahedron" | "starlight" | "particles";
 export type Arrangement = "links" | "semantic" | "hybrid";
 export type WebScope = "deep" | "web";
+export type VaultScope = "semantic" | "keyword";
 export type Filter = { mode: "show" | "ignore"; pattern: string };
 export type SizeWeights = {
   in: number;
@@ -65,6 +66,7 @@ const KEY = {
   research: `${PREFIX}research`,
   mode: `${PREFIX}mode`,
   webScope: `${PREFIX}web-scope`,
+  vaultScope: `${PREFIX}vault-scope`,
   qmdPrompted: `${PREFIX}qmd-prompted`,
   uiZoom: `${PREFIX}ui-zoom`,
   labelDistance: `${PREFIX}label-distance`,
@@ -144,6 +146,9 @@ export interface Prefs {
 
   getWebScope(): WebScope;
   setWebScope(v: WebScope): void;
+
+  getVaultScope(): VaultScope;
+  setVaultScope(v: VaultScope): void;
 
   wasQmdPrompted(): boolean;
   markQmdPrompted(): void;
@@ -354,7 +359,8 @@ export function createPrefs(storage: PrefsStorage = defaultStorage()): Prefs {
     },
 
     getMode() {
-      return get(KEY.mode) as ModeName | null;
+      const v = get(KEY.mode);
+      return v === "semantic" ? "vault" : (v as ModeName | null);
     },
     setMode(v) {
       set(KEY.mode, v);
@@ -368,6 +374,13 @@ export function createPrefs(storage: PrefsStorage = defaultStorage()): Prefs {
     },
     setWebScope(v) {
       set(KEY.webScope, v);
+    },
+
+    getVaultScope() {
+      return get(KEY.vaultScope) === "keyword" ? "keyword" : "semantic";
+    },
+    setVaultScope(v) {
+      set(KEY.vaultScope, v);
     },
 
     wasQmdPrompted() {

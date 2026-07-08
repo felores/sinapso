@@ -35,11 +35,13 @@ function fakeExa(behavior: (calls: number) => unknown) {
   const state = {
     calls: 0,
     keys: [] as string[],
+    queries: [] as string[],
     requests: [] as Array<Record<string, unknown>>,
   };
   const makeClient = (key: string): ExaClientLike => ({
-    async search(_query, options) {
+    async search(query, options) {
       state.keys.push(key);
+      state.queries.push(query);
       state.calls++;
       state.requests.push(options);
       const r = behavior(state.calls);
@@ -159,6 +161,15 @@ describe("POST /api/research", () => {
   );
 
   const { state, makeClient } = fakeExa(() => CANNED);
+  const openrouterCalls: Array<{ url: string; init?: RequestInit }> = [];
+  const openrouterFetch: typeof fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    openrouterCalls.push({ url, init });
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: JSON.stringify({ query: "rewritten context query" }) } }] }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
   const { app } = createApp(graphPath, undefined, {
     configPath: join(VAULT, "config.json"),
     detectDeps: {
@@ -168,6 +179,7 @@ describe("POST /api/research", () => {
       env: {},
     },
     exa: { makeClient, retryDelays: [1] },
+    openrouter: { fetch: openrouterFetch, endpoint: "https://openrouter.test" },
   });
   const token = async () => (await request(app).get("/api/session")).body.token;
   const setConfig = async (patch: object) =>
@@ -213,6 +225,52 @@ describe("POST /api/research", () => {
     expect(res.body.results).toHaveLength(2);
     expect(JSON.stringify(res.body)).not.toContain(KEY);
     expect(state.keys[0]).toBe(KEY); // adapter received the stored key
+  });
+
+  it("uses selected context with OpenRouter rewrite and displayQuery history", async () => {
+    await setConfig({ openrouterKey: "or-key", defaultModel: "test/model" });
+    const beforeOr = openrouterCalls.length;
+    const res = await request(app)
+      .post("/api/research")
+      .set(TOKEN_HEADER, await token())
+      .send({
+        query: "typed query",
+        displayQuery: "Readable query",
+        contexts: {
+          reader: { source: "reader", text: "selected note text", noteTitle: "Note" },
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(openrouterCalls.length).toBe(beforeOr + 1);
+    expect(state.queries.at(-1)).toBe("rewritten context query");
+    expect(JSON.stringify(res.body)).not.toContain(KEY);
+    expect(res.body.contextRewriteSource).toBe("openrouter");
+
+    const history = await request(app).get("/api/research/history");
+    const entry = history.body.entries.find(
+      (e: { id: string }) => e.id === res.body.historyId,
+    );
+    expect(entry.query).toBe("Readable query");
+  });
+
+  it("falls back deterministically without an OpenRouter key", async () => {
+    await setConfig({ openrouterKey: null });
+    const beforeOr = openrouterCalls.length;
+    const res = await request(app)
+      .post("/api/research")
+      .set(TOKEN_HEADER, await token())
+      .send({
+        query: "typed query",
+        contexts: {
+          research: { source: "research", text: "selected research text", title: "Research" },
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(openrouterCalls.length).toBe(beforeOr);
+    expect(state.queries.at(-1)).toContain("selected research text");
+    expect(res.body.contextRewriteSource).toBe("fallback");
   });
 
   it("rejects an empty query before any call", async () => {

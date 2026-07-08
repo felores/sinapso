@@ -98,6 +98,7 @@ import {
   createSessionToken,
   localOnly,
   requireToken,
+  TOKEN_HEADER,
 } from "./integrations/security.js";
 import { computeGaps, noteQuestions } from "./integrations/topology.js";
 import { noteQuestionsViaLLM } from "./integrations/questions.js";
@@ -141,6 +142,7 @@ import {
   grepNote,
   type SearchIndex,
 } from "./integrations/notes-index.js";
+import { buildContextualQuery } from "./integrations/contextual-query.js";
 
 interface GraphFile {
   meta: {
@@ -716,6 +718,7 @@ export function createApp(
   app.get("/api/semantic-search", async (req, res) => {
     try {
       const q = String(req.query.q ?? "").trim();
+      const displayQuery = String(req.query.displayQuery ?? "").trim();
       if (!q) {
         res.json({ state: "ready", results: [] });
         return;
@@ -744,6 +747,7 @@ export function createApp(
   app.get("/api/passages", async (req, res) => {
     try {
       const q = String(req.query.q ?? "").trim();
+      const displayQuery = String(req.query.displayQuery ?? "").trim();
       if (!q) {
         res.json({ state: "ready", results: [] });
         return;
@@ -767,7 +771,7 @@ export function createApp(
       // history; note-scoped ones (the reader's find-in-note) do not.
       const historyId =
         !note && r.status === 200 && Array.isArray(results) && results.length
-          ? saveEntry(dataDir, { mode: "semantic", query: q, results }).id
+          ? saveEntry(dataDir, { mode: "semantic", query: displayQuery || q, results }).id
           : undefined;
       res.status(r.status).json({ ...r.body, historyId });
     } catch (e) {
@@ -803,19 +807,33 @@ export function createApp(
         });
         return;
       }
-      const r = await exaResearch(cfg.exaKey, query, {
+      const contextual = await buildContextualQuery(query, req.body?.contexts, {
+        openrouterKey: cfg.openrouterKey,
+        model: cfg.defaultModel,
+        openrouter: integrations?.openrouter,
+      });
+      const displayQuery = String(req.body?.displayQuery ?? "").trim();
+      const r = await exaResearch(cfg.exaKey, contextual.effectiveQuery, {
         deep: !!req.body?.deep,
       });
       const historyId =
         r.results.length || r.answer
           ? saveEntry(dataDir, {
               mode: "web",
-              query,
+              query: displayQuery || query,
               answer: r.answer,
               results: r.results,
             }).id
           : undefined;
-      res.json({ results: r.results, answer: r.answer, historyId });
+      res.json({
+        results: r.results,
+        answer: r.answer,
+        historyId,
+        effectiveQuery: contextual.effectiveQuery,
+        contextApplied: contextual.contextApplied,
+        contextRewriteSource: contextual.contextRewriteSource,
+        contextWarning: contextual.contextWarning,
+      });
     } catch (e) {
       console.error("research failed:", e instanceof Error ? e.message : e);
       res.status(502).json({
@@ -1701,13 +1719,31 @@ export function createApp(
   // Lazy-built on first search; invalidated by rescan
   app.get("/api/search", (req, res) => {
     const q = String(req.query.q ?? "").trim();
+    const writeHistory = req.query.history === "1";
+    if (writeHistory && req.headers[TOKEN_HEADER] !== sessionToken) {
+      res.status(403).json({ error: "missing or invalid session token" });
+      return;
+    }
     if (!q) {
-      res.json([]);
+      res.json(writeHistory ? { results: [] } : []);
       return;
     }
 
     try {
-      res.json(searchIndex.search(q));
+      const results = searchIndex.search(q);
+      if (writeHistory) {
+        const displayQuery = String(req.query.displayQuery ?? "").trim();
+        const historyId = results.length
+          ? saveEntry(dataDir, {
+              mode: "keyword",
+              query: displayQuery || q,
+              results,
+            }).id
+          : undefined;
+        res.json({ results, historyId });
+        return;
+      }
+      res.json(results);
     } catch (e) {
       console.error("Search error:", e);
       res.status(500).json({ error: "search failed" });

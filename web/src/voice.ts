@@ -19,6 +19,7 @@ export interface VoiceHandlers {
 
 export interface VoiceSession {
   stop(): void;
+  sendContext(context: unknown): void;
   /** analyser nodes for the waveform visualizer; null when session not live */
   readonly micAnalyser: AnalyserNode | null;
   readonly agentAnalyser: AnalyserNode | null;
@@ -218,6 +219,10 @@ export async function startVoice(
 
   return {
     stop: cleanup,
+    sendContext(context: unknown) {
+      if (ws && ws.readyState === WebSocket.OPEN)
+        ws.send(JSON.stringify({ type: "context", context }));
+    },
     get micAnalyser() {
       return micAnalyser ?? null;
     },

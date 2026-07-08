@@ -793,6 +793,48 @@ describe("GET /api/passages", () => {
     // calls layout: [qmd, "vsearch", "vec: ...", "-n", "30", "--format", "json"]
     expect(vs[4]).toBe("30");
   });
+
+  it("stores displayQuery in passage research history", async () => {
+    state.vsearchOut = JSON.stringify([
+      { score: 0.9, file: "qmd://vaultcol/a.md", line: 1, snippet: "x" },
+    ]);
+    const res = await request(covered.app).get(
+      "/api/passages?q=vec%3Ainternal&displayQuery=Readable%20query",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.historyId).toBeTruthy();
+
+    const history = await request(covered.app).get("/api/research/history");
+    const entry = history.body.entries.find(
+      (e: { id: string }) => e.id === res.body.historyId,
+    );
+    expect(entry.query).toBe("Readable query");
+  });
+});
+
+describe("GET /api/search history mode", () => {
+  it("keeps the default array shape and writes history only when requested", async () => {
+    writeFileSync(join(VAULT, "a.md"), "# Note A\n\nalpha keyword body\n");
+
+    const plain = await request(covered.app).get("/api/search?q=alpha");
+    expect(Array.isArray(plain.body)).toBe(true);
+
+    const denied = await request(covered.app).get("/api/search?q=alpha&history=1");
+    expect(denied.status).toBe(403);
+
+    const token = (await request(covered.app).get("/api/session")).body.token;
+    const hist = await request(covered.app)
+      .get("/api/search?q=alpha&history=1&displayQuery=Readable%20keyword")
+      .set(TOKEN_HEADER, token);
+    expect(hist.body.results.length).toBeGreaterThan(0);
+    expect(hist.body.historyId).toBeTruthy();
+
+    const history = await request(covered.app).get("/api/research/history");
+    const entry = history.body.entries.find(
+      (e: { id: string }) => e.id === hist.body.historyId,
+    );
+    expect(entry).toMatchObject({ mode: "keyword", query: "Readable keyword" });
+  });
 });
 
 describe("qmd setup and status", () => {

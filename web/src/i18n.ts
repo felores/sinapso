@@ -128,16 +128,17 @@ const EN: Dict = {
   // search + modes
   "ph.ingestBrowse": "browse…",
   "search.ph.none": "Search notes…",
-  "search.ph.semantic": "Semantic search…",
+  "search.ph.vault": "Search vault…",
   "search.ph.web": "Web research…",
   "search.ph.ingest": "/path/to/file.pdf or https://…",
-  "mode.semantic.name": "Semantic (qmd)",
+  "mode.vault.name": "Vault",
   "mode.web.name": "Web (Exa)",
   "mode.ingest.name": "Ingest (markitdown)",
   "ingest.targetChoose": "choose target…",
   "ingest.capture": "Inbox / capture only",
-  "mode.semantic.missing":
-    "Semantic (qmd) — qmd not installed. Add it via the addons install (Tools → Integrations).",
+  "ingest.action": "ingest",
+  "mode.vault.missing":
+    "Vault search — qmd not installed. Add it via the addons install (Tools → Integrations).",
   "mode.web.missing":
     "Web (Exa) — no API key. Add your Exa key in Tools → Integrations.",
   "mode.ingest.missing":
@@ -182,6 +183,7 @@ const EN: Dict = {
   "research.trash": "Delete this result from history",
   "research.close": "Close (Esc)",
   "research.semantic": "Semantic results",
+  "research.keyword": "Keyword results",
   "research.web": "Web research",
   "research.ingest": "Ingest document",
   "research.article": "Article",
@@ -209,6 +211,9 @@ const EN: Dict = {
   "q.buttonTitle": "Generate research questions from this note",
   "scope.deep": "Deep research",
   "scope.web": "Web results",
+  "scope.semantic": "Semantic search",
+  "scope.keyword": "Keyword search",
+  "selection.include": "Include selected text as context",
   "dock.dock": "Dock to right edge",
   "dock.undock": "Undock (float)",
   // loading hint
@@ -331,16 +336,17 @@ const ES: Dict = {
   "voice.status.fetchingUrl": "Obteniendo URL: {url}",
   "ph.ingestBrowse": "examinar…",
   "search.ph.none": "Buscar notas…",
-  "search.ph.semantic": "Búsqueda semántica…",
+  "search.ph.vault": "Buscar en la bóveda…",
   "search.ph.web": "Investigación web…",
   "search.ph.ingest": "/ruta/al/archivo.pdf o https://…",
-  "mode.semantic.name": "Semántica (qmd)",
+  "mode.vault.name": "Bóveda",
   "mode.web.name": "Web (Exa)",
   "mode.ingest.name": "Ingesta (markitdown)",
   "ingest.targetChoose": "elige destino…",
   "ingest.capture": "Inbox / solo captura",
-  "mode.semantic.missing":
-    "Semántica (qmd): qmd no está instalado. Añádelo desde la instalación de addons (Herramientas → Integraciones).",
+  "ingest.action": "ingesta",
+  "mode.vault.missing":
+    "Búsqueda en bóveda: qmd no está instalado. Añádelo desde la instalación de addons (Herramientas → Integraciones).",
   "mode.web.missing":
     "Web (Exa): sin clave API. Añade tu clave de Exa en Herramientas → Integraciones.",
   "mode.ingest.missing":
@@ -383,6 +389,7 @@ const ES: Dict = {
   "research.trash": "Eliminar este resultado del historial",
   "research.close": "Cerrar (Esc)",
   "research.semantic": "Resultados semánticos",
+  "research.keyword": "Resultados por palabra clave",
   "research.web": "Investigación web",
   "research.ingest": "Ingerir documento",
   "research.article": "Artículo",
@@ -410,6 +417,9 @@ const ES: Dict = {
   "q.buttonTitle": "Generar preguntas de investigación desde esta nota",
   "scope.deep": "Investigación profunda",
   "scope.web": "Resultados web",
+  "scope.semantic": "Búsqueda semántica",
+  "scope.keyword": "Búsqueda por palabra clave",
+  "selection.include": "Incluir texto seleccionado como contexto",
   "dock.dock": "Acoplar al borde derecho",
   "dock.undock": "Desacoplar (flotante)",
   "loading.line1":

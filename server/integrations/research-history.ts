@@ -24,7 +24,7 @@ const ID_RE = /^[a-z0-9-]+$/;
 export interface ResearchHistoryEntry {
   id: string;
   ts: string; // ISO
-  mode: "web" | "semantic" | "article" | "document";
+  mode: "web" | "semantic" | "keyword" | "article" | "document";
   query: string;
   /** Web deep answer + citations (null for semantic or no-answer). */
   answer?: {

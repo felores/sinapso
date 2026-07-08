@@ -44,6 +44,25 @@ import { filterFields, compileMatcher } from "./filters";
 import { computeSemanticClusters as computeSemanticClustersPure } from "./clusters";
 import { api, apiRaw, ApiError, getApiToken } from "./api";
 import { createPrefs } from "./prefs";
+import {
+  buildKeywordQuery,
+  buildSelectionSnapshot,
+  buildSemanticQuery,
+  clearSelectionSlot,
+  contextTrimNotice,
+  contextUseNotice,
+  displayQuery,
+  emptySelectionState,
+  hasSelectionContext,
+  selectedText,
+  selectionSlot,
+  sourceChips,
+  updateSelectionSlot,
+  type SelectionContext,
+  type SelectionContextState,
+  type SelectionSnapshot,
+  type SelectionSource,
+} from "./selection-context";
 
 // ===== DATA STRUCTURES =====
 interface Graph {
@@ -1419,6 +1438,7 @@ async function boot() {
     $("#reader").classList.add("hidden");
     readerLeftPinned = false; // closing the panel drops the left pin
     openNoteWords = null;
+    clearSelectionContext("reader");
     updateBrandStats();
   }
 
@@ -1510,6 +1530,8 @@ async function boot() {
     highlightSnippet?: string,
   ) {
     const reader = $("#reader");
+    const nextOpenNodeId = n.phantom ? null : n.id;
+    if (openNodeId !== nextOpenNodeId) clearSelectionContext("reader");
     $("#reader-path").textContent = n.phantom
       ? i18n.t("reader.unwritten")
       : n.id;
@@ -1523,7 +1545,7 @@ async function boot() {
     ($("#reader-versions") as HTMLSelectElement).innerHTML = "";
     $("#reader-version-restore").classList.add("hidden");
     $("#reader-versions-toggle").classList.add("hidden");
-    openNodeId = n.phantom ? null : n.id;
+    openNodeId = nextOpenNodeId;
     const body = $("#reader-body");
     if (n.phantom) {
       $("#reader-find").classList.add("hidden");
@@ -2555,6 +2577,91 @@ async function boot() {
   // --- search: instant title matches + indexed full-text content matches ---
   const searchBox = $("#search") as HTMLInputElement;
   const results = $("#search-results");
+  const searchSend = $("#search-send") as HTMLButtonElement;
+  const selectionStrip = $("#selection-context-strip");
+  const selectionToggle = $("#selection-context-toggle") as HTMLInputElement;
+  const selectionChips = $("#selection-context-chips");
+  let selectionContextState: SelectionContextState = emptySelectionState();
+  let includeSelectionContext = true;
+
+  function currentSelectionSnapshot(): SelectionSnapshot {
+    return buildSelectionSnapshot(selectionContextState);
+  }
+
+  function syncVoiceSelection() {
+    voiceSession?.sendContext(currentSelectionSnapshot());
+  }
+
+  function setSelectionContext(slot: SelectionContext | null) {
+    if (!slot) return;
+    selectionContextState = updateSelectionSlot(selectionContextState, slot);
+    includeSelectionContext = true;
+    selectionToggle.checked = true;
+    renderSelectionContextStrip();
+    syncVoiceSelection();
+  }
+
+  function clearSelectionContext(source: SelectionSource) {
+    selectionContextState = clearSelectionSlot(selectionContextState, source);
+    renderSelectionContextStrip();
+    syncVoiceSelection();
+  }
+
+  function selectedSearchSnapshot(): SelectionSnapshot | null {
+    if (!includeSelectionContext) return null;
+    const snap = currentSelectionSnapshot();
+    return hasSelectionContext(snap) ? snap : null;
+  }
+
+  function activeModeCanUseSelection(): boolean {
+    return activeMode === "vault" || activeMode === "web";
+  }
+
+  function updateSearchSend() {
+    const hasTyped = !!searchBox.value.trim();
+    const canUseContext = !!selectedSearchSnapshot() && activeModeCanUseSelection();
+    const show = hasTyped || canUseContext;
+    searchSend.classList.toggle("hidden", !show);
+    searchSend.disabled = !show;
+  }
+
+  function renderSelectionContextStrip() {
+    const snap = currentSelectionSnapshot();
+    const show = hasSelectionContext(snap) && document.activeElement === searchBox;
+    selectionStrip.classList.toggle("hidden", !show);
+    selectionToggle.checked = includeSelectionContext;
+    selectionChips.innerHTML = "";
+    for (const chip of sourceChips(snap)) {
+      const span = document.createElement("span");
+      span.className = "selection-chip";
+      span.textContent = chip;
+      selectionChips.appendChild(span);
+    }
+    updateSearchSend();
+  }
+
+  selectionToggle.addEventListener("change", () => {
+    includeSelectionContext = selectionToggle.checked;
+    updateSearchSend();
+  });
+  searchBox.addEventListener("focus", renderSelectionContextStrip);
+  searchBox.addEventListener("blur", () => {
+    setTimeout(renderSelectionContextStrip, 120);
+  });
+
+  function sendSearch() {
+    const q = searchBox.value.trim();
+    const context = selectedSearchSnapshot();
+    if (activeMode && (q || (context && activeModeCanUseSelection()))) {
+      searchBox.value = "";
+      results.innerHTML = "";
+      searchBox.blur();
+      runModeQuery(activeMode, q, context ?? undefined);
+      return;
+    }
+    if (!activeMode && q) (results.firstElementChild as HTMLElement | null)?.click();
+  }
+  searchSend.addEventListener("click", sendSearch);
 
   const addResult = (n: GNode, snippetText?: string) => {
     const row = document.createElement("div");
@@ -2621,31 +2728,150 @@ async function boot() {
     }, 220);
   };
   searchBox.addEventListener("input", () => {
+    updateSearchSend();
     if (activeMode === "ingest") return; // search box is the ingest input
     renderResults(searchBox.value.trim());
   });
   searchBox.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
-      const q = searchBox.value.trim();
-      if (activeMode && q) {
-        // Mode query: results open in the research column (F018).
-        searchBox.value = "";
-        searchBox.blur();
-        runModeQuery(activeMode, q);
-        return;
-      }
-      (results.firstElementChild as HTMLElement | null)?.click();
+      sendSearch();
+      return;
     } else if (e.key === "Escape") {
       searchBox.value = "";
       results.innerHTML = "";
       searchBox.blur();
+      updateSearchSend();
     }
   });
 
-  // ---- integrations: mode buttons (Semantic / Web / Ingest) + settings ----
+  function sourceFromHost(host: HTMLElement): SelectionSource | null {
+    if (host.id === "reader-body") return "reader";
+    if (host.id === "research-body") return "research";
+    return null;
+  }
+
+  function selectionHostForRange(range: Range): HTMLElement | null {
+    const reader = $("#reader-body");
+    const research = $("#research-body");
+    const start = range.startContainer;
+    const end = range.endContainer;
+    if (reader.contains(start) && reader.contains(end)) return reader;
+    if (research.contains(start) && research.contains(end)) return research;
+    return null;
+  }
+
+  function pointInSelection(sel: Selection, x: number, y: number): boolean {
+    for (let i = 0; i < sel.rangeCount; i++) {
+      for (const r of Array.from(sel.getRangeAt(i).getClientRects())) {
+        if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return true;
+      }
+    }
+    return false;
+  }
+
+  function currentResearchEntry(): ResearchEntry | null {
+    return currentEntryId
+      ? researchHistory.find((r) => r.id === currentEntryId) ?? null
+      : historyIdx >= 0
+        ? researchHistory[historyIdx] ?? null
+        : null;
+  }
+
+  function readDomSelection(): SelectionContext | null {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+    const target = document.activeElement as HTMLElement | null;
+    if (target?.closest("input, textarea, select, button, .dropdown")) return null;
+    let host: HTMLElement | null = null;
+    for (let i = 0; i < sel.rangeCount; i++) {
+      const h = selectionHostForRange(sel.getRangeAt(i));
+      if (!h || (host && h !== host)) return null;
+      host = h;
+    }
+    const source = host && sourceFromHost(host);
+    if (!source) return null;
+    const text = sel.toString();
+    if (source === "reader") {
+      const note = openNodeId ? byId.get(openNodeId) : null;
+      return selectionSlot({
+        source,
+        text,
+        noteId: openNodeId ?? undefined,
+        noteTitle: note?.title,
+      });
+    }
+    const entry = currentResearchEntry();
+    const article = entry?.article;
+    return selectionSlot({
+      source,
+      text,
+      entryId: entry?.id,
+      mode: entry?.mode,
+      title: article?.title ?? entry?.query,
+      query: entry?.query,
+      url: article?.url,
+    });
+  }
+
+  function captureDomSelection() {
+    const slot = readDomSelection();
+    if (slot) setSelectionContext(slot);
+  }
+
+  document.addEventListener("selectionchange", captureDomSelection);
+  document.addEventListener("mouseup", captureDomSelection);
+  document.addEventListener("keyup", captureDomSelection);
+
+  const selectionMenu = document.createElement("div");
+  selectionMenu.id = "selection-context-menu";
+  selectionMenu.className = "hidden";
+  document.body.appendChild(selectionMenu);
+  function hideSelectionMenu() {
+    selectionMenu.classList.add("hidden");
+  }
+  function showSelectionMenu(x: number, y: number, slot: SelectionContext) {
+    setSelectionContext(slot);
+    const actions: Array<[string, () => void]> = [
+      ["Semantic search", () => runSemanticQuery("", currentSelectionSnapshot(), "Selected text")],
+      ["Keyword search", () => runKeywordQuery("", currentSelectionSnapshot(), "Selected text")],
+      ["Web search", () => runWebQuery("", currentSelectionSnapshot(), "Selected text", false)],
+      ["Deep research", () => runWebQuery("", currentSelectionSnapshot(), "Selected text", true)],
+      ["Copy", () => {
+        if (navigator.clipboard) void navigator.clipboard.writeText(slot.text).catch(() => {});
+      }],
+    ];
+    selectionMenu.innerHTML = "";
+    for (const [label, run] of actions) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.addEventListener("click", () => {
+        hideSelectionMenu();
+        run();
+      });
+      selectionMenu.appendChild(button);
+    }
+    selectionMenu.style.left = `${Math.min(x, window.innerWidth - 190)}px`;
+    selectionMenu.style.top = `${Math.min(y, window.innerHeight - 180)}px`;
+    selectionMenu.classList.remove("hidden");
+  }
+  document.addEventListener("contextmenu", (e) => {
+    const target = e.target as HTMLElement | null;
+    if (!target?.closest("#reader-body, #research-body")) return;
+    const sel = window.getSelection();
+    const slot = readDomSelection();
+    if (!sel || !slot || !pointInSelection(sel, e.clientX, e.clientY)) return;
+    e.preventDefault();
+    showSelectionMenu(e.clientX, e.clientY, slot);
+  });
+  document.addEventListener("click", hideSelectionMenu);
+
+  // ---- integrations: mode buttons (Vault / Web / Ingest) + settings ----
   // At most one mode active at a time; buttons light up only when their tool
   // is detected (GET /api/integrations). Persisted as akasha-mode.
-  type ModeName = "semantic" | "web" | "ingest";
+  type ModeName = "vault" | "web" | "ingest";
+  type VaultScope = "semantic" | "keyword";
+  type ResearchMode = "web" | "semantic" | "keyword" | "ingest" | "article" | "document";
   interface IntegrationsStatus {
     tools: {
       qmd: { installed: boolean; version: string | null };
@@ -2671,7 +2897,7 @@ async function boot() {
       keys: { gemini: boolean; openai: boolean; xai: boolean };
     };
   }
-  const MODE_LIST = ["semantic", "web", "ingest"] as const;
+  const MODE_LIST = ["vault", "web", "ingest"] as const;
   interface AdminWikiConfig {
     id: string;
     label: string;
@@ -2697,6 +2923,7 @@ async function boot() {
   let integrations: IntegrationsStatus | null = null;
   let activeMode = prefs.getMode();
   let webScope: "deep" | "web" = prefs.getWebScope();
+  let vaultScope: VaultScope = prefs.getVaultScope();
 
   const postConfig = (patch: object) =>
     api("/api/integrations/config", { json: patch });
@@ -2704,8 +2931,8 @@ async function boot() {
   const modeReady = (m: ModeName): boolean => {
     const t = integrations?.tools;
     if (!t) return false;
-    return m === "semantic"
-      ? t.qmd.installed
+    return m === "vault"
+      ? true
       : m === "web"
         ? t.exa.configured
         : t.markitdown.installed;
@@ -2729,47 +2956,76 @@ async function boot() {
     searchBox.classList.toggle("mode-active", !!activeMode);
     const ingest = activeMode === "ingest";
     ($("#ingest-browse") as HTMLElement).classList.toggle("hidden", !ingest);
-    if (ingest) void renderIngestTargets();
-    else ($("#ingest-target") as HTMLElement).classList.add("hidden");
     searchBox.classList.toggle("with-browse", ingest);
     const web = activeMode === "web";
     ($("#web-scope") as HTMLElement).classList.toggle("hidden", !web);
-    searchBox.classList.toggle("with-scope", web);
+    const vault = activeMode === "vault";
+    ($("#vault-scope") as HTMLElement).classList.toggle("hidden", !vault);
+    searchBox.classList.toggle("with-scope", web || vault);
+    updateSearchSend();
   }
 
-  let ingestTargetSeq = 0;
-  async function renderIngestTargets() {
-    const select = $("#ingest-target") as HTMLSelectElement;
-    const seq = ++ingestTargetSeq;
+  // Fetch enabled wikis for the ingest choice card. Returns [] on failure.
+  async function loadEnabledWikis(): Promise<AdminWikiConfig[]> {
     try {
       const { wikis } = await api<{ wikis: AdminWikiConfig[] }>("/api/wikis");
-      if (seq !== ingestTargetSeq || activeMode !== "ingest") return;
-      const enabled = wikis.filter((w) => w.enabled);
-      select.innerHTML = "";
+      return wikis.filter((w) => w.enabled);
+    } catch {
+      return [];
+    }
+  }
+
+  // Render the Inbox-vs-wiki chooser in the research body. The action button
+  // resolves to the picked target and runs the appropriate ingest path.
+  function renderIngestChoice(
+    body: HTMLElement,
+    label: string,
+    onAction: (target: { wikiId?: string; captureOnly?: boolean }) => Promise<void>,
+  ) {
+    body.innerHTML = "";
+    const card = document.createElement("div");
+    card.className = "ingest-choice";
+    const select = document.createElement("select");
+    select.title = i18n.t("ingest.targetChoose");
+    const go = document.createElement("button");
+    go.textContent = label;
+    go.disabled = true;
+    card.append(select, go);
+    body.appendChild(card);
+
+    void loadEnabledWikis().then((enabled) => {
       if (!enabled.length) {
-        select.classList.add("hidden");
+        const only = document.createElement("option");
+        only.value = "__capture";
+        only.textContent = i18n.t("ingest.capture");
+        select.appendChild(only);
+        select.value = "__capture";
+        go.disabled = false;
         return;
       }
       const add = (value: string, text: string) => {
-        const option = document.createElement("option");
-        option.value = value;
-        option.textContent = text;
-        select.appendChild(option);
+        const o = document.createElement("option");
+        o.value = value;
+        o.textContent = text;
+        select.appendChild(o);
       };
       if (enabled.length > 1) add("", i18n.t("ingest.targetChoose"));
       for (const w of enabled) add(w.id, w.label || w.path);
       add("__capture", i18n.t("ingest.capture"));
-      select.classList.remove("hidden");
-    } catch {
-      select.classList.add("hidden");
-    }
-  }
+      select.value = enabled.length > 1 ? "" : (enabled[0].id || "__capture");
+      go.disabled = !select.value;
+      select.addEventListener("change", () => {
+        go.disabled = !select.value;
+      });
+    });
 
-  function ingestTargetPayload(): { wikiId?: string; captureOnly?: boolean } {
-    const select = $("#ingest-target") as HTMLSelectElement;
-    if (select.classList.contains("hidden")) return {};
-    if (select.value === "__capture") return { captureOnly: true };
-    return select.value ? { wikiId: select.value } : {};
+    go.addEventListener("click", async () => {
+      if (select.value === "__capture") {
+        await onAction({ captureOnly: true });
+      } else if (select.value) {
+        await onAction({ wikiId: select.value });
+      }
+    });
   }
 
   function setMode(m: ModeName | null) {
@@ -2807,6 +3063,19 @@ async function boot() {
   $("#scope-deep").addEventListener("click", () => setWebScope("deep"));
   $("#scope-web").addEventListener("click", () => setWebScope("web"));
   renderWebScope();
+
+  function renderVaultScope() {
+    $("#scope-semantic").classList.toggle("active", vaultScope === "semantic");
+    $("#scope-keyword").classList.toggle("active", vaultScope === "keyword");
+  }
+  function setVaultScope(s: VaultScope) {
+    vaultScope = s;
+    prefs.setVaultScope(s);
+    renderVaultScope();
+  }
+  $("#scope-semantic").addEventListener("click", () => setVaultScope("semantic"));
+  $("#scope-keyword").addEventListener("click", () => setVaultScope("keyword"));
+  renderVaultScope();
 
   // Custom tooltips: one floating element, delegated hover. Hijacks any native
   // `title` (stashes it to data-tip + aria-label, then removes title to kill the
@@ -3297,11 +3566,14 @@ async function boot() {
   async function startVoiceSession() {
     voiceToggle.disabled = true;
     voiceToggle.title = i18n.t("voice.connecting");
+    let ready = false;
     try {
-      voiceSession = await startVoice(await getApiToken(), {
+      const session = await startVoice(await getApiToken(), {
         onReady: () => {
+          ready = true;
           voiceToggle.disabled = false;
           setVoiceActive(true);
+          if (voiceSession) syncVoiceSelection();
         },
         onClose: () => {
           const shouldRestart = restartVoiceAfterClose;
@@ -3370,6 +3642,8 @@ async function boot() {
           }
         },
       });
+      voiceSession = session;
+      if (ready) syncVoiceSelection();
     } catch {
       voiceSession = null;
       setVoiceActive(false);
@@ -3731,9 +4005,9 @@ async function boot() {
   // ---- research column (F018): one shared right-side column for
   // semantic/web results. The search field is the entry point; the
   // column owns follow-ups via its own input.
-  let researchMode: ModeName | "article" | "document" | null = null;
+  let researchMode: ResearchMode | null = null;
 
-  // Research history (app-local): every web/semantic result is persisted; the
+  // Research history (app-local): every web/vault result is persisted; the
   // column pages back through them and can trash/curate. See server
   // research-history.ts + /api/research/history.
   type ArticleData = {
@@ -3746,7 +4020,7 @@ async function boot() {
   type ResearchEntry = {
     id: string;
     ts: string;
-    mode: "web" | "semantic" | "article" | "document";
+    mode: "web" | "semantic" | "keyword" | "article" | "document";
     query: string;
     answer?: {
       content: string;
@@ -3883,8 +4157,9 @@ async function boot() {
     }
   }
 
-  function openResearch(mode: ModeName | "article" | "document") {
+  function openResearch(mode: ResearchMode) {
     researchMode = mode;
+    clearSelectionContext("research");
     $("#research").classList.remove("hidden");
     setReaderCtxLeft(true); // open note = working context on the left
     $("#research-title").textContent = i18n.t(`research.${mode}`);
@@ -3895,6 +4170,7 @@ async function boot() {
   function closeResearch() {
     researchMode = null;
     $("#research").classList.add("hidden");
+    clearSelectionContext("research");
     // reader returns to the right unless the user pinned it left
     if (!readerLeftPinned) setReaderCtxLeft(false);
     updateBrandStats();
@@ -4065,10 +4341,30 @@ async function boot() {
     el.textContent = msg ?? "";
   }
 
-  function runModeQuery(mode: ModeName, query: string) {
-    if (mode === "semantic") void runSemanticQuery(query);
-    else if (mode === "web") void startWebResearch(query);
+  function runModeQuery(
+    mode: ModeName,
+    query: string,
+    context?: SelectionSnapshot,
+  ) {
+    if (mode === "vault") void runVaultQuery(query, context);
+    else if (mode === "web") void runWebQuery(query, context);
     else if (mode === "ingest") void runIngest(query);
+  }
+
+  function runVaultQuery(query: string, context?: SelectionSnapshot) {
+    if (vaultScope === "keyword") void runKeywordQuery(query, context);
+    else void runSemanticQuery(query, context);
+  }
+
+  function appendContextNotices(body: HTMLElement, context?: SelectionSnapshot) {
+    if (!context) return;
+    for (const text of [contextUseNotice(context), contextTrimNotice(context)]) {
+      if (!text) continue;
+      const p = document.createElement("p");
+      p.className = "research-notice";
+      p.textContent = text;
+      body.appendChild(p);
+    }
   }
 
   // ---- research history: shared renderers + navigation ----
@@ -4177,6 +4473,41 @@ async function boot() {
         group.appendChild(row);
       }
       body.appendChild(group);
+    }
+  }
+
+  function renderKeywordInto(
+    body: HTMLElement,
+    results: Array<{ id: string; title: string; score?: number; snippet: string }>,
+    query?: string,
+  ) {
+    if (query) {
+      const q = document.createElement("h2");
+      q.className = "research-query";
+      q.textContent = query;
+      body.appendChild(q);
+    }
+    if (!results.length) {
+      body.insertAdjacentHTML("beforeend", '<p class="muted">no keyword matches</p>');
+      return;
+    }
+    for (const r of results) {
+      const node = byId.get(r.id);
+      if (!node) continue;
+      const row = document.createElement("div");
+      row.className = "rel-row sem-passage";
+      const title = document.createElement("span");
+      title.className = "rel-title";
+      title.textContent = r.title || node.title;
+      const snip = document.createElement("span");
+      snip.className = "rel-snippet";
+      snip.textContent = r.snippet;
+      const badge = scoreBadge(r.score);
+      row.append(title, snip);
+      if (badge) row.appendChild(badge);
+      attachExpand(snip);
+      row.addEventListener("click", () => select(node, r.snippet));
+      body.appendChild(row);
     }
   }
 
@@ -4404,6 +4735,8 @@ async function boot() {
       renderArticleInto(body, entry.article, entry.query);
     else if (entry.mode === "document")
       renderDocumentInto(body, entry.document, entry.query);
+    else if (entry.mode === "keyword")
+      renderKeywordInto(body, (entry.results ?? []) as never, entry.query);
     else renderSemanticInto(body, (entry.results ?? []) as never, entry.query);
     updateHistoryNav();
     updateBrandStats();
@@ -4536,7 +4869,13 @@ async function boot() {
   });
   void loadReaderHistory();
 
-  async function runSemanticQuery(query: string) {
+  async function runSemanticQuery(
+    query: string,
+    context?: SelectionSnapshot,
+    label?: string,
+  ) {
+    const effective = buildSemanticQuery(query, context ?? emptySelectionState());
+    const shownQuery = displayQuery(query, label ?? "Selected text");
     openResearch("semantic");
     const body = $("#research-body");
     body.innerHTML = '<p class="muted">searching semantically…</p>';
@@ -4551,8 +4890,9 @@ async function boot() {
           score?: number;
           snippet: string;
         }>;
-      }>(`/api/passages?q=${encodeURIComponent(query)}`);
+      }>(`/api/passages?q=${encodeURIComponent(effective)}&displayQuery=${encodeURIComponent(shownQuery)}`);
       body.innerHTML = "";
+      appendContextNotices(body, context);
       if (data.state === "indexing") {
         body.innerHTML =
           '<p class="muted">semantic index building — try again shortly</p>';
@@ -4563,7 +4903,7 @@ async function boot() {
           '<p class="muted">semantic search is not set up for this vault (Tools → Integrations)</p>';
         return;
       }
-      renderSemanticInto(body, data.results ?? [], query);
+      renderSemanticInto(body, data.results ?? [], shownQuery);
       if (data.historyId) await noteQueryPersisted(data.historyId);
     } catch {
       body.innerHTML = "";
@@ -4571,8 +4911,49 @@ async function boot() {
     }
   }
 
-  async function runWebQuery(query: string) {
-    const deep = webScope === "deep";
+  async function runKeywordQuery(
+    query: string,
+    context?: SelectionSnapshot,
+    label?: string,
+  ) {
+    const effective = context ? buildKeywordQuery(query, context) : query.trim();
+    if (!effective) return;
+    const shownQuery = displayQuery(query, label ?? "Selected text");
+    openResearch("keyword");
+    const body = $("#research-body");
+    body.innerHTML = '<p class="muted">searching keywords…</p>';
+    try {
+      const data = await api<{
+        results: Array<{ id: string; title: string; score?: number; snippet: string }>;
+        historyId?: string;
+      }>(
+        `/api/search?q=${encodeURIComponent(effective)}&history=1&displayQuery=${encodeURIComponent(shownQuery)}`,
+        { token: true },
+      );
+      body.innerHTML = "";
+      appendContextNotices(body, context);
+      renderKeywordInto(body, data.results ?? [], shownQuery);
+      if (data.historyId) await noteQueryPersisted(data.historyId);
+    } catch {
+      body.innerHTML = "";
+      researchError("keyword search failed — is the server running?");
+    }
+  }
+
+  async function runWebQuery(
+    query: string,
+    context?: SelectionSnapshot,
+    label?: string,
+    deepOverride?: boolean,
+  ) {
+    if (integrations && !integrations.consents.web) {
+      promptWebConsent();
+      return;
+    }
+    const requestQuery = query.trim() || (context ? selectedText(context) : "");
+    if (!requestQuery) return;
+    const shownQuery = displayQuery(query, label ?? "Selected text");
+    const deep = deepOverride ?? webScope === "deep";
     openResearch("web");
     const body = $("#research-body");
     body.innerHTML = `<p class="muted">${i18n.t(
@@ -4588,9 +4969,19 @@ async function boot() {
           publishedDate: string | null;
         }>;
         historyId?: string;
-      }>("/api/research", { json: { query, deep } });
+        contextWarning?: string | null;
+      }>("/api/research", {
+        json: { query: requestQuery, deep, contexts: context, displayQuery: shownQuery },
+      });
       body.innerHTML = "";
-      renderWebInto(body, data, query);
+      appendContextNotices(body, context);
+      if (data.contextWarning) {
+        const p = document.createElement("p");
+        p.className = "research-notice";
+        p.textContent = data.contextWarning;
+        body.appendChild(p);
+      }
+      renderWebInto(body, data, shownQuery);
       if (data.historyId) await noteQueryPersisted(data.historyId);
     } catch (e) {
       body.innerHTML = "";
@@ -4660,11 +5051,6 @@ async function boot() {
     source: string;
     title: string;
     operations: WikiIngestOperation[];
-  }
-
-  function wantsWikiProposal(target: { wikiId?: string; captureOnly?: boolean }) {
-    const select = $("#ingest-target") as HTMLSelectElement;
-    return !select.classList.contains("hidden") && !target.captureOnly;
   }
 
   function renderWikiProposal(body: HTMLElement, proposal: WikiIngestProposal) {
@@ -4854,28 +5240,28 @@ async function boot() {
   async function runIngest(source: string) {
     openResearch("ingest");
     const body = $("#research-body");
-    const target = ingestTargetPayload();
-    const propose = wantsWikiProposal(target);
-    body.innerHTML = `<p class="muted">${propose ? "building wiki proposal…" : "importing…"}</p>`;
-    try {
-      const data = await api<{ id?: string; message?: string; error?: string } & Partial<WikiIngestProposal>>(
-        propose ? "/api/wiki-ingest/propose" : "/api/ingest",
-        { json: { source, ...target } },
-      );
-      if (propose) renderWikiProposal(body, data as WikiIngestProposal);
-      else {
-        body.innerHTML = '<p class="muted">saved — opening the note…</p>';
-        openAfterIngest(String(data.id));
+    renderIngestChoice(body, i18n.t("ingest.action"), async (target) => {
+      const propose = !target.captureOnly;
+      body.innerHTML = `<p class="muted">${propose ? "building wiki proposal…" : "importing…"}</p>`;
+      try {
+        const data = await api<{ id?: string; message?: string; error?: string } & Partial<WikiIngestProposal>>(
+          propose ? "/api/wiki-ingest/propose" : "/api/ingest",
+          { json: { source, ...target } },
+        );
+        if (propose) renderWikiProposal(body, data as WikiIngestProposal);
+        else {
+          body.innerHTML = '<p class="muted">saved — opening the note…</p>';
+          openAfterIngest(String(data.id));
+        }
+      } catch (e) {
+        body.innerHTML = "";
+        researchError(e instanceof Error ? e.message : "ingest failed");
       }
-    } catch (e) {
-      body.innerHTML = "";
-      researchError(e instanceof Error ? e.message : "ingest failed");
-    }
+    });
   }
 
   // Browse button (shown in ingest mode): click the hidden file input, then
-  // upload the picked file's bytes — works in both Electron and the browser
-  // (the File API gives bytes in both; neither exposes real paths).
+  // defer upload until the user picks an Inbox/wiki target in the choice card.
   $("#ingest-browse").addEventListener("click", () =>
     ($("#ingest-file") as HTMLInputElement).click(),
   );
@@ -4888,34 +5274,35 @@ async function boot() {
       input.value = ""; // allow re-picking the same file
       openResearch("ingest");
       const body = $("#research-body");
-      const target = ingestTargetPayload();
-      const propose = wantsWikiProposal(target);
-      body.innerHTML = `<p class="muted">${propose ? "building wiki proposal" : "converting"} ${file.name} via markitdown…</p>`;
-      try {
-        const buf = await file.arrayBuffer();
-        const params = new URLSearchParams({ name: file.name });
-        if (target.wikiId) params.set("wikiId", target.wikiId);
-        if (target.captureOnly) params.set("captureOnly", "1");
-        const res = await apiRaw(
-          `/${propose ? "api/wiki-ingest/propose-upload" : "api/ingest-upload"}?${params.toString()}`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/octet-stream" },
-            body: buf,
-            token: true,
-          },
-        );
-        const data = (await res.json()) as { id?: string; message?: string; error?: string } & Partial<WikiIngestProposal>;
-        if (!res.ok) throw new Error(data.message ?? data.error);
-        if (propose) renderWikiProposal(body, data as WikiIngestProposal);
-        else {
-          body.innerHTML = '<p class="muted">saved — opening the note…</p>';
-          openAfterIngest(String(data.id));
+      renderIngestChoice(body, i18n.t("ingest.action"), async (target) => {
+        const propose = !target.captureOnly;
+        body.innerHTML = `<p class="muted">${propose ? "building wiki proposal" : "converting"} ${file.name} via markitdown…</p>`;
+        try {
+          const buf = await file.arrayBuffer();
+          const params = new URLSearchParams({ name: file.name });
+          if (target.wikiId) params.set("wikiId", target.wikiId);
+          if (target.captureOnly) params.set("captureOnly", "1");
+          const res = await apiRaw(
+            `/${propose ? "api/wiki-ingest/propose-upload" : "api/ingest-upload"}?${params.toString()}`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/octet-stream" },
+              body: buf,
+              token: true,
+            },
+          );
+          const data = (await res.json()) as { id?: string; message?: string; error?: string } & Partial<WikiIngestProposal>;
+          if (!res.ok) throw new Error(data.message ?? data.error);
+          if (propose) renderWikiProposal(body, data as WikiIngestProposal);
+          else {
+            body.innerHTML = '<p class="muted">saved — opening the note…</p>';
+            openAfterIngest(String(data.id));
+          }
+        } catch (e) {
+          body.innerHTML = "";
+          researchError(e instanceof Error ? e.message : "ingest failed");
         }
-      } catch (e) {
-        body.innerHTML = "";
-        researchError(e instanceof Error ? e.message : "ingest failed");
-      }
+      });
     },
   );
 
@@ -5224,7 +5611,7 @@ async function boot() {
       ...document.querySelectorAll<HTMLButtonElement>("#modes .mode-btn"),
     ];
     const modeIdx: Record<string, number> = {
-      semantic: 0,
+      vault: 0,
       web: 1,
       ingest: 2,
     };

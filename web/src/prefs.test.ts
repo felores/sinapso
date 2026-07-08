@@ -11,6 +11,7 @@ import {
   type QualityKey,
   type NodeStyle,
   type Arrangement,
+  type VaultScope,
 } from "./prefs";
 
 function makeStorage(): PrefsStorage & {
@@ -66,6 +67,7 @@ const ALL_KEYS = [
   "akasha-research",
   "akasha-mode",
   "akasha-web-scope",
+  "akasha-vault-scope",
   "akasha-qmd-prompted",
   "akasha-ui-zoom",
   "akasha-label-distance",
@@ -109,6 +111,7 @@ describe("prefs: namespace guard", () => {
     });
     prefs.setMode("web");
     prefs.setWebScope("web");
+    prefs.setVaultScope("keyword");
     prefs.markQmdPrompted();
     prefs.setUiZoom(1.4);
     prefs.setLabelDistance(500);
@@ -243,7 +246,7 @@ describe("prefs: pc (particle count) — nullable", () => {
   });
 });
 
-describe("prefs: mode (semantic|web|ingest|null)", () => {
+describe("prefs: mode (vault|web|ingest|null)", () => {
   it("default null when key is missing", () => {
     expect(prefs.getMode()).toBeNull();
   });
@@ -255,6 +258,11 @@ describe("prefs: mode (semantic|web|ingest|null)", () => {
     prefs.removeMode();
     expect(prefs.getMode()).toBeNull();
   });
+
+  it("migrates the old semantic mode to vault", () => {
+    storage.setItem("akasha-mode", "semantic");
+    expect(prefs.getMode()).toBe<ModeName>("vault");
+  });
 });
 
 describe("prefs: web-scope (deep|web)", () => {
@@ -265,6 +273,15 @@ describe("prefs: web-scope (deep|web)", () => {
     prefs.setWebScope("web");
     expect(prefs.getWebScope()).toBe("web");
     expect(storage.getItem("akasha-web-scope")).toBe("web");
+  });
+});
+
+describe("prefs: vault-scope (semantic|keyword)", () => {
+  it("defaults to semantic, writes and reads keyword", () => {
+    expect(prefs.getVaultScope()).toBe<VaultScope>("semantic");
+    prefs.setVaultScope("keyword");
+    expect(storage.getItem("akasha-vault-scope")).toBe("keyword");
+    expect(prefs.getVaultScope()).toBe<VaultScope>("keyword");
   });
 });
 

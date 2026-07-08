@@ -38,12 +38,102 @@ export interface VoiceToolContext {
 
 export interface VoiceToolSession {
   run(name: string, args: VoiceArgs): Promise<VoiceResult>;
+  setSelectedContext(context: unknown): void;
+}
+
+type SelectionSource = "reader" | "research";
+interface SelectedSlot {
+  source: SelectionSource;
+  text: string;
+  noteId?: string;
+  noteTitle?: string;
+  entryId?: string;
+  mode?: string;
+  title?: string;
+  query?: string;
+  url?: string;
+  truncated?: boolean;
+  originalWordCount?: number;
+  originalCharCount?: number;
+}
+
+interface SelectedContextState {
+  reader: SelectedSlot | null;
+  research: SelectedSlot | null;
+  lastSource: SelectionSource | null;
 }
 
 /** Cap tool text sent back to the voice model: articles/transcripts run 20k+
  *  chars — too much to inject and narrate by voice. */
 function cap(s: string, n = 6000): string {
   return s.length > n ? `${s.slice(0, n)}\n…[truncated]` : s;
+}
+
+const SELECTED_WORDS = 300;
+const SELECTED_CHARS = 3000;
+const emptySelectedContext = (): SelectedContextState => ({
+  reader: null,
+  research: null,
+  lastSource: null,
+});
+const clean = (s: unknown): string | undefined =>
+  typeof s === "string" && s.trim() ? s.replace(/\s+/g, " ").trim() : undefined;
+const words = (s: string): string[] => s.split(/\s+/).filter(Boolean);
+const count = (n: unknown): number | undefined =>
+  typeof n === "number" && Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+
+function normalizeSlot(raw: unknown, source: SelectionSource): SelectedSlot | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const text = clean(r.text);
+  if (!text) return null;
+  return {
+    source,
+    text,
+    noteId: clean(r.noteId),
+    noteTitle: clean(r.noteTitle),
+    entryId: clean(r.entryId),
+    mode: clean(r.mode),
+    title: clean(r.title),
+    query: clean(r.query),
+    url: clean(r.url),
+    truncated: r.truncated === true,
+    originalWordCount: count(r.originalWordCount),
+    originalCharCount: count(r.originalCharCount),
+  };
+}
+
+function capSelectedSlot(slot: SelectedSlot, wordLeft: number, charLeft: number): SelectedSlot | null {
+  if (wordLeft <= 0 || charLeft <= 0) return null;
+  const originalWordCount = slot.originalWordCount ?? words(slot.text).length;
+  const originalCharCount = slot.originalCharCount ?? slot.text.length;
+  let text = words(slot.text).slice(0, wordLeft).join(" ");
+  if (text.length > charLeft) text = text.slice(0, charLeft).trim();
+  if (!text) return null;
+  const truncated = slot.truncated === true || text !== slot.text;
+  return truncated
+    ? { ...slot, text, truncated: true, originalWordCount, originalCharCount }
+    : { ...slot, text };
+}
+
+function capSelectedContext(state: SelectedContextState): SelectedContextState {
+  const order: SelectionSource[] = state.lastSource === "research"
+    ? ["research", "reader"]
+    : ["reader", "research"];
+  const out = emptySelectedContext();
+  let wordLeft = SELECTED_WORDS;
+  let charLeft = SELECTED_CHARS;
+  for (const source of order) {
+    const slot = state[source];
+    if (!slot) continue;
+    const capped = capSelectedSlot(slot, wordLeft, charLeft);
+    if (!capped) continue;
+    out[source] = capped;
+    out.lastSource = out.lastSource ?? source;
+    wordLeft -= words(capped.text).length;
+    charLeft -= capped.text.length;
+  }
+  return out;
 }
 
 function stripFrontmatter(md: string): string {
@@ -81,7 +171,7 @@ export const VOICE_TOOLS: FunctionDeclaration[] = [
   {
     name: "current_view",
     description:
-      "What the user is looking at RIGHT NOW: the note open in the reader (its title + path) and their recent research. Call this FIRST whenever they refer to what's on screen — 'this note', 'what I'm reading', 'this', 'the one open', 'the research I just did', 'esto', 'lo que tengo abierto', 'lo que busqué'. Then use the open note's path with the other tools to answer specifics.",
+      "What the user is looking at RIGHT NOW: the note open in the reader, their recent research, and selectedContext from highlighted reader/research passages. Call this FIRST whenever they refer to what's on screen or selected text: 'this note', 'what I'm reading', 'this', 'compare these', 'the research I just did', 'esto', 'lo seleccionado'. Then use the open note's path or selectedContext with the other tools to answer specifics.",
     parameters: { type: Type.OBJECT, properties: {} },
   },
   {
@@ -346,6 +436,27 @@ export function createVoiceToolSession(
   // Mutable session state — one per conversation.
   let workingDocId: string | null = null;
   const contractWikisRead = new Set<string>();
+  let selectedContext = emptySelectedContext();
+
+  function setSelectedContext(context: unknown): void {
+    if (!context || typeof context !== "object") return;
+    const raw = context as Record<string, unknown>;
+    const hasReader = Object.prototype.hasOwnProperty.call(raw, "reader");
+    const hasResearch = Object.prototype.hasOwnProperty.call(raw, "research");
+    if (!hasReader && !hasResearch) return;
+    const next = { ...selectedContext };
+    if (hasReader) next.reader = normalizeSlot(raw.reader, "reader");
+    if (hasResearch) next.research = normalizeSlot(raw.research, "research");
+    const last = raw.lastSource === "reader" || raw.lastSource === "research"
+      ? raw.lastSource
+      : hasReader && next.reader
+        ? "reader"
+        : hasResearch && next.research
+          ? "research"
+          : next.lastSource;
+    next.lastSource = last;
+    selectedContext = capSelectedContext(next);
+  }
 
   // ---- shared context helpers (reused by current_view + the open_* tools) ----
 
@@ -527,6 +638,7 @@ export function createVoiceToolSession(
         recentResearch: (await researchEntries())
           .slice(0, 6)
           .map((e) => ({ mode: e.mode, query: e.query })),
+        selectedContext,
       };
     }
     if (name === "open_note") {
@@ -716,5 +828,6 @@ export function createVoiceToolSession(
 
   return {
     run: (name, args) => runTool(name, args),
+    setSelectedContext,
   };
 }

@@ -172,6 +172,7 @@ Speak briefly and conversationally, in the SAME language they speak. Refer to no
 
 Answer anything about THEIR OWN notes/vault from the tools — never from your own memory. Choose the tool by intent:
 - When they point at what's on screen ("this note", "what I'm reading", "esto", "lo que tengo abierto", "the research I just did") → current_view FIRST to see the open note + recent research, then answer (use the open note's path with the tools below for specifics).
+- current_view also returns selectedContext.reader and selectedContext.research when the user highlighted text. Treat selectedContext as grounding for "this", "esto", "compare these", or "dig deeper into this research". It is not a command by itself. If a selected slot is truncated, mention that only if it affects the answer.
 - To OPEN something on their screen: open_note (a note by path) or open_last_note ("open the last note", "reopen what I was reading", even if nothing is open now); open_last_research reopens their last search. These also return a preview so you immediately know what's in it — say something about it, don't just confirm.
 - To ANSWER a question from their notes ("what does it say about X", "what did I write on Y", "según mis notas…") → search_passages. It returns the exact paragraphs. This is your default for content.
 - To find WHICH notes exist on a topic ("do I have anything on X", "list/which of my notes about Y") → search_vault.
@@ -425,7 +426,7 @@ async function bridgeGemini(
 
   // Browser → provider: mic audio (base64 PCM16 @ 16 kHz).
   browser.on("message", (data) => {
-    let m: { type?: string; data?: string };
+    let m: { type?: string; data?: string; context?: unknown };
     try {
       m = JSON.parse(data.toString());
     } catch {
@@ -435,6 +436,8 @@ async function bridgeGemini(
       session.sendRealtimeInput({
         audio: { data: m.data, mimeType: "audio/pcm;rate=16000" },
       });
+    } else if (m.type === "context") {
+      toolSession.setSelectedContext(m.context);
     }
   });
 
@@ -544,7 +547,7 @@ function bridgeRealtime(
   });
 
   browser.on("message", (data) => {
-    let m: { type?: string; data?: string };
+    let m: { type?: string; data?: string; context?: unknown };
     try {
       m = JSON.parse(data.toString());
     } catch {
@@ -555,6 +558,8 @@ function bridgeRealtime(
         type: "input_audio_buffer.append",
         audio: resamplePcm16Base64(m.data, 16000, 24000),
       });
+    } else if (m.type === "context") {
+      toolSession.setSelectedContext(m.context);
     }
   });
 

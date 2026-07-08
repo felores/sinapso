@@ -129,6 +129,86 @@ describe("VOICE_TOOLS declarations", () => {
   });
 });
 
+describe("createVoiceToolSession — selected context", () => {
+  it("current_view returns both selected slots", async () => {
+    const { ctx, fake } = makeCtx();
+    fake.on("/api/reader-history", () => jsonResponse({ entries: [] }));
+    fake.on("/api/research/history", () => jsonResponse({ entries: [] }));
+    const session = createVoiceToolSession(ctx);
+
+    session.setSelectedContext({
+      reader: { source: "reader", text: "reader selected", noteId: "a.md" },
+      research: { source: "research", text: "research selected", title: "Q" },
+      lastSource: "research",
+    });
+    const out = (await session.run("current_view", {})) as {
+      selectedContext: { reader: { text: string }; research: { text: string }; lastSource: string };
+    };
+
+    expect(out.selectedContext.reader.text).toBe("reader selected");
+    expect(out.selectedContext.research.text).toBe("research selected");
+    expect(out.selectedContext.lastSource).toBe("research");
+  });
+
+  it("current_view preserves client-side truncation metadata", async () => {
+    const { ctx, fake } = makeCtx();
+    fake.on("/api/reader-history", () => jsonResponse({ entries: [] }));
+    fake.on("/api/research/history", () => jsonResponse({ entries: [] }));
+    const session = createVoiceToolSession(ctx);
+
+    session.setSelectedContext({
+      reader: {
+        source: "reader",
+        text: "trimmed text",
+        truncated: true,
+        originalWordCount: 500,
+        originalCharCount: 5000,
+      },
+    });
+    const out = (await session.run("current_view", {})) as {
+      selectedContext: {
+        reader: { truncated: boolean; originalWordCount: number; originalCharCount: number };
+      };
+    };
+
+    expect(out.selectedContext.reader).toMatchObject({
+      truncated: true,
+      originalWordCount: 500,
+      originalCharCount: 5000,
+    });
+  });
+
+  it("new reader context replaces only reader and ignores invalid context", async () => {
+    const { ctx, fake } = makeCtx();
+    fake.on("/api/reader-history", () => jsonResponse({ entries: [] }));
+    fake.on("/api/research/history", () => jsonResponse({ entries: [] }));
+    const session = createVoiceToolSession(ctx);
+    session.setSelectedContext({
+      reader: { source: "reader", text: "old reader" },
+      research: { source: "research", text: "research selected" },
+    });
+    session.setSelectedContext({ reader: { source: "reader", text: "new reader" } });
+    session.setSelectedContext({ nope: true });
+
+    const out = (await session.run("current_view", {})) as {
+      selectedContext: { reader: { text: string }; research: { text: string } };
+    };
+    expect(out.selectedContext.reader.text).toBe("new reader");
+    expect(out.selectedContext.research.text).toBe("research selected");
+  });
+
+  it("starts a new voice tool session with no selected context", async () => {
+    const { ctx, fake } = makeCtx();
+    fake.on("/api/reader-history", () => jsonResponse({ entries: [] }));
+    fake.on("/api/research/history", () => jsonResponse({ entries: [] }));
+    const session = createVoiceToolSession(ctx);
+    const out = (await session.run("current_view", {})) as {
+      selectedContext: { reader: null; research: null; lastSource: null };
+    };
+    expect(out.selectedContext).toEqual({ reader: null, research: null, lastSource: null });
+  });
+});
+
 describe("createVoiceToolSession — read-only tools", () => {
   it("find_notes issues GET to /api/search with the query and maps the response", async () => {
     const { ctx, fake } = makeCtx();
