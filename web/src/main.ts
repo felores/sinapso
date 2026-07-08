@@ -3057,8 +3057,8 @@ async function boot() {
   // Custom tooltips: one floating element, delegated hover. Hijacks any native
   // `title` (stashes it to data-tip + aria-label, then removes title to kill the
   // slow native bubble) so every titled control gets the same instant tooltip,
-  // shown centered below with an up-arrow. --arrow-dx re-aims the arrow when the
-  // tooltip is clamped to the viewport edge.
+  // shown centered below by default. Bottom mobile search controls open upward
+  // so the tooltip stays on-screen. --arrow-dx re-aims the arrow when clamped.
   (function initTooltips() {
     const tip = document.createElement("div");
     tip.id = "tooltip";
@@ -3073,11 +3073,17 @@ async function boot() {
       tip.textContent = text;
       tip.classList.add("show");
       const r = el.getBoundingClientRect();
+      const topbar = document.getElementById("topbar");
+      const above =
+        !!el.closest("#topbar.topbar-rail #search-wrap, #selection-context-strip") ||
+        (!!el.closest("#topbar-rail") &&
+          !!topbar?.classList.contains("topbar-bottom-rail"));
+      tip.classList.toggle("above", above);
       const half = tip.offsetWidth / 2;
       const cx = r.left + r.width / 2;
       const clamped = Math.max(8 + half, Math.min(cx, innerWidth - 8 - half));
       tip.style.left = `${clamped}px`;
-      tip.style.top = `${r.bottom + 8}px`;
+      tip.style.top = `${above ? Math.max(8, r.top - tip.offsetHeight - 8) : r.bottom + 8}px`;
       tip.style.setProperty("--arrow-dx", `${cx - clamped}px`);
     };
     document.addEventListener("mouseover", (e) => {
@@ -4088,7 +4094,10 @@ async function boot() {
       GAP = 18;
     const vw = window.innerWidth;
     const groupW = $("#nav-group").offsetWidth;
+    const wasRail = topbar.classList.contains("topbar-rail");
+    if (wasRail) topbar.classList.remove("topbar-rail");
     const searchWrapW = $("#search-wrap").offsetWidth;
+    if (wasRail) topbar.classList.add("topbar-rail");
     // Measure the center gap against the panels' NATURAL widths (the --dock-w /
     // --reader-w CSS vars set by applyRGeom / applyGeom), not the rendered
     // rail-shrunk offsetWidth — otherwise the rail sees its own shrink and
@@ -4134,8 +4143,13 @@ async function boot() {
         : vw - natLeft - natRight < chromeW + 2 * PAD;
     // Rail offset: a docked right panel shrinks by the rail width (CSS subtracts
     // --rail-w from --dock-w), and the corner buttons clear panel + rail.
-    const railW = rail ? 56 : 0;
+    const bottomRail =
+      rail &&
+      (vw < 482 || window.matchMedia("(pointer: coarse)").matches);
+    const railW = rail && !bottomRail ? 40 : 0;
     root.style.setProperty("--rail-w", `${railW}px`);
+    root.style.setProperty("--mobile-search-h", `${rail ? 64 : 0}px`);
+    root.style.setProperty("--mobile-nav-h", `${bottomRail ? 48 : 0}px`);
     root.style.setProperty("--btn-right-inset", `${rightPanelW + railW}px`);
     // Search slides with the right panel's left edge (--right-inset).
     topbar.style.setProperty("--right-inset", `${rightPanelW}px`);
@@ -4150,6 +4164,7 @@ async function boot() {
     const searchLeftX = vw - rightPanelW - PAD - searchWrapW;
     const searchStacked = !rail && searchLeftX < menuRightX + GAP;
     topbar.classList.toggle("topbar-rail", rail);
+    topbar.classList.toggle("topbar-bottom-rail", bottomRail);
     topbar.classList.toggle("menu-center", menuCol === "center");
     topbar.classList.toggle("menu-right", menuCol === "right");
     topbar.classList.toggle("search-stacked", searchStacked);
@@ -5620,21 +5635,14 @@ async function boot() {
   });
 
   // ---- rail (rail mode): the right-edge icon rail drives the existing
-  // menubar menus, mode buttons, and search by proxy. See #topbar-rail markup
+  // menubar menus and panel reopen buttons. See #topbar-rail markup
   // and the .topbar-rail state class toggled by layoutTopbar. ----
   const rail = $("#topbar-rail");
   if (rail) {
-    const modeBtns = [
-      ...document.querySelectorAll<HTMLButtonElement>("#modes .mode-btn"),
-    ];
-    const modeIdx: Record<string, number> = {
-      vault: 0,
-      web: 1,
-      ingest: 2,
-    };
     rail.addEventListener("click", (e) => {
       const btn = (e.target as HTMLElement).closest<HTMLElement>(".rail-icon");
       if (!btn) return;
+      e.stopPropagation();
       const kind = btn.dataset.rail;
       if (kind === "menu") {
         const m = menus[Number(btn.dataset.idx ?? "-1")];
@@ -5642,27 +5650,10 @@ async function boot() {
         const wasOpen = m.classList.contains("open");
         closeMenus();
         if (!wasOpen) m.classList.add("open");
-      } else if (kind === "mode") {
-        const mode = btn.dataset.mode ?? "";
-        const target =
-          modeBtns.find((b) => b.dataset.mode === mode) ??
-          modeBtns[modeIdx[mode] ?? 0];
-        target?.click();
-      } else if (kind === "voice") {
-        $("#voice-toggle")?.click();
       } else if (kind === "reopen-content") {
         $("#reopen-content")?.click();
-      } else if (kind === "filters") {
-        $("#filters-btn")?.click();
-      } else if (kind === "settings") {
-        $("#settings-btn")?.click();
       } else if (kind === "reopen-research") {
         $("#reopen-research")?.click();
-      } else if (kind === "search") {
-        const topbarEl = $("#topbar");
-        topbarEl.classList.toggle("search-open");
-        if (topbarEl.classList.contains("search-open"))
-          ($("#search") as HTMLInputElement | null)?.focus();
       }
     });
   }
