@@ -217,6 +217,22 @@ describe("api: token overrides", () => {
     expect(headers["x-solaris-token"]).toBe("t1");
   });
 
+  it("refreshes a stale token once after a 403", async () => {
+    fetchMock.mockResolvedValueOnce(makeResponse({ body: { token: "old" } }));
+    fetchMock.mockResolvedValueOnce(
+      makeResponse({ ok: false, status: 403, body: { error: "bad token" } }),
+    );
+    fetchMock.mockResolvedValueOnce(makeResponse({ body: { token: "new" } }));
+    fetchMock.mockResolvedValueOnce(makeResponse({ body: { ok: true } }));
+
+    await expect(api("/api/x", { token: true })).resolves.toEqual({ ok: true });
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/session");
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/session");
+    expect(((fetchMock.mock.calls[1][1] as RequestInit).headers as Record<string, string>)["x-solaris-token"]).toBe("old");
+    expect(((fetchMock.mock.calls[3][1] as RequestInit).headers as Record<string, string>)["x-solaris-token"]).toBe("new");
+  });
+
   it("explicit token: false skips the token for a mutating method", async () => {
     fetchMock.mockResolvedValueOnce(makeResponse({ body: {} }));
     await api("/api/x", { json: {}, token: false });

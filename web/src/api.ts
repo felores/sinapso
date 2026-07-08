@@ -52,18 +52,23 @@ export async function api<T = unknown>(
   const fetchFn = opts.fetch ?? fetch;
   const method = opts.method ?? (opts.json !== undefined ? "POST" : "GET");
   const needsToken = opts.token ?? method !== "GET";
-  const headers: Record<string, string> = { ...(opts.headers ?? {}) };
   let body: BodyInit | undefined;
   if (opts.json !== undefined) {
-    headers["content-type"] = "application/json";
     body = JSON.stringify(opts.json);
   } else if (opts.body !== undefined) {
     body = opts.body;
   }
-  if (needsToken) {
-    headers["x-solaris-token"] = await getApiToken(fetchFn);
+  const request = async () => {
+    const headers: Record<string, string> = { ...(opts.headers ?? {}) };
+    if (opts.json !== undefined) headers["content-type"] = "application/json";
+    if (needsToken) headers["x-solaris-token"] = await getApiToken(fetchFn);
+    return fetchFn(path, { method, headers, body });
+  };
+  let res = await request();
+  if (needsToken && res.status === 403) {
+    resetApiToken();
+    res = await request();
   }
-  const res = await fetchFn(path, { method, headers, body });
   return parseResponse<T>(res);
 }
 

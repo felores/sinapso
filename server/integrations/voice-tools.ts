@@ -264,7 +264,7 @@ export const VOICE_TOOLS: FunctionDeclaration[] = [
   {
     name: "find_notes",
     description:
-      "Keyword full-text search across the ENTIRE vault (note titles + full content), returning matches anywhere — INCLUDING folders the semantic tools miss (saas/, edtech/, apps/, …). Use for an exact name, word, or filename, or whenever search_vault / search_passages come up empty. Pass 'path' to scope results to a folder (e.g. 'felo/wiki'). Returns titles + paths + a snippet.",
+      "Keyword full-text search across the ENTIRE vault (note titles + full content), returning matches anywhere — INCLUDING folders the semantic tools miss (saas/, edtech/, apps/, …). Use FIRST when the user asks for keyword, exact, literal, or filename search. Also use whenever search_vault / search_passages come up empty. Pass 'path' to scope results to a folder (e.g. 'felo/wiki'). Returns titles + paths + a snippet.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -517,7 +517,7 @@ export function createVoiceToolSession(
     }
   }
 
-  // Read-only tool dispatch: query tools hit loopback endpoints.
+  // Query tool dispatch: reuse loopback endpoints so guards/history stay shared.
   async function callTool(
     name: string,
     args: VoiceArgs,
@@ -584,15 +584,28 @@ export function createVoiceToolSession(
         return (await (await fetchFn(u)).json()) as Record<string, unknown>;
       }
       if (name === "find_notes") {
-        send({ type: "status", key: "voice.status.findingNotes", query: String(args.query ?? "") });
-        const u = new URL(`${base}/api/search`);
-        u.searchParams.set("q", String(args.query ?? ""));
-        const hits = (await (await fetchFn(u)).json()) as unknown[];
+        const query = String(args.query ?? "");
+        send({ type: "status", key: "voice.status.findingNotes", query });
         const prefix =
           typeof args.path === "string"
             ? args.path.trim().replace(/\/+$/, "")
             : "";
+        const writeHistory = !prefix;
+        const u = new URL(`${base}/api/search`);
+        u.searchParams.set("q", query);
+        if (writeHistory) {
+          u.searchParams.set("history", "1");
+          u.searchParams.set("displayQuery", query);
+        }
+        const d = (await (await fetchFn(
+          u,
+          writeHistory ? { headers: { "x-solaris-token": getSessionToken() } } : undefined,
+        )).json()) as { results?: unknown[]; historyId?: string } | unknown[];
+        const hits = Array.isArray(d) ? d : (d.results ?? []);
+        const historyId = Array.isArray(d) ? undefined : d.historyId;
+        if (historyId) send({ type: "action", action: "open_research", id: historyId });
         return {
+          historyId,
           results: (hits ?? [])
             .filter((h) => {
               if (!prefix) return true;

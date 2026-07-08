@@ -211,17 +211,21 @@ describe("createVoiceToolSession — selected context", () => {
 
 describe("createVoiceToolSession — read-only tools", () => {
   it("find_notes issues GET to /api/search with the query and maps the response", async () => {
-    const { ctx, fake } = makeCtx();
+    const { ctx, fake, sent } = makeCtx();
     fake.on("/api/search", () =>
-      jsonResponse([
-        { id: "alpha/one.md", title: "One", snippet: "first match" },
-        { id: "alpha/two.md", title: "Two", snippet: "second match" },
-        { id: "other/skip.md", title: "Skip", snippet: "wrong folder" },
-      ]),
+      jsonResponse({
+        historyId: "hist-keyword",
+        results: [
+          { id: "alpha/one.md", title: "One", snippet: "first match" },
+          { id: "alpha/two.md", title: "Two", snippet: "second match" },
+          { id: "other/skip.md", title: "Skip", snippet: "wrong folder" },
+        ],
+      }),
     );
 
     const session = createVoiceToolSession(ctx);
     const out = (await session.run("find_notes", { query: "alpha" })) as {
+      historyId?: string;
       results: Array<{ title: string; path: string; snippet: string }>;
     };
 
@@ -231,9 +235,12 @@ describe("createVoiceToolSession — read-only tools", () => {
       snippet: "first match",
       path: "alpha/one.md",
     });
+    expect(out.historyId).toBe("hist-keyword");
+    expect(sent).toContainEqual({ type: "action", action: "open_research", id: "hist-keyword" });
     const call = fake.calls[0];
-    expect(call.url).toBe(`${BASE}/api/search?q=alpha`);
+    expect(call.url).toBe(`${BASE}/api/search?q=alpha&history=1&displayQuery=alpha`);
     expect(call.init?.method).toBeUndefined();
+    expect((call.init?.headers as Record<string, string>)["x-solaris-token"]).toBe(TEST_TOKEN);
   });
 
   it("find_notes scopes results to the requested path prefix and trims trailing slashes", async () => {
@@ -256,6 +263,7 @@ describe("createVoiceToolSession — read-only tools", () => {
       "felo/wiki/intro.md",
       "felo/wiki/sub/deep.md",
     ]);
+    expect(fake.calls[0].url).toBe(`${BASE}/api/search?q=anything`);
   });
 
   it("find_notes caps the result list at 8 entries", async () => {

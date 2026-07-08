@@ -1241,7 +1241,6 @@ body > :not(#graph) {
 #search-results { left: auto; right: 0; }
 #ingest-file { display: none; } /* native input is just a mechanism */
 #ingest-browse.hidden { display: none; }
-#search-send.hidden { display: none; }
 #selection-context-strip.hidden { display: none; }
 #llm-model.hidden { display: none; }
 #ingest-browse {
@@ -1277,20 +1276,6 @@ body > :not(#graph) {
 .mode-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--fg); }
 .mode-btn.active { border-color: var(--accent); color: var(--accent); }
 .mode-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-#search-send {
-  pointer-events: auto;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  color: #fff;
-  cursor: pointer;
-}
-#search-send:disabled { opacity: 0.4; cursor: not-allowed; }
 
 #selection-context-strip {
   position: absolute;

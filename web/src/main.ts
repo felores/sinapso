@@ -2577,7 +2577,6 @@ async function boot() {
   // --- search: instant title matches + indexed full-text content matches ---
   const searchBox = $("#search") as HTMLInputElement;
   const results = $("#search-results");
-  const searchSend = $("#search-send") as HTMLButtonElement;
   const selectionStrip = $("#selection-context-strip");
   const selectionToggle = $("#selection-context-toggle") as HTMLInputElement;
   const selectionChips = $("#selection-context-chips");
@@ -2617,14 +2616,6 @@ async function boot() {
     return activeMode === "vault" || activeMode === "web";
   }
 
-  function updateSearchSend() {
-    const hasTyped = !!searchBox.value.trim();
-    const canUseContext = !!selectedSearchSnapshot() && activeModeCanUseSelection();
-    const show = hasTyped || canUseContext;
-    searchSend.classList.toggle("hidden", !show);
-    searchSend.disabled = !show;
-  }
-
   function renderSelectionContextStrip() {
     const snap = currentSelectionSnapshot();
     const show = hasSelectionContext(snap) && document.activeElement === searchBox;
@@ -2637,12 +2628,10 @@ async function boot() {
       span.textContent = chip;
       selectionChips.appendChild(span);
     }
-    updateSearchSend();
   }
 
   selectionToggle.addEventListener("change", () => {
     includeSelectionContext = selectionToggle.checked;
-    updateSearchSend();
   });
   searchBox.addEventListener("focus", renderSelectionContextStrip);
   searchBox.addEventListener("blur", () => {
@@ -2661,7 +2650,6 @@ async function boot() {
     }
     if (!activeMode && q) (results.firstElementChild as HTMLElement | null)?.click();
   }
-  searchSend.addEventListener("click", sendSearch);
 
   const addResult = (n: GNode, snippetText?: string) => {
     const row = document.createElement("div");
@@ -2728,7 +2716,6 @@ async function boot() {
     }, 220);
   };
   searchBox.addEventListener("input", () => {
-    updateSearchSend();
     if (activeMode === "ingest") return; // search box is the ingest input
     renderResults(searchBox.value.trim());
   });
@@ -2740,7 +2727,6 @@ async function boot() {
       searchBox.value = "";
       results.innerHTML = "";
       searchBox.blur();
-      updateSearchSend();
     }
   });
 
@@ -2962,7 +2948,6 @@ async function boot() {
     const vault = activeMode === "vault";
     ($("#vault-scope") as HTMLElement).classList.toggle("hidden", !vault);
     searchBox.classList.toggle("with-scope", web || vault);
-    updateSearchSend();
   }
 
   // Fetch enabled wikis for the ingest choice card. Returns [] on failure.
@@ -4934,9 +4919,13 @@ async function boot() {
       appendContextNotices(body, context);
       renderKeywordInto(body, data.results ?? [], shownQuery);
       if (data.historyId) await noteQueryPersisted(data.historyId);
-    } catch {
+    } catch (e) {
       body.innerHTML = "";
-      researchError("keyword search failed — is the server running?");
+      const msg = e instanceof ApiError
+        ? ((e.body as { message?: string; error?: string } | null)?.message ??
+          (e.body as { message?: string; error?: string } | null)?.error)
+        : null;
+      researchError(msg ?? "keyword search failed — is the server running?");
     }
   }
 
