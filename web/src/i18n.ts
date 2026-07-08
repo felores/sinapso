@@ -130,7 +130,7 @@ const EN: Dict = {
   "search.ph.none": "Search notes…",
   "search.ph.vault": "Search vault…",
   "search.ph.web": "Web research…",
-  "search.ph.ingest": "Ingest file or URL…",
+  "search.ph.ingest": "Ingest file/URL…",
   "mode.vault.name": "Vault",
   "mode.web.name": "Web",
   "mode.ingest.name": "Ingest",
