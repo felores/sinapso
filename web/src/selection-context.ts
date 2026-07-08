@@ -88,6 +88,12 @@ export function hasSelectionContext(state: SelectionContextState): boolean {
   return !!state.current;
 }
 
+export function selectionContextAppliesToMode(
+  mode: string | null | undefined,
+): boolean {
+  return mode === "vault" || mode === "web";
+}
+
 export function selectedText(snapshot: SelectionSnapshot): string {
   return snapshot.current?.text ?? "";
 }
@@ -127,6 +133,19 @@ export function buildKeywordQuery(query: string, snapshot: SelectionSnapshot): s
   return contextualLines(query, snapshot).join("\n").trim();
 }
 
-export function displayQuery(query: string, fallback: string): string {
-  return normalize(query) || fallback;
+function clipTitle(text: string): string {
+  return text.length > 180 ? `${text.slice(0, 177).trim()}...` : text;
+}
+
+export function displayQuery(
+  query: string,
+  fallback: string,
+  snapshot?: SelectionSnapshot,
+): string {
+  const q = normalize(query);
+  const selected = snapshot?.current?.text
+    ? clipTitle(normalize(snapshot.current.text))
+    : "";
+  if (q && selected) return `${q} + ${selected}`;
+  return q || selected || fallback;
 }

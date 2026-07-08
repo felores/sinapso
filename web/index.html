@@ -88,7 +88,7 @@
                 <option value="3">3</option>
               </select>
             </label>
-            <label class="ctl" data-i18n="ctl.group">group by
+            <label class="ctl" data-i18n="ctl.group">node color
               <select id="group">
                 <option value="folder">folder</option>
                 <option value="tag">tag</option>
@@ -98,8 +98,8 @@
             <label class="ctl" data-i18n="ctl.arrange">arrangement
               <select id="arrange">
                 <option value="links">links</option>
-                <option value="semantic">semantic</option>
                 <option value="hybrid">hybrid</option>
+                <option value="semantic">semantic</option>
               </select>
             </label>
             <hr />
@@ -108,15 +108,15 @@
             <label class="ctl"><input type="checkbox" id="toggle-orphans" checked /> <span data-i18n="toggle.orphans">orphans (O)</span></label>
             <label class="ctl"><input type="checkbox" id="toggle-phantoms" /> <span data-i18n="toggle.unwritten">unwritten (U)</span></label>
             <label class="ctl"><input type="checkbox" id="toggle-sem-lines" checked /> <span data-i18n="toggle.semLines">semantic lines</span></label>
+            <hr />
+            <button id="mi-filters" data-i18n="tools.filters">Display Filters…</button>
+            <button id="mi-settings" data-i18n="tools.settings">Display Settings…</button>
           </div>
         </div>
       </div>
       <div class="menu">
         <span class="menu-label" data-i18n="menu.tools">Tools</span>
         <div class="dropdown">
-          <button id="mi-filters" data-i18n="tools.filters">Display Filters…</button>
-          <button id="mi-settings" data-i18n="tools.settings">Display Settings…</button>
-          <hr />
           <div class="mi-group" id="mi-integrations">
             <div class="integ-row" id="integ-markitdown"><b data-i18n="integ.ingestion">Ingestion</b><span class="integ-status"></span><button class="integ-install hidden" data-tool="markitdown" title="Install markitdown; existing installs are never touched" data-i18n="integ.install">install</button></div>
 

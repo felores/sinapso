@@ -312,18 +312,18 @@ Open **File → Admin...** to manage the current vault and wiki settings.
 
 ### Trust model
 
-- **The core uploads nothing.** Scanning, rendering, search, and reading are
-  fully local; the server binds to `127.0.0.1` only.
+- **The core uploads nothing except explicit, user-triggered Git push/sync.**
+  Scanning, rendering, search, and reading are fully local; the server binds to
+  `127.0.0.1` only.
 - **Optional Web and LLM features are explicit.** Web queries go to Exa only
   after Web consent and with your own key. OpenRouter-backed note questions and
   wiki-ingest synthesis use your stored OpenRouter key; the relevant note,
   source excerpt, and wiki contracts are sent to that provider only for the
   action you requested.
-- **The vault is written only through one guarded endpoint** (path-confined,
-  `.md`-only, never overwrites) and only on your action: saving a web result,
-  capture-only ingest, approving a wiki-ingest proposal, promoting a voice
-  working document, or confirming an orphan link suggestion. Writes are
-  journaled in `data/changes.jsonl`.
+- **The vault is written only through guarded, user-triggered paths**: the
+  app-authored note writer is path-confined, `.md`-only, never overwrites, and
+  journals changes; Git sync is the separate repo-level exception and must stay
+  clean-tree, fast-forward-only, and token-guarded.
 - Secrets (Exa, OpenRouter, and voice keys) live in `~/.solaris/config.json`
   (mode 600), outside the vault and outside version control, and never appear in
   API responses.

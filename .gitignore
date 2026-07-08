@@ -12,3 +12,13 @@ code_review.md
 CODE_REVIEW.md
 demo-vault/
 scripts/dist/.playwright-cli/
+
+# Harness runtime state
+.harness/progress.md
+.harness/patterns.md
+
+# Browser/test artifacts
+.playwright-cli/
+test-results/
+playwright-report/
+.stitch/

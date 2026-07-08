@@ -54,6 +54,7 @@ import {
   displayQuery,
   emptySelectionState,
   hasSelectionContext,
+  selectionContextAppliesToMode,
   selectedText,
   selectionSlot,
   updateSelectionSlot,
@@ -644,16 +645,17 @@ async function boot() {
     lineGeo.setAttribute("color", new THREE.BufferAttribute(lineCol, 3));
   }
 
-  // ---- arrangement modes (F032): links / semantic / hybrid ----
+  // ---- arrangement modes (F032): links / hybrid / semantic ----
   // The force sim runs off graph.graphData().links; three arrangements feed it
   // three edge sets (structural links, semantic mutual-KNN edges, or both with
   // semantic dampened). Semantic edges render in a SEPARATE dashed buffer whose
   // visibility is independent of their physical pull, so hiding the lines keeps
   // the arrangement. Settled positions are cached per arrangement via
   // /api/layout?arrangement= so re-visiting one restores instead of re-simulating.
-  type Arrangement = "links" | "semantic" | "hybrid";
+  const ARRANGEMENT_ORDER = ["links", "hybrid", "semantic"] as const;
+  type Arrangement = (typeof ARRANGEMENT_ORDER)[number];
   const validArr = (v: string | null): Arrangement =>
-    v === "semantic" || v === "hybrid" ? v : "links";
+    ARRANGEMENT_ORDER.includes(v as Arrangement) ? (v as Arrangement) : "links";
   let arrangement: Arrangement = "links"; // boot always simulates structural
   let semanticLinks: GLink[] = [];
   let semanticReady = false;
@@ -2281,7 +2283,7 @@ async function boot() {
     repaint();
   });
 
-  // --- arrangement mode (links / semantic / hybrid) ---
+  // --- arrangement mode (links / hybrid / semantic) ---
   const arrangementPref = validArr(prefs.getArrangement());
   const arrSel = $("#arrange") as HTMLSelectElement;
   arrSel.value = arrangementPref;
@@ -2595,38 +2597,37 @@ async function boot() {
     return buildSelectionSnapshot(selectionContextState);
   }
 
-  function syncVoiceSelection() {
-    voiceSession?.sendContext(currentSelectionSnapshot());
-  }
-
   function setSelectionContext(slot: SelectionContext | null) {
     if (!slot) return;
     selectionContextState = updateSelectionSlot(selectionContextState, slot);
     includeSelectionContext = true;
     selectionToggle.checked = true;
     renderSelectionContextStrip();
-    syncVoiceSelection();
   }
 
   function clearSelectionContext(source: SelectionSource) {
     selectionContextState = clearSelectionSlot(selectionContextState, source);
     renderSelectionContextStrip();
-    syncVoiceSelection();
   }
 
   function selectedSearchSnapshot(): SelectionSnapshot | null {
+    if (!activeModeCanUseSelection()) return null;
     if (!includeSelectionContext) return null;
     const snap = currentSelectionSnapshot();
     return hasSelectionContext(snap) ? snap : null;
   }
 
   function activeModeCanUseSelection(): boolean {
-    return activeMode === "vault" || activeMode === "web";
+    return selectionContextAppliesToMode(activeMode);
   }
 
   function renderSelectionContextStrip() {
     const snap = currentSelectionSnapshot();
-    const show = hasSelectionContext(snap) && document.activeElement === searchBox;
+    selectionStrip.dataset.tip = i18n.t("selection.include");
+    const show =
+      activeModeCanUseSelection() &&
+      hasSelectionContext(snap) &&
+      document.activeElement === searchBox;
     selectionStrip.classList.toggle("hidden", !show);
     selectionToggle.checked = includeSelectionContext;
   }
@@ -2950,6 +2951,7 @@ async function boot() {
     const vault = activeMode === "vault";
     ($("#vault-scope") as HTMLElement).classList.toggle("hidden", !vault);
     searchBox.classList.toggle("with-scope", web || vault);
+    renderSelectionContextStrip();
   }
 
   // Fetch enabled wikis for the ingest choice card. Returns [] on failure.
@@ -3559,14 +3561,11 @@ async function boot() {
   async function startVoiceSession() {
     voiceToggle.disabled = true;
     voiceToggle.title = i18n.t("voice.connecting");
-    let ready = false;
     try {
       const session = await startVoice(await getApiToken(), {
         onReady: () => {
-          ready = true;
           voiceToggle.disabled = false;
           setVoiceActive(true);
-          if (voiceSession) syncVoiceSelection();
         },
         onClose: () => {
           const shouldRestart = restartVoiceAfterClose;
@@ -3636,7 +3635,6 @@ async function boot() {
         },
       });
       voiceSession = session;
-      if (ready) syncVoiceSelection();
     } catch {
       voiceSession = null;
       setVoiceActive(false);
@@ -4944,7 +4942,7 @@ async function boot() {
     label?: string,
   ) {
     const effective = buildSemanticQuery(query, context ?? emptySelectionState());
-    const shownQuery = displayQuery(query, label ?? "Selected text");
+    const shownQuery = displayQuery(query, label ?? "Selected text", context);
     openResearch("semantic");
     const body = $("#research-body");
     body.innerHTML = '<p class="muted">searching semantically…</p>';
@@ -4987,7 +4985,7 @@ async function boot() {
   ) {
     const effective = context ? buildKeywordQuery(query, context) : query.trim();
     if (!effective) return;
-    const shownQuery = displayQuery(query, label ?? "Selected text");
+    const shownQuery = displayQuery(query, label ?? "Selected text", context);
     openResearch("keyword");
     const body = $("#research-body");
     body.innerHTML = '<p class="muted">searching keywords…</p>';
@@ -5025,7 +5023,7 @@ async function boot() {
     }
     const requestQuery = query.trim() || (context ? selectedText(context) : "");
     if (!requestQuery) return;
-    const shownQuery = displayQuery(query, label ?? "Selected text");
+    const shownQuery = displayQuery(query, label ?? "Selected text", context);
     const deep = deepOverride ?? webScope === "deep";
     openResearch("web");
     const body = $("#research-body");
@@ -6187,7 +6185,7 @@ async function boot() {
         <tr><td>Select / read note</td><td>click a node</td></tr>
         <tr><td>Open in Obsidian</td><td>double-click or right-click a node</td></tr>
         <tr><td>Show / hide panels</td><td><kbd>A</kbd> content (left) · <kbd>D</kbd> research (right)</td></tr>
-        <tr><td>Cycle arrangement</td><td><kbd>S</kbd> links → semantic → hybrid</td></tr>
+        <tr><td>Cycle arrangement</td><td><kbd>S</kbd> links → hybrid → semantic</td></tr>
         <tr><td>Clear selection</td><td><kbd>Esc</kbd></td></tr>
         <tr><td>Focus depth</td><td>1–3 in the bottom bar (local-graph radius)</td></tr>
       </table>`,
@@ -6367,12 +6365,14 @@ async function boot() {
         flipCheck("#toggle-orphans");
         return;
       }
-      // s cycles the arrangement links -> semantic -> hybrid, reusing the
+      // s cycles the arrangement links -> hybrid -> semantic, reusing the
       // View-menu dropdown so applyArrangement + persistence stay identical.
       if (k === "s") {
         const sel = $("#arrange") as HTMLSelectElement;
-        const order = ["links", "semantic", "hybrid"];
-        sel.value = order[(order.indexOf(sel.value) + 1) % order.length];
+        sel.value = ARRANGEMENT_ORDER[
+          (ARRANGEMENT_ORDER.indexOf(validArr(sel.value)) + 1) %
+            ARRANGEMENT_ORDER.length
+        ];
         sel.dispatchEvent(new Event("change"));
         return;
       }

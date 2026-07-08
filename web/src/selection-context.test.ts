@@ -5,7 +5,9 @@ import {
   buildSelectionSnapshot,
   buildSemanticQuery,
   clearSelectionSlot,
+  displayQuery,
   emptySelectionState,
+  selectionContextAppliesToMode,
   selectionSlot,
   updateSelectionSlot,
 } from "./selection-context";
@@ -109,5 +111,26 @@ describe("selection context helpers", () => {
     const keyword = buildKeywordQuery("typed question", snap);
     expect(keyword.startsWith("vec:")).toBe(false);
     expect(keyword).toContain("typed question");
+  });
+
+  it("uses selected text in generated history titles", () => {
+    const state = updateSelectionSlot(
+      emptySelectionState(),
+      selectionSlot({ source: "reader", text: "selected passage" }),
+    );
+    const snap = buildSelectionSnapshot(state);
+
+    expect(displayQuery("typed question", "Selected text", snap)).toBe(
+      "typed question + selected passage",
+    );
+    expect(displayQuery("", "Selected text", snap)).toBe("selected passage");
+  });
+
+  it("only applies selected context to vault and web search modes", () => {
+    expect(selectionContextAppliesToMode("vault")).toBe(true);
+    expect(selectionContextAppliesToMode("web")).toBe(true);
+    expect(selectionContextAppliesToMode(null)).toBe(false);
+    expect(selectionContextAppliesToMode("ingest")).toBe(false);
+    expect(selectionContextAppliesToMode("voice")).toBe(false);
   });
 });

@@ -731,7 +731,11 @@ export function createApp(
       const results = (r.body as { results?: unknown[] }).results;
       const historyId =
         r.status === 200 && Array.isArray(results) && results.length
-          ? saveEntry(dataDir, { mode: "semantic", query: q, results }).id
+          ? saveEntry(dataDir, {
+              mode: "semantic",
+              query: displayQuery || q,
+              results,
+            }).id
           : undefined;
       res.status(r.status).json({ ...r.body, historyId });
     } catch (e) {

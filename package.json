@@ -46,6 +46,8 @@
     "desktop": "npm run desktop:build && electron .",
     "dist:desktop": "npm run desktop:build && electron-builder --win",
     "test": "vitest run",
+    "test:run": "vitest run",
+    "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run typecheck && npm run build && npm run build:cli"
   },
@@ -59,6 +61,7 @@
     "ws": "^8.21.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.0",
     "@types/node": "^24.0.0",
