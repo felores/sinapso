@@ -267,6 +267,35 @@ async function boot() {
   }
   const degree = (n: GNode) => n.in + n.out;
 
+  const initialSelectionParams = new URLSearchParams(window.location.search);
+  const pendingSelect = sessionStorage.getItem("solaris-pending-select");
+  if (pendingSelect) sessionStorage.removeItem("solaris-pending-select");
+  let initialSelectionHandled = false;
+  function tryHandleInitialSelection() {
+    if (initialSelectionHandled) return;
+    const nodeId = initialSelectionParams.get("node");
+    if (nodeId !== null) {
+      const target = byId.get(nodeId);
+      if (target) select(target);
+      initialSelectionHandled = true;
+      return;
+    }
+
+    const focusParam = initialSelectionParams.get("focus");
+    if (focusParam) {
+      const target = byBasename.get(focusParam.toLowerCase());
+      if (target) select(target);
+      initialSelectionHandled = true;
+      return;
+    }
+
+    if (pendingSelect) {
+      const target = byId.get(pendingSelect);
+      if (target) select(target);
+      initialSelectionHandled = true;
+    }
+  }
+
   // --- view state ---
   const pillarOn: Record<string, boolean> = {};
   for (const p of data.meta.pillars) pillarOn[p] = true;
@@ -848,6 +877,7 @@ async function boot() {
     saveLayout();
     dbg.settled = true;
     hideLoading(); // constellation has settled
+    tryHandleInitialSelection();
   });
   graph.onNodeDrag(() => updateLinkPositions());
   // Cached-layout boots never tick the engine; draw the buffer directly.
@@ -855,10 +885,16 @@ async function boot() {
     updateLinkPositions();
     updateLinkColors();
     applyNodeColors();
-    if (cachedPositions) hideLoading(); // instant load: nothing to settle
+    if (cachedPositions) {
+      hideLoading(); // instant load: nothing to settle
+      tryHandleInitialSelection();
+    }
   }, 0);
-  // Safety net: never leave the loader up if the engine stays silent.
-  window.setTimeout(hideLoading, 12000);
+  // Safety net: never leave the loader or initial selection waiting forever.
+  window.setTimeout(() => {
+    hideLoading();
+    tryHandleInitialSelection();
+  }, 12000);
 
   // Persist the settled layout so the next load skips the physics warm-up.
   let layoutSaved = !!cachedPositions;
@@ -1424,9 +1460,17 @@ async function boot() {
     );
   }
 
+  function syncNodeUrl(n: GNode) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("node", n.id);
+    url.searchParams.delete("focus");
+    window.history.replaceState(null, "", url);
+  }
+
   function select(n: GNode, highlightSnippet?: string) {
     selected = n;
     focusSet = bfs(n.id, focusDepth);
+    syncNodeUrl(n);
     flyTo(n);
     repaint();
     openReader(n, false, highlightSnippet);
@@ -5894,7 +5938,7 @@ async function boot() {
       return;
     }
     navigator.clipboard.writeText(
-      `${window.location.origin}/?focus=${encodeURIComponent(selected.title)}`,
+      `${window.location.origin}/?node=${encodeURIComponent(selected.id)}`,
     );
   });
   $("#mi-obsidian").addEventListener("click", () => {
@@ -6423,21 +6467,6 @@ async function boot() {
     graph.width(window.innerWidth).height(window.innerHeight);
   });
 
-  // Deep link: ?focus=<note title> selects and flies to a node once the
-  // layout has settled. Shareable views into the map.
-  const focusParam = new URLSearchParams(window.location.search).get("focus");
-  if (focusParam) {
-    const target = byBasename.get(focusParam.toLowerCase());
-    if (target) setTimeout(() => select(target), 2500);
-  }
-
-  // After an ingest-driven rescan + reload, select the freshly created note.
-  const pendingSelect = sessionStorage.getItem("solaris-pending-select");
-  if (pendingSelect) {
-    sessionStorage.removeItem("solaris-pending-select");
-    const target = data.nodes.find((n) => n.id === pendingSelect);
-    if (target) setTimeout(() => select(target), 2500);
-  }
 }
 
 // Translate the static chrome before boot() awaits the graph, so the menubar
