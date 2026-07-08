@@ -1927,6 +1927,7 @@ async function boot() {
       top: 60,
     };
     const persist = () => prefs.setReader(geom);
+    let lastReaderViewportW = window.innerWidth;
 
     // dock/undock icon: docked shows "float free", floating shows "dock to edge"
     const DOCK_SVG =
@@ -1944,16 +1945,21 @@ async function boot() {
       dockBtn.title = i18n.t(dockKey);
     }
 
-    function applyGeom() {
-      geom.width = clamp(geom.width, 280, window.innerWidth - 40);
+    function applyGeom(trackMaxed = false) {
+      const viewportW = window.innerWidth;
+      const maxW = Math.max(0, viewportW);
+      const minW = Math.min(280, maxW);
+      const wasMaxed = trackMaxed && geom.width >= lastReaderViewportW - 1;
+      geom.width = wasMaxed ? maxW : clamp(geom.width, minW, maxW);
+      lastReaderViewportW = viewportW;
       reader.style.setProperty("--reader-w", `${geom.width}px`);
       reader.classList.toggle("floating", geom.floating);
       if (geom.floating) {
         geom.height = clamp(geom.height, 220, window.innerHeight - 24);
         geom.left = clamp(
           geom.left,
-          12 - geom.width + 80,
-          window.innerWidth - 80,
+          0,
+          Math.max(0, viewportW - geom.width),
         );
         geom.top = clamp(geom.top, 0, window.innerHeight - 48);
         reader.style.width = geom.width + "px";
@@ -2000,11 +2006,15 @@ async function boot() {
         const up = () => {
           el.removeEventListener("pointermove", move);
           el.removeEventListener("pointerup", up);
+          el.removeEventListener("pointercancel", up);
+          el.removeEventListener("lostpointercapture", up);
           reader.classList.remove(cls);
           persist();
         };
         el.addEventListener("pointermove", move);
         el.addEventListener("pointerup", up);
+        el.addEventListener("pointercancel", up);
+        el.addEventListener("lostpointercapture", up);
       };
 
     // left-edge: width resize (works docked and floating)
@@ -2068,7 +2078,7 @@ async function boot() {
       });
     }
 
-    window.addEventListener("resize", applyGeom);
+    window.addEventListener("resize", () => applyGeom(true));
   }
 
   // --- open in Obsidian ---
@@ -4231,20 +4241,30 @@ async function boot() {
       '<svg viewBox="0 0 16 16" width="15" height="15"><rect x="1.5" y="1.5" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="5" y="5" width="6" height="6" fill="currentColor"/></svg>';
     const dockBtn = $("#research-dock");
     const persistR = () => prefs.setResearch(rGeom);
-    function applyRGeom() {
+    let lastResearchViewportW = window.innerWidth;
+    function applyRGeom(trackMaxed = false) {
+      const viewportW = window.innerWidth;
+      const maxW = Math.max(0, viewportW);
+      const floatingWasMaxed =
+        trackMaxed && rGeom.width >= lastResearchViewportW - 1;
+      const dockWasMaxed =
+        trackMaxed && (rGeom.dockW || 400) >= lastResearchViewportW - 1;
       research.classList.toggle("floating", rGeom.floating);
       dockBtn.innerHTML = rGeom.floating ? DOCK : UNDOCK;
       const rDockKey = rGeom.floating ? "dock.dock" : "dock.undock";
       dockBtn.dataset.i18nTitle = rDockKey;
       dockBtn.title = i18n.t(rDockKey);
       if (rGeom.floating) {
-        rGeom.width = cl(rGeom.width, 300, window.innerWidth - 40);
+        const minW = Math.min(300, maxW);
+        rGeom.width = floatingWasMaxed
+          ? maxW
+          : cl(rGeom.width, minW, maxW);
         rGeom.height = cl(
           rGeom.height || Math.round(window.innerHeight * 0.72),
           240,
           window.innerHeight - 24,
         );
-        rGeom.left = cl(rGeom.left, 12, window.innerWidth - 120);
+        rGeom.left = cl(rGeom.left, 0, Math.max(0, viewportW - rGeom.width));
         rGeom.top = cl(rGeom.top, 0, window.innerHeight - 48);
         Object.assign(research.style, {
           left: rGeom.left + "px",
@@ -4257,7 +4277,10 @@ async function boot() {
       } else {
         // Docked: store the user width in --dock-w; CSS computes the effective
         // width (minus --rail-w when the rail is showing) and the right offset.
-        rGeom.dockW = cl(rGeom.dockW || 400, 300, window.innerWidth - 80);
+        const minW = Math.min(300, maxW);
+        rGeom.dockW = dockWasMaxed
+          ? maxW
+          : cl(rGeom.dockW || 400, minW, maxW);
         research.style.setProperty("--dock-w", `${rGeom.dockW}px`);
         Object.assign(research.style, {
           left: "",
@@ -4268,6 +4291,7 @@ async function boot() {
           bottom: "",
         });
       }
+      lastResearchViewportW = viewportW;
     }
     applyRGeom();
     dockBtn.addEventListener("click", () => {
@@ -4294,11 +4318,15 @@ async function boot() {
       const up = () => {
         el.removeEventListener("pointermove", move);
         el.removeEventListener("pointerup", up);
+        el.removeEventListener("pointercancel", up);
+        el.removeEventListener("lostpointercapture", up);
         research.classList.remove("dragging");
         persistR();
       };
       el.addEventListener("pointermove", move);
       el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+      el.addEventListener("lostpointercapture", up);
     });
 
     // west edge grip: resize width (docked shrinks the docked width; floating
@@ -4319,18 +4347,26 @@ async function boot() {
             rGeom.width = w0 - dx;
             rGeom.left = l0 + dx;
           } else {
-            rGeom.dockW = cl(w0 - dx, 300, window.innerWidth - 80);
+            rGeom.dockW = cl(
+              w0 - dx,
+              Math.min(300, window.innerWidth),
+              window.innerWidth,
+            );
           }
           applyRGeom();
         };
         const up = () => {
           el.removeEventListener("pointermove", move);
           el.removeEventListener("pointerup", up);
+          el.removeEventListener("pointercancel", up);
+          el.removeEventListener("lostpointercapture", up);
           research.classList.remove("dragging");
           persistR();
         };
         el.addEventListener("pointermove", move);
         el.addEventListener("pointerup", up);
+        el.addEventListener("pointercancel", up);
+        el.addEventListener("lostpointercapture", up);
       },
     );
 
@@ -4354,13 +4390,18 @@ async function boot() {
         const up = () => {
           el.removeEventListener("pointermove", move);
           el.removeEventListener("pointerup", up);
+          el.removeEventListener("pointercancel", up);
+          el.removeEventListener("lostpointercapture", up);
           research.classList.remove("dragging");
           persistR();
         };
         el.addEventListener("pointermove", move);
         el.addEventListener("pointerup", up);
+        el.addEventListener("pointercancel", up);
+        el.addEventListener("lostpointercapture", up);
       },
     );
+    window.addEventListener("resize", () => applyRGeom(true));
   }
 
   function researchError(msg: string | null) {
