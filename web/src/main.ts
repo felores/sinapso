@@ -2153,8 +2153,6 @@ async function boot() {
   $("#reader-archive").addEventListener("click", async () => {
     const id = openNodeId;
     if (!id) return;
-    const folder = integrations?.archiveDestination ?? "archive";
-    if (!confirm(i18n.t("reader.archiveConfirm", { folder }))) return;
     try {
       await api("/api/archive", { json: { id } });
       clearSelection();
