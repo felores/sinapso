@@ -338,7 +338,7 @@ const ES: Dict = {
   "search.ph.none": "Buscar notas…",
   "search.ph.vault": "Buscar en la bóveda…",
   "search.ph.web": "Investigación web…",
-  "search.ph.ingest": "Ingestar archivo/URL…",
+  "search.ph.ingest": "Ingestar archivo/url…",
   "mode.vault.name": "Bóveda",
   "mode.web.name": "Web",
   "mode.ingest.name": "Ingesta",
