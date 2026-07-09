@@ -2965,6 +2965,16 @@ async function boot() {
     discovered: boolean;
     confidence: "high" | "medium" | "low";
   }
+  interface GitStatus {
+    available: boolean;
+    branch?: string;
+    upstream?: string | null;
+    clean?: boolean;
+    ahead?: number;
+    behind?: number;
+    files?: Array<{ path: string; status: string }>;
+  }
+  type GitActionResult = { ok: boolean; output?: string; error?: string };
   const PROMPT_KEYS = [
     "wikiIngest",
     "noteQuestions",
@@ -6006,6 +6016,7 @@ async function boot() {
         <h3>${T("admin.prompts")} <span class="muted admin-section-hint">${T("admin.promptsHint")}</span></h3>
         <div id="admin-prompts"></div>
       </section>
+      <section class="admin-section" id="admin-git" style="display:none"></section>
       <div class="admin-save-row">
         <div class="admin-maint-actions">
           <button id="admin-rescan-full">${T("admin.rescanFull")}</button>
@@ -6014,6 +6025,7 @@ async function boot() {
         <span id="admin-status" class="muted"></span>
         <button id="admin-save">${T("admin.save")}</button>
       </div>`;
+    await renderAdminGit();
     await renderAdminWikis();
     renderAdminPrompts();
     body.oninput = () => (adminDirty = true);
@@ -6054,6 +6066,112 @@ async function boot() {
         );
       }
     });
+  }
+
+  async function renderAdminGit(notice = "", outputText = "") {
+    const box = document.querySelector<HTMLElement>("#admin-git");
+    if (!box) return;
+    const T = (k: string) => i18n.t(k);
+    try {
+      const status = await api<GitStatus>("/api/git/status");
+      if (!status.available) {
+        box.style.display = "none";
+        box.innerHTML = "";
+        return;
+      }
+      const files = status.files ?? [];
+      const clean = status.clean !== false;
+      const created = files.filter((f) => f.status === "??" || f.status.includes("A")).length;
+      const modified = files.filter((f) => /[MR]/.test(f.status)).length;
+      const deleted = files.filter((f) => f.status.includes("D")).length;
+      const other = Math.max(0, files.length - created - modified - deleted);
+      const aheadBehind = [
+        status.ahead ? `+${status.ahead}` : "",
+        status.behind ? `-${status.behind}` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const changeSummary = files.length
+        ? `
+          <span class="admin-git-change created">+${created} ${T("admin.gitCreated")}</span>
+          <span class="admin-git-change modified">${modified} ${T("admin.gitModified")}</span>
+          <span class="admin-git-change deleted">-${deleted} ${T("admin.gitDeleted")}</span>
+          ${other ? `<span class="admin-git-change">${other} ${T("admin.gitOther")}</span>` : ""}`
+        : `<strong class="admin-git-nochanges">${T("admin.gitNoChanges")}</strong>`;
+      box.style.display = "";
+      box.innerHTML = `
+        <h3>${T("admin.git")} <span class="muted admin-section-hint">${escapeHtml(status.upstream || T("admin.gitNoUpstream"))}</span></h3>
+        <div class="admin-git-toolbar">
+          <div class="admin-git-summary">
+            <span class="admin-badge">${escapeHtml(status.branch ?? "HEAD")}${aheadBehind ? ` ${aheadBehind}` : ""}</span>
+            <span class="admin-git-state ${clean ? "clean" : "dirty"}">${T(clean ? "admin.gitClean" : "admin.gitDirty")}</span>
+          </div>
+        </div>
+        <div class="admin-git-action-row">
+          <span class="admin-git-change-summary">${changeSummary}</span>
+          <div class="admin-git-actions">
+            <button id="admin-git-commit" type="button">${T("admin.gitCommit")}</button>
+            <button id="admin-git-sync" type="button" ${clean ? "" : "disabled"}>${T("admin.gitSync")}</button>
+          </div>
+        </div>
+        <div id="admin-git-status" class="muted">${escapeHtml(notice)}</div>
+        <pre id="admin-git-output" class="admin-git-output ${outputText ? "" : "hidden"}">${escapeHtml(outputText)}</pre>`;
+
+      const commit = $("#admin-git-commit") as HTMLButtonElement;
+      const sync = $("#admin-git-sync") as HTMLButtonElement;
+      const opStatus = $("#admin-git-status");
+      const output = $("#admin-git-output");
+      const updateCommit = () => (commit.disabled = clean);
+      updateCommit();
+      commit.addEventListener("click", async () => {
+        commit.disabled = true;
+        sync.disabled = true;
+        opStatus.textContent = T("admin.gitCommitting");
+        try {
+          const result = await api<GitActionResult>("/api/git/commit", {
+            json: {},
+          });
+          opStatus.textContent = result.output || T("admin.gitCommitted");
+          await renderAdminGit(T("admin.gitCommitted"));
+        } catch (e) {
+          opStatus.textContent = gitErrorText(e);
+          updateCommit();
+          sync.disabled = !clean;
+        }
+      });
+      sync.addEventListener("click", async () => {
+        sync.disabled = true;
+        commit.disabled = true;
+        opStatus.textContent = T("admin.gitSyncing");
+        output.classList.add("hidden");
+        try {
+          const result = await api<GitActionResult>("/api/git/sync", {
+            method: "POST",
+          });
+          opStatus.textContent = T("admin.gitSynced");
+          if (result.output) {
+            output.textContent = result.output;
+            output.classList.remove("hidden");
+          }
+          await renderAdminGit(T("admin.gitSynced"), result.output ?? "");
+        } catch (e) {
+          opStatus.textContent = gitErrorText(e);
+          updateCommit();
+          sync.disabled = !clean;
+        }
+      });
+    } catch {
+      box.style.display = "none";
+      box.innerHTML = "";
+    }
+  }
+
+  function gitErrorText(e: unknown): string {
+    if (e instanceof ApiError) {
+      const b = e.body as { error?: string; message?: string } | null;
+      return b?.message ?? b?.error ?? i18n.t("admin.gitError");
+    }
+    return i18n.t("admin.gitError");
   }
 
   async function renderAdminWikis() {
@@ -6182,6 +6300,7 @@ async function boot() {
         });
         await refreshIntegrations();
         ($("#admin-vault-input") as HTMLInputElement).value = body.graph.meta.vaultPath;
+        await renderAdminGit();
         await renderAdminWikis();
         adminDirty = false;
         flashAdmin(i18n.t("admin.saved"));

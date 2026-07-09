@@ -71,6 +71,9 @@ import {
 import {
   gitFileAtCommit,
   gitFileHistory,
+  gitStageAndCommit,
+  gitStatus,
+  gitSync,
   gitTopLevel,
 } from "./integrations/git.js";
 import {
@@ -967,6 +970,60 @@ export function createApp(
     };
   };
 
+  const gitContextForVault = async () => {
+    const repoRoot = await gitTopLevel(realRunner, vaultRoot);
+    if (!repoRoot) return { available: false as const };
+    return {
+      available: true as const,
+      repoRoot,
+      repoRelativeScope: relative(repoRoot, realpathSync(vaultRoot)) || ".",
+    };
+  };
+
+  type GitFile = { path: string; status: string };
+  const gitChangeCounts = (files: GitFile[]) => ({
+    created: files.filter((f) => f.status === "??" || f.status.includes("A")).length,
+    modified: files.filter((f) => /[MR]/.test(f.status)).length,
+    deleted: files.filter((f) => f.status.includes("D")).length,
+  });
+
+  const fallbackCommitMessage = (files: GitFile[]) => {
+    const c = gitChangeCounts(files);
+    const parts = [
+      c.created ? `${c.created} added` : "",
+      c.modified ? `${c.modified} modified` : "",
+      c.deleted ? `${c.deleted} deleted` : "",
+    ].filter(Boolean);
+    return parts.length ? `Update vault (${parts.join(", ")})` : "Update vault";
+  };
+
+  async function generatedCommitMessage(files: GitFile[]): Promise<string> {
+    const fallback = fallbackCommitMessage(files);
+    const cfg = loadConfig(configPath);
+    if (!cfg.openrouterKey) return fallback;
+    try {
+      const text = await chatCompletion(
+        cfg.openrouterKey,
+        cfg.defaultModel || DEFAULT_MODEL,
+        [
+          {
+            role: "system",
+            content:
+              "Write one concise Git commit subject for vault note changes. Return only the subject, no quotes, no markdown, under 72 characters.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({ counts: gitChangeCounts(files), files: files.slice(0, 50) }),
+          },
+        ],
+        integrations?.openrouter,
+      );
+      return text.split("\n")[0].replace(/^['\"`]+|['\"`]+$/g, "").trim().slice(0, 120) || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
   const noteSlug = (title: string) =>
     title
       .normalize("NFKD")
@@ -1630,6 +1687,69 @@ export function createApp(
         res.json({ ok: true, id: r.id });
       } catch (e) {
         writeFail(res, e, "note version restore");
+      }
+    },
+  );
+
+  app.get("/api/git/status", async (_req, res) => {
+    try {
+      const ctx = await gitContextForVault();
+      if (!ctx.available) {
+        res.json({ available: false });
+        return;
+      }
+      res.json({
+        available: true,
+        ...(await gitStatus(realRunner, ctx.repoRoot, ctx.repoRelativeScope)),
+      });
+    } catch (e) {
+      writeFail(res, e, "git status");
+    }
+  });
+
+  app.post(
+    "/api/git/commit",
+    guarded,
+    express.json({ limit: "16kb" }),
+    async (req, res) => {
+      try {
+        const ctx = await gitContextForVault();
+        if (!ctx.available) {
+          res.status(404).json({ ok: false, error: "Git repository unavailable." });
+          return;
+        }
+        const status = await gitStatus(realRunner, ctx.repoRoot, ctx.repoRelativeScope);
+        const message =
+          String(req.body?.message ?? "").trim() ||
+          (await generatedCommitMessage(status.files));
+        const result = await gitStageAndCommit(
+          realRunner,
+          ctx.repoRoot,
+          ctx.repoRelativeScope,
+          message,
+        );
+        res.status(result.ok ? 200 : 400).json(result);
+      } catch (e) {
+        writeFail(res, e, "git commit");
+      }
+    },
+  );
+
+  app.post(
+    "/api/git/sync",
+    guarded,
+    express.json({ limit: "1kb" }),
+    async (_req, res) => {
+      try {
+        const ctx = await gitContextForVault();
+        if (!ctx.available) {
+          res.status(404).json({ ok: false, error: "Git repository unavailable." });
+          return;
+        }
+        const result = await gitSync(realRunner, ctx.repoRoot);
+        res.status(result.ok ? 200 : 400).json(result);
+      } catch (e) {
+        writeFail(res, e, "git sync");
       }
     },
   );

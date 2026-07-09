@@ -307,6 +307,8 @@ describe("server: git note versions", () => {
     mkdirSync(data);
     writeFileSync(join(vault, "real.md"), "# v1\n");
     git(["init"], vault);
+    git(["config", "user.name", "t"], vault);
+    git(["config", "user.email", "t@t"], vault);
     git(["add", "real.md"], vault);
     git(["commit", "-m", "first"], vault);
     writeFileSync(join(vault, "real.md"), "# v2\n");
@@ -325,6 +327,41 @@ describe("server: git note versions", () => {
       }),
     );
     return { root, vault, graphPath };
+  }
+
+  function gitApp(f: { root: string; graphPath: string }) {
+    return createApp(f.graphPath, undefined, { configPath: join(f.root, "config.json") });
+  }
+
+  function gitSyncFixture() {
+    const root = mkdtempSync(join(tmpdir(), "solaris-git-sync-"));
+    const remote = join(root, "remote.git");
+    const seed = join(root, "seed");
+    const vault = join(root, "vault");
+    const data = join(root, "data");
+    mkdirSync(seed);
+    mkdirSync(data);
+    git(["init", "--bare", remote], root);
+    git(["init", "-b", "main"], seed);
+    git(["config", "user.name", "t"], seed);
+    git(["config", "user.email", "t@t"], seed);
+    writeFileSync(join(seed, "real.md"), "# base\n");
+    git(["add", "real.md"], seed);
+    git(["commit", "-m", "base"], seed);
+    git(["remote", "add", "origin", remote], seed);
+    git(["push", "-u", "origin", "main"], seed);
+    git(["--git-dir", remote, "symbolic-ref", "HEAD", "refs/heads/main"], root);
+    git(["clone", remote, vault], root);
+    const graphPath = join(data, "graph.json");
+    writeFileSync(
+      graphPath,
+      JSON.stringify({
+        meta: { vaultName: "test", vaultPath: vault, notes: 1, excludes: [] },
+        nodes: [{ id: "real.md", title: "Real", phantom: false }],
+        links: [],
+      }),
+    );
+    return { root, seed, vault, graphPath };
   }
 
   it("returns available:false when vault has no git", async () => {
@@ -353,7 +390,7 @@ describe("server: git note versions", () => {
   it("returns bounded history for a git-tracked note", async () => {
     const f = gitFixture();
     try {
-      const { app } = createApp(f.graphPath);
+      const { app } = gitApp(f);
       const res = await request(app).get("/api/note-versions?id=real.md");
       expect(res.status).toBe(200);
       expect(res.body.available).toBe(true);
@@ -370,7 +407,7 @@ describe("server: git note versions", () => {
   it("rejects traversal ids on version endpoints", async () => {
     const f = gitFixture();
     try {
-      const { app } = createApp(f.graphPath);
+      const { app } = gitApp(f);
       const res = await request(app).get(
         "/api/note-versions?id=../../etc/passwd",
       );
@@ -383,7 +420,7 @@ describe("server: git note versions", () => {
   it("reads old version content without changing the working copy", async () => {
     const f = gitFixture();
     try {
-      const { app } = createApp(f.graphPath);
+      const { app } = gitApp(f);
       const hist = await request(app).get("/api/note-versions?id=real.md");
       const oldCommit = hist.body.versions[1].commit;
       const res = await request(app).get(
@@ -400,7 +437,7 @@ describe("server: git note versions", () => {
   it("restores old content only for the target note, no git state change", async () => {
     const f = gitFixture();
     try {
-      const { app } = createApp(f.graphPath);
+      const { app } = gitApp(f);
       const token = (await request(app).get("/api/session")).body.token;
       const headBefore = execFileSync("git", ["rev-parse", "HEAD"], {
         cwd: f.vault,
@@ -433,11 +470,144 @@ describe("server: git note versions", () => {
   it("forbids restore without a session token", async () => {
     const f = gitFixture();
     try {
-      const { app } = createApp(f.graphPath);
+      const { app } = gitApp(f);
       const res = await request(app)
         .post("/api/note-version/restore")
         .send({ id: "real.md", commit: "deadbeef" });
       expect(res.status).toBe(403);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("returns vault git status", async () => {
+    const f = gitFixture();
+    try {
+      writeFileSync(join(f.vault, "real.md"), "# changed\n");
+      const { app } = gitApp(f);
+      const res = await request(app).get("/api/git/status");
+      expect(res.status).toBe(200);
+      expect(res.body.available).toBe(true);
+      expect(res.body.clean).toBe(false);
+      expect(res.body.files).toContainEqual(
+        expect.objectContaining({ path: "real.md", status: " M" }),
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("returns available:false for vault git status outside a repo", async () => {
+    const root = mkdtempSync(join(tmpdir(), "solaris-git-status-nogit-"));
+    try {
+      writeFileSync(join(root, "real.md"), "# x\n");
+      const graphPath = join(root, "graph.json");
+      writeFileSync(
+        graphPath,
+        JSON.stringify({
+          meta: { vaultName: "t", vaultPath: root, notes: 1, excludes: [] },
+          nodes: [{ id: "real.md", title: "R", phantom: false }],
+          links: [],
+        }),
+      );
+      const { app } = createApp(graphPath);
+      const res = await request(app).get("/api/git/status");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ available: false });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("commits vault changes through a guarded route", async () => {
+    const f = gitFixture();
+    try {
+      writeFileSync(join(f.vault, "real.md"), "# v3\n");
+      const { app } = gitApp(f);
+      const token = (await request(app).get("/api/session")).body.token;
+
+      const res = await request(app)
+        .post("/api/git/commit")
+        .set("x-solaris-token", token)
+        .send({ message: "third" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(
+        execFileSync("git", ["log", "-1", "--pretty=%s"], { cwd: f.vault })
+          .toString()
+          .trim(),
+      ).toBe("third");
+      const status = await request(app).get("/api/git/status");
+      expect(status.body.clean).toBe(true);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("guards git commit and sync routes", async () => {
+    const f = gitFixture();
+    try {
+      const { app } = gitApp(f);
+      const commit = await request(app)
+        .post("/api/git/commit")
+        .send({ message: "no token" });
+      const sync = await request(app).post("/api/git/sync").send({});
+      expect(commit.status).toBe(403);
+      expect(sync.status).toBe(403);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("generates commit messages and rejects sync without upstream", async () => {
+    const f = gitFixture();
+    try {
+      writeFileSync(join(f.vault, "real.md"), "# generated\n");
+      const { app } = gitApp(f);
+      const token = (await request(app).get("/api/session")).body.token;
+      const commit = await request(app)
+        .post("/api/git/commit")
+        .set("x-solaris-token", token)
+        .send({});
+      const sync = await request(app)
+        .post("/api/git/sync")
+        .set("x-solaris-token", token)
+        .send({});
+
+      expect(commit.status).toBe(200);
+      expect(
+        execFileSync("git", ["log", "-1", "--pretty=%s"], { cwd: f.vault })
+          .toString()
+          .trim(),
+      ).toBe("Update vault (1 modified)");
+      expect(sync.status).toBe(400);
+      expect(sync.body).toEqual({ ok: false, error: "No upstream branch." });
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("sync route fast-forwards through the guarded endpoint", async () => {
+    const f = gitSyncFixture();
+    try {
+      writeFileSync(join(f.seed, "real.md"), "# remote\n");
+      git(["add", "real.md"], f.seed);
+      git(["commit", "-m", "remote"], f.seed);
+      git(["push"], f.seed);
+      const { app } = gitApp(f);
+      const token = (await request(app).get("/api/session")).body.token;
+
+      const res = await request(app)
+        .post("/api/git/sync")
+        .set("x-solaris-token", token)
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(readFileSync(join(f.vault, "real.md"), "utf-8")).toBe(
+        "# remote\n",
+      );
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }

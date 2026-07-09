@@ -323,7 +323,8 @@ Open **File → Admin...** to manage the current vault and wiki settings.
 - **The vault is written only through guarded, user-triggered paths**: the
   app-authored note writer is path-confined, `.md`-only, never overwrites, and
   journals changes; Git sync is the separate repo-level exception and must stay
-  clean-tree, fast-forward-only, and token-guarded.
+  clean-tree, token-guarded, fast-forward when possible, merge-commit on clean
+  divergence, and abort-on-conflict.
 - Secrets (Exa, OpenRouter, and voice keys) live in `~/.solaris/config.json`
   (mode 600), outside the vault and outside version control, and never appear in
   API responses.
