@@ -93,6 +93,7 @@ describe("integrations config", () => {
           "/vault/a": {
             path: "/vault/a",
             excludes: [".docs", "/.bookmarks/", "bad/../path", ".DOCS"],
+            excludesInitialized: true,
             wikis: [
               {
                 id: "root",
@@ -116,16 +117,30 @@ describe("integrations config", () => {
     );
     expect(cfg.activeVaultPath).toBe("/vault/a");
     expect(cfg.vaults["/vault/a"].excludes).toEqual([".docs", ".bookmarks"]);
+    expect(cfg.vaults["/vault/a"].excludesInitialized).toBe(true);
     expect(cfg.vaults["/vault/a"].wikis[0]).toMatchObject({
       rawDestination: "../research/",
       confidence: "high",
     });
-      expect(cfg.vaults["/vault/a"].wikis[1]).toMatchObject({
-        label: "saas/project/wiki",
-        enabled: true,
-        rawDestination: "../raw/",
-        confidence: "low",
-      });
+    expect(cfg.vaults["/vault/a"].wikis[1]).toMatchObject({
+      label: "saas/project/wiki",
+      enabled: true,
+      rawDestination: "../raw/",
+      confidence: "low",
+    });
+  });
+
+  it("treats any saved vault excludes as initialized", () => {
+    const p = join(DIR, "saved-excludes.json");
+    const cfg = updateConfig(
+      {
+        vaults: {
+          "/vault/a": { path: "/vault/a", excludes: [], wikis: [] },
+        },
+      },
+      p,
+    );
+    expect(cfg.vaults["/vault/a"].excludesInitialized).toBe(true);
   });
 
   it("ignores malformed wiki config entries", () => {

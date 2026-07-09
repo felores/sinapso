@@ -101,12 +101,14 @@ describe("server: /api/note-lines slice + guard", () => {
 });
 
 describe("server: rescan excludes", () => {
-  it("reconciles stale graph files with managed archive and images excludes on startup", async () => {
-    const root = mkdtempSync(join(tmpdir(), "solaris-startup-managed-excludes-"));
+  it("reconciles stale graph files with default archive and images excludes on startup", async () => {
+    const root = mkdtempSync(join(tmpdir(), "solaris-startup-default-excludes-"));
     try {
       mkdirSync(join(root, "archivo"));
+      mkdirSync(join(root, "images"));
       writeFileSync(join(root, "keep.md"), "# Keep\n");
       writeFileSync(join(root, "archivo", "old.md"), "# Archived\n");
+      writeFileSync(join(root, "images", "image-note.md"), "# Image note\n");
       const graph = join(root, "graph.json");
       scanVault({ vault: root, out: graph });
       const configPath = join(root, "config.json");
@@ -121,13 +123,14 @@ describe("server: rescan excludes", () => {
 
       expect(ids).toBe(1);
       expect(graphData.meta.excludes).toContain("archivo");
+      expect(graphData.meta.excludes).toContain("images");
       expect(graphData.nodes.map((n) => n.id)).toEqual(["keep.md"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it("uses vault-scoped, archive, and images-folder config excludes on rescan", async () => {
+  it("uses initialized vault-scoped excludes exactly on rescan", async () => {
     const root = mkdtempSync(join(tmpdir(), "solaris-rescan-excludes-"));
     try {
       mkdirSync(join(root, "skip"));
@@ -144,7 +147,13 @@ describe("server: rescan excludes", () => {
         {
           archiveDestination: "done",
           imagesDestination: "media",
-          vaults: { [root]: { path: root, excludes: ["skip"], wikis: [] } },
+          vaults: {
+            [root]: {
+              path: root,
+              excludes: ["skip"],
+              wikis: [],
+            },
+          },
         },
         configPath,
       );
@@ -154,11 +163,11 @@ describe("server: rescan excludes", () => {
       const ids = (res.body.graph.nodes as Array<{ id: string }>).map((n) => n.id);
 
       expect(res.status).toBe(200);
-      expect(res.body.graph.meta.excludes).toEqual(["skip", "done", "media"]);
+      expect(res.body.graph.meta.excludes).toEqual(["skip"]);
       expect(ids).toContain("keep.md");
       expect(ids).not.toContain("skip/hidden.md");
-      expect(ids).not.toContain("done/archived.md");
-      expect(ids).not.toContain("media/image-note.md");
+      expect(ids).toContain("done/archived.md");
+      expect(ids).toContain("media/image-note.md");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

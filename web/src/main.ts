@@ -3395,7 +3395,12 @@ async function boot() {
       excludes: string[];
       vaults: Record<
         string,
-        { path: string; excludes?: string[]; wikis: AdminWikiConfig[] }
+        {
+          path: string;
+          excludes?: string[];
+          excludesInitialized?: boolean;
+          wikis: AdminWikiConfig[];
+        }
       >;
       promptDefaults: Record<string, string>;
       prompts: Record<string, string>;
@@ -6585,13 +6590,8 @@ async function boot() {
     const inboxFolder = integrations?.writeDestination ?? "inbox";
     const archiveFolder = integrations?.archiveDestination ?? "archive";
     const imagesFolder = integrations?.imagesDestination ?? "images";
-    const currentExcludes = withoutAutoManagedExcludes(
-      integrations?.admin?.vaults[vaultPath]?.excludes ??
-        integrations?.admin?.excludes ??
-        data.meta.excludes ??
-        [],
-      [archiveFolder, imagesFolder],
-    );
+    const currentExcludes =
+      integrations?.admin?.excludes ?? data.meta.excludes ?? [];
     const body = $("#modal-body");
     showModal(T("admin.title"), "");
     $("#modal").classList.add("admin-modal");
@@ -6892,9 +6892,19 @@ async function boot() {
     const previousImagesFolder = integrations?.imagesDestination ?? "images";
     const imagesFolder =
       ($("#admin-images-input") as HTMLInputElement).value.trim() || "images";
-    const excludes = parseAdminExcludes(
+    let excludes = parseAdminExcludes(
       ($("#admin-excludes-input") as HTMLTextAreaElement).value,
     );
+    const currentGraphExcludes =
+      integrations?.admin?.excludes ?? data.meta.excludes ?? [];
+    const savedVault = integrations?.admin?.vaults[vaultPath];
+    if (
+      !savedVault?.excludesInitialized &&
+      !excludesChanged(excludes, currentGraphExcludes)
+    ) {
+      excludes = replaceExcludes(excludes, previousArchiveFolder, archiveFolder);
+      excludes = replaceExcludes(excludes, previousImagesFolder, imagesFolder);
+    }
     const prompts: Record<string, string | null> = {};
     const defaults = integrations?.admin?.promptDefaults ?? {};
     for (const row of document.querySelectorAll(
@@ -6916,19 +6926,7 @@ async function boot() {
         if (!body.graph)
           throw new Error(body.error ?? i18n.t("admin.saveFail"));
         applyGraphUpdate(body.graph);
-        const newVaultPath = body.graph.meta.vaultPath;
-        const existingWikis =
-          integrations?.admin?.vaults[newVaultPath]?.wikis ?? [];
         await postConfig({
-          vaults: newVaultPath
-            ? {
-                [newVaultPath]: {
-                  path: newVaultPath,
-                  excludes,
-                  wikis: existingWikis,
-                },
-              }
-            : {},
           prompts,
           writeDestination: inboxFolder,
           archiveDestination: archiveFolder,
@@ -6937,15 +6935,8 @@ async function boot() {
         await refreshIntegrations();
         await refreshEnabledWikiLayers();
         if (
-          excludesChanged(
-            excludes,
-            withoutAutoManagedExcludes(body.graph.meta.excludes ?? [], [
-              archiveFolder,
-              imagesFolder,
-            ]),
-          ) ||
-            archiveFolder !== previousArchiveFolder ||
-            imagesFolder !== previousImagesFolder
+          archiveFolder !== previousArchiveFolder ||
+          imagesFolder !== previousImagesFolder
         ) {
           adminDirty = false;
           await rescan(true);
@@ -6988,7 +6979,14 @@ async function boot() {
       }
       await postConfig({
         vaults: vaultPath
-          ? { [vaultPath]: { path: vaultPath, excludes, wikis } }
+          ? {
+              [vaultPath]: {
+                path: vaultPath,
+                excludes,
+                excludesInitialized: true,
+                wikis,
+              },
+            }
           : {},
         prompts,
         writeDestination: inboxFolder,
@@ -7000,13 +6998,8 @@ async function boot() {
       if (
         excludesChanged(
           excludes,
-          withoutAutoManagedExcludes(data.meta.excludes ?? [], [
-            archiveFolder,
-            imagesFolder,
-          ]),
-        ) ||
-          archiveFolder !== previousArchiveFolder ||
-          imagesFolder !== previousImagesFolder
+          data.meta.excludes ?? [],
+        )
       ) {
         adminDirty = false;
         await rescan(true);
@@ -7042,23 +7035,25 @@ async function boot() {
     return out;
   }
 
-  function withoutAutoManagedExcludes(
+  function replaceExcludes(
     excludes: string[],
-    folders: string[],
+    oldPath: string,
+    newPath: string,
   ): string[] {
-    const managed = new Set(
-      folders
-        .map((p) => p.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "").toLowerCase())
-        .filter(Boolean),
+    const oldKey = oldPath
+      .replace(/\\/g, "/")
+      .replace(/^\/+|\/+$/g, "")
+      .toLowerCase();
+    const cleanNew = newPath
+      .replace(/\\/g, "/")
+      .replace(/^\/+|\/+$/g, "")
+      .trim();
+    if (!oldKey || !cleanNew) return excludes;
+    return excludes.map((e) =>
+      e.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "").toLowerCase() === oldKey
+        ? cleanNew
+        : e,
     );
-    return managed.size
-      ? excludes.filter(
-          (e) =>
-            !managed.has(
-              e.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "").toLowerCase(),
-            ),
-        )
-      : excludes;
   }
 
   function excludesChanged(a: string[], b: string[]): boolean {

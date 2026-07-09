@@ -52,6 +52,7 @@ export interface WikiConfig {
 export interface VaultConfig {
   path: string;
   excludes: string[];
+  excludesInitialized: boolean;
   wikis: WikiConfig[];
 }
 
@@ -225,9 +226,11 @@ function sanitizeVault(key: string, value: unknown): VaultConfig | null {
   const v = value as Record<string, unknown>;
   const path = typeof v.path === "string" && v.path ? v.path : key;
   if (!path) return null;
+  const hasSavedExcludes = Array.isArray(v.excludes);
   return {
     path,
     excludes: sanitizeExcludes(v.excludes),
+    excludesInitialized: v.excludesInitialized === true || hasSavedExcludes,
     wikis: Array.isArray(v.wikis)
       ? v.wikis
           .map(sanitizeWiki)

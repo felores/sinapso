@@ -27,6 +27,7 @@ import {
   loadConfig,
   updateConfig,
   defaultConfigPath,
+  type SolarisConfig,
 } from "./integrations/config.js";
 import {
   detectAll,
@@ -235,15 +236,34 @@ export function createApp(
   const detectDeps = integrations?.detectDeps;
   const dataDir = dirname(graphPath); // data/ — runtime store (history, journal)
 
-  const effectiveExcludes = (vault: string, cfg = loadConfig(configPath)) => {
-    const configured = cfg.vaults[vault]?.excludes ?? graph.meta.excludes ?? [];
-    const managed = [cfg.archiveDestination, cfg.imagesDestination]
+  const defaultAdminExcludes = (cfg: SolarisConfig) =>
+    [cfg.archiveDestination, cfg.imagesDestination]
       .map((p) => p.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "").trim())
       .filter((p) => p && !p.includes(".."));
-    return [...new Set([...configured, ...managed])];
+
+  const uniqueExcludes = (excludes: string[]) => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const e of excludes) {
+      const key = e.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(e);
+    }
+    return out;
   };
 
-  const ensureManagedExcludesScanned = () => {
+  const effectiveExcludes = (vault: string, cfg = loadConfig(configPath)) => {
+    const saved = cfg.vaults[vault];
+    if (saved?.excludesInitialized) return saved.excludes;
+    const scanned = graph.meta.vaultPath === vault ? graph.meta.excludes ?? [] : [];
+    return uniqueExcludes([
+      ...(saved?.excludes ?? scanned),
+      ...defaultAdminExcludes(cfg),
+    ]);
+  };
+
+  const ensureConfiguredExcludesScanned = () => {
     if (!graph.meta.vaultPath || !existsSync(graph.meta.vaultPath)) return;
     if (!("fingerprint" in graph.meta)) return;
     const cfg = loadConfig(configPath);
@@ -257,7 +277,7 @@ export function createApp(
     }) as GraphFile;
     vaultRoot = graph.meta.vaultPath;
   };
-  ensureManagedExcludesScanned();
+  ensureConfiguredExcludesScanned();
 
   // Detection is slow-ish (may spawn a login shell); cache in memory,
   // re-probe on ?refresh=1 (settings re-check). Wrapped in a ref so the
@@ -285,7 +305,7 @@ export function createApp(
         imagesDestination: cfg.imagesDestination,
         admin: {
           activeVaultPath: cfg.activeVaultPath,
-          excludes: graph.meta.excludes ?? [],
+          excludes: effectiveExcludes(graph.meta.vaultPath, cfg),
           vaults: cfg.vaults,
           promptDefaults: defaultPrompts(),
           prompts: effectivePrompts(cfg),
@@ -392,6 +412,7 @@ export function createApp(
         [vaultRoot]: {
           path: vaultRoot,
           excludes,
+          excludesInitialized: true,
           wikis: discoverAndMerge(vaultRoot, excludes, saved),
         },
       },

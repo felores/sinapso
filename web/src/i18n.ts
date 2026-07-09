@@ -38,8 +38,8 @@ const EN: Dict = {
   "admin.imagesFolder": "Images folder",
   "admin.excludeFolders": "Excluded folders",
   "admin.excludeHint":
-    "Vault-relative paths, separated by commas or new lines. Saved changes trigger a full rescan.",
-  "admin.excludePlaceholder": ".docs, .bookmarks, private/drafts",
+    "Vault-relative paths, separated by commas or new lines. Defaults include archive and images folders. Saved changes trigger a full rescan.",
+  "admin.excludePlaceholder": "archive, images",
   "admin.foldersHint": "Default folders for notes, archives, and images",
   "admin.git": "Git",
   "admin.gitClean": "clean",
@@ -305,8 +305,8 @@ const ES: Dict = {
   "admin.imagesFolder": "Carpeta de imágenes",
   "admin.excludeFolders": "Carpetas excluidas",
   "admin.excludeHint":
-    "Rutas relativas a la bóveda, separadas por comas o líneas. Guardar dispara un reescaneo completo.",
-  "admin.excludePlaceholder": ".docs, .bookmarks, privado/borradores",
+    "Rutas relativas a la bóveda, separadas por comas o líneas. Por defecto incluye archivo e imágenes. Guardar dispara un reescaneo completo.",
+  "admin.excludePlaceholder": "archivo, imágenes",
   "admin.foldersHint": "Carpetas por defecto para notas, archivo e imágenes",
   "admin.git": "Git",
   "admin.gitClean": "limpio",
