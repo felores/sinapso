@@ -152,6 +152,13 @@ body > :not(#graph) {
 .menu.open .menu-label,
 .menu-label:hover { background: var(--panel); }
 
+/* Manuscript is fully desaturated: every color (scene and chrome) collapses
+   to its gray value. Safe on body because it fills the viewport and never
+   scrolls, so the containing-block shift for fixed elements is a no-op. */
+:root[data-theme="manuscript"] body {
+  filter: grayscale(1);
+}
+
 /* Light themes: the dark drop-shadow muddies dark text on a light background,
    so drop it for the brand + menu labels on notebook / manuscript. */
 :root[data-theme="notebook"] #brand-name,
