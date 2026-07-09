@@ -2475,6 +2475,12 @@ body > :not(#graph) {
   color: var(--fg);
   padding: 3px;
 }
+#reader-find #reader-find-toggle:hover,
+#reader-find.expanded #reader-find-toggle,
+#reader-find.versions-expanded #reader-versions-toggle {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 #reader-find-input {
   flex: 1;
   min-width: 0;
