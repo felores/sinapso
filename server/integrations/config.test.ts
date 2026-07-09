@@ -51,15 +51,21 @@ describe("integrations config", () => {
     expect(cfg.exaKey).toBe("keep-me");
   });
 
-  it("persists inbox and archive destination folders", () => {
+  it("persists inbox, archive, and images destination folders", () => {
     const p = join(DIR, "folders.json");
     const cfg = updateConfig(
-      { writeDestination: "capture", archiveDestination: "done" },
+      {
+        writeDestination: "capture",
+        archiveDestination: "done",
+        imagesDestination: "media/images",
+      },
       p,
     );
     expect(cfg.writeDestination).toBe("capture");
     expect(cfg.archiveDestination).toBe("done");
+    expect(cfg.imagesDestination).toBe("media/images");
     expect(loadConfig(p).archiveDestination).toBe("done");
+    expect(loadConfig(p).imagesDestination).toBe("media/images");
   });
 
   it("ignores mistyped or unknown patch fields", () => {
@@ -78,7 +84,7 @@ describe("integrations config", () => {
     expect(readFileSync(p, "utf-8")).not.toContain("bogus");
   });
 
-  it("persists vault-scoped wiki config with per-wiki raw destinations", () => {
+  it("persists vault-scoped wiki config with per-wiki raw destinations and excludes", () => {
     const p = join(DIR, "vaults.json");
     const cfg = updateConfig(
       {
@@ -86,6 +92,7 @@ describe("integrations config", () => {
         vaults: {
           "/vault/a": {
             path: "/vault/a",
+            excludes: [".docs", "/.bookmarks/", "bad/../path", ".DOCS"],
             wikis: [
               {
                 id: "root",
@@ -108,6 +115,7 @@ describe("integrations config", () => {
       p,
     );
     expect(cfg.activeVaultPath).toBe("/vault/a");
+    expect(cfg.vaults["/vault/a"].excludes).toEqual([".docs", ".bookmarks"]);
     expect(cfg.vaults["/vault/a"].wikis[0]).toMatchObject({
       rawDestination: "../research/",
       confidence: "high",
@@ -213,6 +221,7 @@ describe("integrations config", () => {
     expect(fromCache.defaultModel).toBeNull();
     expect(fromCache.writeDestination).toBe("inbox");
     expect(fromCache.archiveDestination).toBe("archive");
+    expect(fromCache.imagesDestination).toBe("images");
     expect(fromCache.consents).toEqual({ web: false });
   });
 });

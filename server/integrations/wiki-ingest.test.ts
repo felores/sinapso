@@ -293,15 +293,15 @@ describe("wiki ingest proposals", () => {
       .send({
         wikiId: "wiki",
         converted: {
-          source: "https://youtu.be/abc123",
-          sourceLabel: "https://youtu.be/abc123",
-          title: "Video Title",
-          markdown: "Transcript body.",
-          via: "exa-youtube",
+          source: "https://example.com/article",
+          sourceLabel: "https://example.com/article",
+          title: "Article Title",
+          markdown: "Article body.",
+          via: "markitdown",
         },
       });
     expect(res.status).toBe(200);
-    expect(res.body.title).toBe("Video Title");
+    expect(res.body.title).toBe("Article Title");
     expect(res.body.operations[0]).toMatchObject({ raw: true });
   });
 });

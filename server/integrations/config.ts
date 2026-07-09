@@ -51,6 +51,7 @@ export interface WikiConfig {
 
 export interface VaultConfig {
   path: string;
+  excludes: string[];
   wikis: WikiConfig[];
 }
 
@@ -63,6 +64,8 @@ export interface SolarisConfig {
   writeDestination: string;
   /** Vault-relative destination folder for archived notes. */
   archiveDestination: string;
+  /** Vault-relative destination folder for locally stored images. */
+  imagesDestination: string;
   /** Addon install markers (qmd/markitdown), managed by the installer. */
   addons: Record<string, string>;
   voice: VoiceConfig;
@@ -79,6 +82,7 @@ export interface ConfigPatch {
   defaultModel?: string | null;
   writeDestination?: string;
   archiveDestination?: string;
+  imagesDestination?: string;
   addons?: Record<string, string>;
   voice?: {
     provider?: string | null;
@@ -125,6 +129,7 @@ export function defaultConfig(): SolarisConfig {
     defaultModel: null,
     writeDestination: "inbox",
     archiveDestination: "archive",
+    imagesDestination: "images",
     addons: {},
     voice: {
       provider: null,
@@ -171,6 +176,8 @@ function merge(base: SolarisConfig, patch: unknown): SolarisConfig {
     out.writeDestination = p.writeDestination;
   if (typeof p.archiveDestination === "string" && p.archiveDestination)
     out.archiveDestination = p.archiveDestination;
+  if (typeof p.imagesDestination === "string" && p.imagesDestination)
+    out.imagesDestination = p.imagesDestination;
   if (typeof p.addons === "object" && p.addons !== null) {
     for (const [k, v] of Object.entries(p.addons))
       if (typeof v === "string") out.addons[k] = v;
@@ -220,12 +227,31 @@ function sanitizeVault(key: string, value: unknown): VaultConfig | null {
   if (!path) return null;
   return {
     path,
+    excludes: sanitizeExcludes(v.excludes),
     wikis: Array.isArray(v.wikis)
       ? v.wikis
           .map(sanitizeWiki)
           .filter((w): w is WikiConfig => w !== null)
       : [],
   };
+}
+
+function sanitizeExcludes(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const clean = item
+      .replace(/\\/g, "/")
+      .replace(/^\/+|\/+$/g, "")
+      .trim();
+    if (!clean || clean === "." || clean.includes("..") || seen.has(clean.toLowerCase()))
+      continue;
+    seen.add(clean.toLowerCase());
+    out.push(clean);
+  }
+  return out;
 }
 
 function sanitizeWiki(value: unknown): WikiConfig | null {

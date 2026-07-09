@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../app";
 import { TOKEN_HEADER } from "./security";
-import { createExaAdapter, type ExaClientLike } from "./exa";
+import { createArticleFetcher, createExaAdapter, type ExaClientLike } from "./exa";
 
 const KEY = "exa-super-secret-key";
 
@@ -156,6 +156,28 @@ describe("exa adapter", () => {
     const research = createExaAdapter({ makeClient, retryDelays: [1, 1] });
     await expect(research(KEY, "q")).rejects.toThrow("http 401");
     expect(state.calls).toBe(1);
+  });
+});
+
+describe("exa article fetcher", () => {
+  it("uses plain text mode for articles", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const fetchArticle = createArticleFetcher({
+      makeClient: (): ExaClientLike => ({
+        async search() {
+          throw new Error("unused");
+        },
+        async getContents(_urls, options) {
+          requests.push(options);
+          return { results: [{ url: "https://example.com/a", title: "Article", text: "body" }] };
+        },
+      }),
+      retryDelays: [1],
+    });
+
+    await fetchArticle(KEY, "https://example.com/a");
+
+    expect(requests[0]).toEqual({ text: true });
   });
 });
 

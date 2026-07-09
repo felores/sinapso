@@ -315,7 +315,7 @@ body > :not(#graph) {
 }
 .admin-folder-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 .admin-folder-field {
@@ -325,7 +325,8 @@ body > :not(#graph) {
   color: var(--muted);
   font-size: 11.5px;
 }
-.admin-folder-field input {
+.admin-folder-field input,
+.admin-folder-field textarea {
   min-width: 0;
   padding: 4px 8px;
   background: var(--panel);
@@ -335,6 +336,11 @@ body > :not(#graph) {
   font-family: Consolas, monospace;
   font-size: 12px;
   outline: none;
+}
+.admin-folder-field textarea { resize: vertical; }
+.admin-folder-field small { color: var(--muted); line-height: 1.35; }
+@media (max-width: 720px) {
+  .admin-folder-row { grid-template-columns: 1fr; }
 }
 .admin-git-toolbar,
 .admin-git-action-row {
@@ -831,6 +837,40 @@ body > :not(#graph) {
   font-size: 13px;
 }
 
+.legend-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.legend-section-head:first-child { margin-top: 0; }
+.legend-section-head span { margin-right: 4px; }
+.legend-section-head button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+  flex: 0 0 58px;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 0;
+}
+.legend-section-head button[aria-pressed="true"] {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+.legend-section-head button:hover { border-color: var(--accent); }
+
 .legend-row {
   display: flex;
   align-items: center;
@@ -848,7 +888,6 @@ body > :not(#graph) {
   border-radius: 50%;
   flex: 0 0 auto;
 }
-
 /* legend color pickers: look like dots, act like inputs */
 .dot-pick {
   width: 16px;
@@ -1116,7 +1155,13 @@ body > :not(#graph) {
   position: fixed;
   bottom: 52px;
   right: calc(18px + var(--btn-right-inset, 0px));
-  width: 270px;
+  box-sizing: border-box;
+  width: min(270px, calc(100vw - 36px - var(--btn-right-inset, 0px)));
+  min-width: min(230px, calc(100vw - 36px - var(--btn-right-inset, 0px)));
+  max-width: calc(100vw - 36px - var(--btn-right-inset, 0px));
+  max-height: calc(100vh - 76px - var(--mobile-search-h, 0px) - var(--mobile-nav-h, 0px));
+  overflow: auto;
+  resize: both;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1135,12 +1180,13 @@ body > :not(#graph) {
 }
 .setting {
   display: grid;
-  grid-template-columns: 1fr 100px 42px;
+  grid-template-columns: minmax(64px, 1fr) minmax(64px, 40%) 38px;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 5px 0;
   color: var(--muted);
 }
+.setting input[type="range"] { width: 100%; min-width: 0; }
 .setting select {
   background: var(--panel);
   color: var(--fg);
@@ -1155,7 +1201,13 @@ body > :not(#graph) {
   position: fixed;
   bottom: 52px;
   left: calc(18px + var(--btn-left-inset, 0px));
-  width: 280px;
+  box-sizing: border-box;
+  width: min(280px, calc(100vw - 36px - var(--btn-left-inset, 0px)));
+  min-width: min(240px, calc(100vw - 36px - var(--btn-left-inset, 0px)));
+  max-width: calc(100vw - 36px - var(--btn-left-inset, 0px));
+  max-height: calc(100vh - 76px - var(--mobile-search-h, 0px) - var(--mobile-nav-h, 0px));
+  overflow: auto;
+  resize: both;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1409,7 +1461,24 @@ body > :not(#graph) {
    as it widens (capped at natural size). height:auto keeps aspect ratio. */
 #reader-body img {
   max-width: 100%;
+  max-height: 48vh;
   height: auto;
+  object-fit: contain;
+  display: block;
+  margin: 10px auto;
+  position: static !important;
+  transform: none !important;
+}
+#reader-body video,
+#reader-body iframe {
+  max-width: 100%;
+  max-height: 48vh;
+  width: 100% !important;
+  height: auto !important;
+  display: block;
+  margin: 10px auto;
+  position: static !important;
+  transform: none !important;
 }
 #reader-body h1, #reader-body h2, #reader-body h3 {
   border-bottom: 1px solid var(--border);
@@ -2046,16 +2115,29 @@ body > :not(#graph) {
 .web-result .web-meta { font-size: 11px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
 .web-save {
   margin-left: auto;
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--muted);
-  border-radius: 5px;
-  padding: 2px 8px;
-  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 26px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 65%, var(--border));
+  color: var(--fg);
+  border-radius: 7px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
 }
 .web-save:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
-.web-save:disabled { opacity: 0.6; cursor: default; }
+.web-save:disabled {
+  opacity: 1;
+  cursor: default;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+  border-color: var(--border);
+}
 .wiki-proposal-meta { margin: 0 8px 8px; }
 .wiki-proposal-op {
   border-top: 1px solid var(--border);
@@ -2077,41 +2159,49 @@ body > :not(#graph) {
   border-radius: 6px;
   padding: 8px;
 }
-.wiki-proposal-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 8px; }
-.ingest-preview-actions { display: flex; justify-content: flex-end; padding: 0 8px 12px; }
-.ingest-choice {
+.wiki-proposal-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; padding: 8px; }
+.reader-wiki-action {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel);
+  justify-content: center;
+  gap: 6px;
+  pointer-events: auto;
 }
-.ingest-choice select {
-  flex: 1;
-  min-width: 0;
-  height: 30px;
+.reader-wiki-action-bottom {
+  justify-content: flex-end;
+  padding: 18px 0 4px;
+}
+.reader-wiki-action select {
+  max-width: 170px;
+  height: 26px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 7px;
   color: var(--fg);
   font-size: 12px;
 }
-.ingest-choice button {
-  height: 30px;
-  padding: 0 14px;
-  background: var(--accent);
-  border: none;
-  border-radius: 6px;
-  color: #fff;
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
+.reader-wiki-action .web-save {
+  margin-left: 0;
+  min-height: 26px;
+  height: 26px;
+  padding: 3px 12px;
 }
-.ingest-preview-actions .ingest-choice button { height: 34px; padding: 0 18px; font-size: 13px; }
-.ingest-choice button:disabled { opacity: 0.6; cursor: default; }
-
+.reader-wiki-action .hidden,
+.reader-wiki-row.hidden { display: none; }
+.reader-wiki-row {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  margin-top: -36px;
+  padding: 5px 10px;
+  background: transparent;
+  pointer-events: none;
+}
+#reader-find.expanded + .reader-wiki-row,
+#reader-find.versions-expanded + .reader-wiki-row { display: none; }
 /* ---------- agent chat styles (inside the research column) ---------- */
 #agent-banner {
   margin-bottom: 8px;
@@ -2182,14 +2272,15 @@ body > :not(#graph) {
   font-size: 12px;
   padding: 6px 8px;
 }
-.prop-actions { display: flex; gap: 6px; margin-top: 6px; }
+.prop-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
 .prop-actions button {
-  background: none;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   border: 1px solid var(--border);
-  color: var(--muted);
-  border-radius: 5px;
-  padding: 3px 10px;
-  font-size: 11.5px;
+  color: var(--fg);
+  border-radius: 7px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
 }
 .prop-actions button:hover { color: var(--accent); border-color: var(--accent); }

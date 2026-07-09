@@ -3,8 +3,7 @@
  * server's spending and mutating routes enforce. Every helper writes the
  * exact status + body the route writes today; the message is passed in so
  * the two divergent OpenRouter responses ("no-openrouter-key" vs
- * "Add an OpenRouter key before wiki ingest") and the two divergent
- * 403 messages (YouTube vs Web mode) are preserved as-is (R10).
+ * "Add an OpenRouter key before wiki ingest") are preserved as-is (R10).
  *
  * Handler style stays `if (!gate(...)) return;` or
  * `const bin = await requireMarkitdown(...); if (!bin) return;`, matching
@@ -42,20 +41,6 @@ describe("requireWebConsent", () => {
     expect(res.json).toHaveBeenCalledWith({
       error: "web-consent-required",
       message: "consent message",
-    });
-  });
-
-  it("preserves the YouTube-specific 403 message verbatim (R10)", () => {
-    const res = mockRes();
-    requireWebConsent(
-      { consents: { web: false } },
-      res,
-      "Fetching a YouTube transcript goes through Exa — activate Web mode once to consent.",
-    );
-    expect(res.json).toHaveBeenCalledWith({
-      error: "web-consent-required",
-      message:
-        "Fetching a YouTube transcript goes through Exa — activate Web mode once to consent.",
     });
   });
 

@@ -12,7 +12,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../app";
 import { updateConfig } from "./config";
-import type { ExaClientLike } from "./exa";
 import { TOKEN_HEADER } from "./security";
 import { ingestBytes, ingestDocument } from "./ingest";
 import { readChangeLog } from "./write";
@@ -131,7 +130,6 @@ describe("POST /api/ingest", () => {
       links: [],
     }),
   );
-
   function makeApp(
     markitdownInstalled: boolean,
     patch?: Parameters<typeof updateConfig>[0],
@@ -162,6 +160,11 @@ describe("POST /api/ingest", () => {
     discovered: true,
     confidence: "low" as const,
   });
+
+  const ensureWiki = (path: string) => {
+    mkdirSync(join(VAULT, path), { recursive: true });
+    mkdirSync(join(VAULT, path, "raw"), { recursive: true });
+  };
 
   it("requires the session token", async () => {
     const app = makeApp(true);
@@ -228,50 +231,6 @@ describe("POST /api/ingest", () => {
     );
   });
 
-  it("previews YouTube URLs through Exa instead of markitdown", async () => {
-    const configPath = join(DATA, `config-youtube-${appSeq++}.json`);
-    updateConfig({ consents: { web: true }, exaKey: "exa-key" }, configPath);
-    const calls: string[] = [];
-    const app = createApp(graphPath, undefined, {
-      configPath,
-      detectDeps: {
-        home: "/h",
-        env: { PATH: "/fake/bin" },
-        fileExists: () => false,
-        run: async (cmd) => {
-          calls.push(cmd);
-          return fail("markitdown should not run");
-        },
-      },
-      exa: {
-        makeClient: ((_key: string): ExaClientLike => ({
-          search: async () => ({ results: [] }),
-          getContents: async () => ({
-            results: [
-              {
-                url: "https://youtu.be/abc123",
-                title: "Video Title",
-                text: "Transcript body.",
-              },
-            ],
-          }),
-        })) as never,
-      },
-    }).app;
-    const t = (await request(app).get("/api/session")).body.token;
-    const res = await request(app)
-      .post("/api/ingest/preview")
-      .set(TOKEN_HEADER, t)
-      .send({ source: "https://youtu.be/abc123" });
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({
-      title: "Video Title",
-      markdown: "Transcript body.",
-      via: "exa-youtube",
-    });
-    expect(calls).toHaveLength(0);
-  });
-
   it("POST /api/ingest-upload ingests uploaded bytes end to end", async () => {
     const app = makeApp(true);
     const t = (await request(app).get("/api/session")).body.token;
@@ -301,6 +260,7 @@ describe("POST /api/ingest", () => {
   });
 
   it("implicitly routes to one enabled wiki raw folder", async () => {
+    ensureWiki("wiki");
     const app = makeApp(true, {
       vaults: { [VAULT]: { path: VAULT, wikis: [wiki("wiki")] } },
     });
@@ -315,6 +275,8 @@ describe("POST /api/ingest", () => {
   });
 
   it("requires a target when multiple wikis are enabled", async () => {
+    ensureWiki("wiki");
+    ensureWiki("other/wiki");
     const app = makeApp(true, {
       vaults: {
         [VAULT]: { path: VAULT, wikis: [wiki("wiki"), wiki("other", "other/wiki")] },
@@ -330,6 +292,8 @@ describe("POST /api/ingest", () => {
   });
 
   it("routes upload to a selected wiki with custom ../research destination", async () => {
+    ensureWiki("wiki");
+    ensureWiki("other/wiki");
     const app = makeApp(true, {
       vaults: {
         [VAULT]: {
@@ -349,6 +313,7 @@ describe("POST /api/ingest", () => {
   });
 
   it("keeps capture-only available when wikis exist", async () => {
+    ensureWiki("wiki");
     const app = makeApp(true, {
       writeDestination: "captures",
       vaults: { [VAULT]: { path: VAULT, wikis: [wiki("wiki")] } },
@@ -363,6 +328,7 @@ describe("POST /api/ingest", () => {
   });
 
   it("rejects an invalid wiki id", async () => {
+    ensureWiki("wiki");
     const app = makeApp(true, {
       vaults: { [VAULT]: { path: VAULT, wikis: [wiki("wiki")] } },
     });

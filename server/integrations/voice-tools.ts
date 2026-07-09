@@ -61,7 +61,7 @@ interface SelectedContextState {
   current: SelectedSlot | null;
 }
 
-/** Cap tool text sent back to the voice model: articles/transcripts run 20k+
+/** Cap tool text sent back to the voice model: articles can run 20k+
  *  chars — too much to inject and narrate by voice. */
 function cap(s: string, n = 6000): string {
   return s.length > n ? `${s.slice(0, n)}\n…[truncated]` : s;
@@ -441,14 +441,13 @@ export const VOICE_TOOLS: FunctionDeclaration[] = [
   {
     name: "fetch_url",
     description:
-      "Fetch the FULL text of a specific web page — OR the TRANSCRIPT of a YouTube video — by its URL, via Exa. Use when they give you a link or ask to read/summarize a page or video: 'read this article', 'what does this page say', 'summarize this YouTube video', 'transcribe este video', 'lee este enlace'. Give the exact http(s) URL. Spends Exa credit and needs Web mode. The result also opens in their research panel.",
+      "Fetch the FULL text of a specific web page by its URL, via Exa. Use when they give you a link or ask to read/summarize a page: 'read this article', 'what does this page say', 'lee este enlace'. Give the exact http(s) URL. Spends Exa credit and needs Web mode. The result also opens in their research panel.",
     parameters: {
       type: Type.OBJECT,
       properties: {
         url: {
           type: Type.STRING,
-          description:
-            "The exact http(s) URL to fetch (a web page or a YouTube video).",
+          description: "The exact http(s) URL to fetch.",
         },
       },
       required: ["url"],
@@ -932,8 +931,7 @@ export function createVoiceToolSession(
       return { ok: true, path: d.id };
     }
     // Web tools (Exa): spend-bearing, so the guarded routes need the session
-    // token — they cannot go through the token-less callTool path. fetch_url
-    // covers both articles and YouTube transcripts (same /api/article endpoint).
+    // token; they cannot go through the token-less callTool path.
     if (name === "fetch_url") return fetchUrl(String(args.url ?? "").trim());
     if (name === "web_research") {
       const query = String(args.query ?? "").trim();

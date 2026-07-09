@@ -129,7 +129,7 @@ from real community complaints (see research doc for quotes and URLs).
    knew were related, and find the orphans and gaps.
 
 3. **Drop a file, get a linked note.** (counters pain 3)
-   PDF, Word, slides, a web page, even a YouTube URL (you get the transcript). Clean
+   PDF, Word, slides, or a web page. Clean
    preview first, saved into your vault only when you approve, connected to what you
    already have.
 
@@ -294,7 +294,7 @@ a screenshot can't show. Working allocation:
 2. Demo strip moment: cluster dive (real capture preferred).
 3. Demo strip moment: reader pane + Obsidian hand-off (real capture preferred).
 4. Voice session visual: waveform + panels opening.
-5. Ingest moment: PDF/Word/YouTube turning into a clean linked note.
+5. Ingest moment: PDF/Word/web page turning into a clean linked note.
 6. Three-circle differentiation diagram.
 7. Origin story visual: constellation being born / one star becoming many.
 8. Semantic clusters / gaps view (real capture preferred).

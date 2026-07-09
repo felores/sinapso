@@ -3,8 +3,7 @@
  * server's spending and mutating routes enforce. Every helper writes the
  * exact status + body the route writes today; the message is passed in so
  * the two divergent OpenRouter responses ("no-openrouter-key" vs
- * "Add an OpenRouter key before wiki ingest") and the two divergent
- * 403 messages (YouTube vs Web mode) are preserved as-is (R10).
+ * "Add an OpenRouter key before wiki ingest") are preserved as-is (R10).
  *
  * Handler style stays `if (!gate(...)) return;` or
  * `const bin = await requireMarkitdown(...); if (!bin) return;`, matching
@@ -23,10 +22,7 @@ type OpenRouterCfg = { openrouterKey: string | null };
 /**
  * Web-mode consent gate (403 web-consent-required). Returns true when the
  * stored `cfg.consents.web` is true; otherwise writes the 403 body using
- * the caller-supplied message and returns false. The two routes that gate
- * on this — `/api/ingest` (YouTube branch) and `/api/research` /
- * `/api/article` — pass different 403 messages; preserving that
- * divergence is part of R10.
+ * the caller-supplied message and returns false.
  */
 export function requireWebConsent(
   cfg: WebCfg,

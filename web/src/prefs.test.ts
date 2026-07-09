@@ -151,10 +151,10 @@ describe("prefs: raw string keys (theme / group / quality / nodes / arrangement)
     expect(storage.getItem("akasha-theme")).toBe("cosmos");
   });
 
-  it("group: default 'folder', set 'cluster' round-trips", () => {
+  it("group: default 'folder', set 'wiki' round-trips", () => {
     expect(prefs.getGroup()).toBe<GroupMode>("folder");
-    prefs.setGroup("cluster");
-    expect(prefs.getGroup()).toBe<GroupMode>("cluster");
+    prefs.setGroup("wiki");
+    expect(prefs.getGroup()).toBe<GroupMode>("wiki");
   });
 
   it("quality: default 'medium', set 'high' round-trips", () => {
@@ -382,16 +382,13 @@ describe("prefs: JSON keys — sizeWeights (no try/catch, spread of {})", () => 
     const w: SizeWeights = { in: 2, out: 1, words: 0.25, contrast: 1.75 };
     prefs.setSizeWeights(w);
     expect(prefs.getSizeWeights()).toEqual(w);
-    expect(JSON.parse(storage.getItem("akasha-size-weights") as string)).toEqual(
-      w,
-    );
+    expect(
+      JSON.parse(storage.getItem("akasha-size-weights") as string),
+    ).toEqual(w);
   });
 
   it("partially-populated stored object merges onto the boot defaults", () => {
-    storage.setItem(
-      "akasha-size-weights",
-      JSON.stringify({ contrast: 2.5 }),
-    );
+    storage.setItem("akasha-size-weights", JSON.stringify({ contrast: 2.5 }));
     expect(prefs.getSizeWeights()).toEqual({
       in: 1,
       out: 0.5,
@@ -493,9 +490,13 @@ describe("prefs: default storage", () => {
       setItem: vi.fn(),
       removeItem: vi.fn(),
     };
-    const g = globalThis as unknown as { window?: { localStorage: PrefsStorage } };
+    const g = globalThis as unknown as {
+      window?: { localStorage: PrefsStorage };
+    };
     const prev = g.window;
-    g.window = { localStorage: localMock } as unknown as { localStorage: PrefsStorage };
+    g.window = { localStorage: localMock } as unknown as {
+      localStorage: PrefsStorage;
+    };
     try {
       const p = createPrefs();
       p.setTheme("cosmos");

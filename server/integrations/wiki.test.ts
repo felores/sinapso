@@ -17,7 +17,7 @@ import {
   mergeWikis,
   DEFAULT_RAW_DESTINATION,
 } from "./wiki";
-import type { WikiConfig } from "./config";
+import { updateConfig, type WikiConfig } from "./config";
 
 const VAULT = mkdtempSync(join(tmpdir(), "solaris-wiki-test-"));
 const OUTSIDE = mkdtempSync(join(tmpdir(), "solaris-wiki-outside-"));
@@ -46,6 +46,8 @@ beforeAll(() => {
   mkdirSync(join(VAULT, "fallback", "wiki"), { recursive: true });
   // Wiki under an excluded folder — must be skipped.
   makeWiki("excluded/wiki", ["AGENTS.md"]);
+  // Wiki under the default archive folder — must be skipped by /api/wikis.
+  makeWiki("archive/wiki", ["AGENTS.md"]);
   // Non-wiki directory named differently — must NOT be discovered.
   mkdirSync(join(VAULT, "wikis"), { recursive: true });
   writeFileSync(join(VAULT, "wikis", "note.md"), "# not a wiki\n");
@@ -257,6 +259,40 @@ describe("discoverAndMerge (integration)", () => {
     expect(wiki.confidence).toBe("high");
     expect(wiki.contractFiles).toEqual(["AGENTS.md", "CLAUDE.md"]);
   });
+
+  it("omits saved wiki paths under excluded folders", () => {
+    const saved: WikiConfig[] = [
+      {
+        id: "excluded/wiki",
+        label: "Excluded Wiki",
+        path: "excluded/wiki",
+        enabled: true,
+        contractFiles: [],
+        rawDestination: "../raw/",
+        discovered: false,
+        confidence: "low",
+      },
+    ];
+    const merged = discoverAndMerge(VAULT, ["excluded"], saved);
+    expect(merged.find((w) => w.path === "excluded/wiki")).toBeUndefined();
+  });
+
+  it("omits saved wiki paths whose folders no longer exist", () => {
+    const saved: WikiConfig[] = [
+      {
+        id: "deleted/wiki",
+        label: "Deleted Wiki",
+        path: "deleted/wiki",
+        enabled: true,
+        contractFiles: [],
+        rawDestination: "../raw/",
+        discovered: false,
+        confidence: "low",
+      },
+    ];
+    const merged = discoverAndMerge(VAULT, [], saved);
+    expect(merged.find((w) => w.path === "deleted/wiki")).toBeUndefined();
+  });
 });
 
 // --- Route: GET /api/wikis (F044) -----------------------------------------
@@ -294,6 +330,32 @@ describe("GET /api/wikis", () => {
     expect(paths).toContain("saas/climatia/wiki");
     expect(paths).toContain("scratch/wiki");
     expect(paths).not.toContain("excluded/wiki");
+    expect(paths).not.toContain("archive/wiki");
+  });
+
+  it("uses saved config excludes for wiki discovery even when graph metadata is stale", async () => {
+    const staleGraph = join(VAULT, "stale-graph.json");
+    const configPath = join(VAULT, "stale-config.json");
+    writeFileSync(
+      staleGraph,
+      JSON.stringify({
+        meta: { vaultName: "test", vaultPath: VAULT, notes: 1, excludes: [] },
+        nodes: [{ id: "real.md", title: "Real", phantom: false }],
+        links: [],
+      }),
+    );
+    updateConfig(
+      { vaults: { [VAULT]: { path: VAULT, excludes: ["agencia"], wikis: [] } } },
+      configPath,
+    );
+    const { app: staleApp } = createApp(staleGraph, undefined, { configPath });
+
+    const res = await request(staleApp).get("/api/wikis");
+    const paths = (res.body.wikis as WikiConfig[]).map((w) => w.path);
+
+    expect(res.status).toBe(200);
+    expect(paths).toContain("wiki");
+    expect(paths).not.toContain("agencia/wiki");
   });
 
   it("marks the root wiki with high confidence and AGENTS/CLAUDE contracts", async () => {

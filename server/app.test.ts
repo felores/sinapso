@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { scanVault } from "../scanner/scan";
+import { updateConfig } from "./integrations/config";
 
 // Throwaway vault with one real note. The graph.json points /api/note's
 // vaultRoot here so the path-traversal guard can be exercised end-to-end.
@@ -96,6 +97,45 @@ describe("server: /api/note-lines slice + guard", () => {
   it("rejects a phantom: id with 404", async () => {
     const res = await request(app).get("/api/note-lines?id=phantom:x");
     expect(res.status).toBe(404);
+  });
+});
+
+describe("server: rescan excludes", () => {
+  it("uses vault-scoped, archive, and images-folder config excludes on rescan", async () => {
+    const root = mkdtempSync(join(tmpdir(), "solaris-rescan-excludes-"));
+    try {
+      mkdirSync(join(root, "skip"));
+      mkdirSync(join(root, "done"));
+      mkdirSync(join(root, "media"));
+      writeFileSync(join(root, "keep.md"), "# Keep\n");
+      writeFileSync(join(root, "skip", "hidden.md"), "# Hidden\n");
+      writeFileSync(join(root, "done", "archived.md"), "# Archived\n");
+      writeFileSync(join(root, "media", "image-note.md"), "# Image note\n");
+      const graph = join(root, "graph.json");
+      scanVault({ vault: root, out: graph });
+      const configPath = join(root, "config.json");
+      updateConfig(
+        {
+          archiveDestination: "done",
+          imagesDestination: "media",
+          vaults: { [root]: { path: root, excludes: ["skip"], wikis: [] } },
+        },
+        configPath,
+      );
+      const { app } = createApp(graph, undefined, { configPath });
+
+      const res = await request(app).post("/api/rescan");
+      const ids = (res.body.graph.nodes as Array<{ id: string }>).map((n) => n.id);
+
+      expect(res.status).toBe(200);
+      expect(res.body.graph.meta.excludes).toEqual(["skip", "done", "media"]);
+      expect(ids).toContain("keep.md");
+      expect(ids).not.toContain("skip/hidden.md");
+      expect(ids).not.toContain("done/archived.md");
+      expect(ids).not.toContain("media/image-note.md");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

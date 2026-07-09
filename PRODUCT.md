@@ -22,7 +22,7 @@ Solaris began as a repository with a single star. It was created by Fable, the m
 
 You spent years building a knowledge base. Thousands of notes, carefully linked. And what do you get for it? A file tree. A search box. A 2D graph that turns into an unreadable hairball and drops frames the moment your vault gets serious. You can't see the shape of what you know, you can't spot the gaps, and getting *new* knowledge in means copy-pasting out of PDFs and Word files that pollute everything they touch.
 
-Solaris flips that. Your vault becomes a place you visit. Patterns you never noticed are suddenly obvious - that orange cluster you forgot about, the bright strands connecting two domains you didn't know were related. New material flows in clean: drop a URL, a YouTube video, a Word file, and it comes out as a tidy note, previewed before it's saved, linked into what you already have. And when your hands are busy or your thoughts are faster than your typing, you just say what you want.
+Solaris flips that. Your vault becomes a place you visit. Patterns you never noticed are suddenly obvious - that orange cluster you forgot about, the bright strands connecting two domains you didn't know were related. New material flows in clean: drop a URL, a Word file, and it comes out as a tidy note, previewed before it's saved, linked into what you already have. And when your hands are busy or your thoughts are faster than your typing, you just say what you want.
 
 ## What You Can Do With It
 
@@ -30,7 +30,7 @@ Solaris flips that. Your vault becomes a place you visit. Patterns you never not
 - **Read without leaving the map** - click a note, it opens beside the graph. One more click sends it to Obsidian for hand-editing.
 - **Talk to your vault** - "show me what I have on temporal knowledge graphs" opens panels, finds notes, synthesizes answers. Interrupt it mid-sentence; it keeps up. It can draft a document with you and file it where it belongs.
 - **Search three ways** - by keyword, by meaning (finds notes that are *about* the same thing even with different words), or out on the web with an analysis of the results, not just links.
-- **Turn anything into a note** - a PDF, a Word file, a slide deck, a YouTube URL (you get the transcript), a web result. Preview first, save when you approve, linked into your base.
+- **Turn documents into notes** - a PDF, a Word file, a slide deck, a web page, a web result. Preview first, save when you approve, linked into your base.
 - **Use selected text as context** - highlight a passage and launch a research or expansion workflow from it. No chatbot wall-of-text; the result lands as something you keep.
 - **Keep versions** - every note has a history. Preview an old version, restore it if you liked it better. Nothing is ever silently overwritten.
 - **Make it yours** - ten themes, four node styles, your groups, your colors, filters that persist.

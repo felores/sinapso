@@ -37,7 +37,14 @@ import * as THREE from "three";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import * as i18n from "./i18n";
 import { startVoice, type VoiceSession } from "./voice";
-import { THEMES, PALETTE, FALLBACK_COLORS, nodeColorFor, type GNodeLike, type NodeColorDeps } from "./theme";
+import {
+  THEMES,
+  PALETTE,
+  FALLBACK_COLORS,
+  nodeColorFor,
+  type GNodeLike,
+  type NodeColorDeps,
+} from "./theme";
 import { spectrumComplement, spectrumHslToRgb } from "./spectrum";
 import type { GNode, GLink } from "./types";
 import { filterFields, compileMatcher } from "./filters";
@@ -74,6 +81,7 @@ interface Graph {
     notes: number;
     links: number;
     phantoms: number;
+    excludes: string[];
     pillars: string[];
   };
   nodes: GNode[];
@@ -131,6 +139,16 @@ function stripLeadingTitle(content: string, title: string): string {
   return content;
 }
 
+function ensureReaderTitle(content: string, title: string): string {
+  const body = stripLeadingTitle(content, title);
+  const first = body.split("\n").find((line) => line.trim());
+  return first && /^#\s+/.test(first) ? body : `# ${title}\n\n${body}`;
+}
+
+function sanitizeRenderedMarkdown(html: string): string {
+  return DOMPurify.sanitize(html, { FORBID_ATTR: ["style"] });
+}
+
 // Open-in-new-tab glyph (lucide external-link), same as the Tools-menu links.
 // Appended to external anchors so they read as "opens a new tab".
 const EXT_ICON =
@@ -184,10 +202,11 @@ async function boot() {
   // ===== GROUPING: COLOR BY PILLAR (FOLDER) OR BY FIRST #TAG =====
   // Allows both structural (folder-based) and semantic (tag-based) coloring
   // User picks a grouping mode (persisted); group colors are customizable and persisted
-  type GroupMode = "folder" | "tag" | "cluster";
+  type GroupMode = "folder" | "tag" | "cluster" | "wiki";
   let groupMode = (new URLSearchParams(window.location.search).get("group") ||
     prefs.getGroup()) as GroupMode;
-  if (!["folder", "tag", "cluster"].includes(groupMode)) groupMode = "folder";
+  if (!["folder", "tag", "cluster", "wiki"].includes(groupMode))
+    groupMode = "folder";
   let groups: string[] = [];
   let groupCounts = new Map<string, number>();
   const groupOfId = new Map<string, string>();
@@ -195,17 +214,58 @@ async function boot() {
   // semantic-cluster labels (F033): node id -> friendly cluster name. Filled by
   // computeSemanticClusters() once the mutual-KNN edges (F031) are loaded.
   const clusterNameOfId = new Map<string, string>();
+  let enabledWikis: AdminWikiConfig[] = [];
+  let enabledWikisLoaded = false;
+  let enabledWikisRequest: Promise<AdminWikiConfig[]> | null = null;
+  const wikiOn: Record<string, boolean> = {};
+
+  function wikiForId(id: string): AdminWikiConfig | null {
+    const clean = id.replace(/\\/g, "/");
+    return (
+      enabledWikis.find((w) => {
+        const path = w.path.replace(/\\/g, "/").replace(/\/+$/, "");
+        return !!path && (clean === path || clean.startsWith(`${path}/`));
+      }) ?? null
+    );
+  }
+
+  function wikiDisplayName(
+    wiki: Pick<AdminWikiConfig, "label" | "path">,
+  ): string {
+    return (wiki.label || wiki.path).replace(/\/wiki$/i, "");
+  }
+
+  function wikiColorKey(wiki: Pick<AdminWikiConfig, "id">): string {
+    return `wiki:${wiki.id}`;
+  }
+
+  function colorGroupOf(n: GNodeLike): string {
+    if (groupMode !== "wiki") return groupOf(n);
+    const wiki = wikiForId(n.id);
+    return wiki ? wikiColorKey(wiki) : "Unwritten";
+  }
+
+  function colorGroups(): string[] {
+    return [
+      ...new Set([...groups, "Unwritten", ...enabledWikis.map(wikiColorKey)]),
+    ];
+  }
+
+  function layerVisible(n: GNode): boolean {
+    const wiki = wikiForId(n.id);
+    return wiki ? wikiOn[wiki.id] !== false : pillarOn[groupOf(n)] !== false;
+  }
 
   function computeGroups() {
     groupOfId.clear();
     const raw = (n: GNode) =>
       n.phantom
         ? "Unwritten"
-        : groupMode === "folder"
-          ? n.pillar
-          : groupMode === "tag"
-            ? (n.tags?.[0] ?? "untagged")
-            : (clusterNameOfId.get(n.id) ?? "unclustered");
+        : groupMode === "tag"
+          ? (n.tags?.[0] ?? "untagged")
+          : groupMode === "cluster"
+            ? (clusterNameOfId.get(n.id) ?? "unclustered")
+            : n.pillar;
     const rawCounts = new Map<string, number>();
     for (const n of data.nodes) {
       const g = raw(n);
@@ -236,7 +296,7 @@ async function boot() {
   const colorOf: Record<string, string> = {};
   function recomputeColors() {
     let fb = 0;
-    for (const g of groups) {
+    for (const g of colorGroups()) {
       colorOf[g] =
         customColors[g] ??
         T().palette?.[g] ??
@@ -269,7 +329,8 @@ async function boot() {
 
   const initialSelectionParams = new URLSearchParams(window.location.search);
   const pendingSelect = sessionStorage.getItem("solaris-pending-select");
-  const pendingSelectNoLog = sessionStorage.getItem("solaris-pending-select-nolog") === "1";
+  const pendingSelectNoLog =
+    sessionStorage.getItem("solaris-pending-select-nolog") === "1";
   if (pendingSelect) sessionStorage.removeItem("solaris-pending-select");
   sessionStorage.removeItem("solaris-pending-select-nolog");
   function hashNodeId(): string | null {
@@ -322,7 +383,7 @@ async function boot() {
   let filterHidden = new Set<string>(); // node ids hidden by the active chain
 
   const visible = (n: GNode) =>
-    pillarOn[groupOf(n)] !== false &&
+    layerVisible(n) &&
     (showPhantoms || !n.phantom) &&
     (showOrphans || degree(n) > 0) &&
     !filterHidden.has(n.id);
@@ -618,8 +679,8 @@ async function boot() {
     themePalette: T().palette,
     palette: PALETTE,
     fallbackColors: FALLBACK_COLORS,
-    groups,
-    groupOf,
+    groups: colorGroups(),
+    groupOf: colorGroupOf,
     theme: { selected: T().selected, dim: T().dim },
     selected,
     inFocus,
@@ -770,9 +831,10 @@ async function boot() {
   async function fetchSemantic(): Promise<boolean> {
     if (semanticReady) return true;
     try {
-      const d = await api<{ available: boolean; edges?: Array<{ source: string; target: string; score: number }> }>(
-        "/api/semantic",
-      );
+      const d = await api<{
+        available: boolean;
+        edges?: Array<{ source: string; target: string; score: number }>;
+      }>("/api/semantic");
       if (!d.available) return false;
       semanticLinks = (
         d.edges as Array<{ source: string; target: string; score: number }>
@@ -811,9 +873,10 @@ async function boot() {
   ): Promise<Record<string, number[]> | null> {
     if (arrLayoutMem.has(mode)) return arrLayoutMem.get(mode)!;
     try {
-      const d = await api<{ fingerprint: string; positions: Record<string, number[]> }>(
-        `/api/layout?arrangement=${mode}`,
-      );
+      const d = await api<{
+        fingerprint: string;
+        positions: Record<string, number[]>;
+      }>(`/api/layout?arrangement=${mode}`);
       if (d.fingerprint !== data.meta.fingerprint) return null;
       arrLayoutMem.set(mode, d.positions);
       return d.positions;
@@ -1147,8 +1210,7 @@ async function boot() {
   // discrete GPU holds ~55fps from 256 to 16,384/node; the cost lives in
   // draw calls + close-range fill rate, so tiers map to GPU class).
   const pcExplicit =
-    new URLSearchParams(window.location.search).get("pc") ||
-    prefs.getPc();
+    new URLSearchParams(window.location.search).get("pc") || prefs.getPc();
   const tierPc = () => QUALITY[quality].pc;
   let particleCount =
     pcExplicit && pcExplicit !== "auto" ? Number(pcExplicit) : tierPc();
@@ -1622,6 +1684,9 @@ async function boot() {
       window as unknown as { CSS?: { highlights?: Map<string, unknown> } }
     ).CSS?.highlights?.delete("passage");
     // Reset version UI for the new note.
+    const topWikiAction = $("#reader-wiki-top");
+    topWikiAction.innerHTML = "";
+    topWikiAction.classList.add("hidden");
     $("#reader-find").classList.remove("versions-expanded");
     ($("#reader-versions") as HTMLSelectElement).innerHTML = "";
     $("#reader-version-restore").classList.add("hidden");
@@ -1661,7 +1726,8 @@ async function boot() {
       // (the node title/type already came from it via the scanner).
       const stripped = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
       // [[wiki links]] -> in-app navigation spans
-      const prepped = stripped.replace(
+      const titled = ensureReaderTitle(stripped, n.title);
+      const prepped = titled.replace(
         /\[\[([^\]|#\n]+)(?:#[^\]|\n]*)?(?:\|([^\]\n]*))?\]\]/g,
         (_m: string, target: string, alias?: string) =>
           `<a class="wiki" data-target="${target.trim().replace(/"/g, "&quot;")}">${alias ?? target}</a>`,
@@ -1669,7 +1735,16 @@ async function boot() {
       // KTD13: sanitize rendered note HTML. Notes saved from Exa results or
       // ingested documents carry untrusted content; unsanitized script would
       // run same-origin and could drive the token-authenticated endpoints.
-      body.innerHTML = DOMPurify.sanitize(await marked.parse(prepped));
+      body.innerHTML = sanitizeRenderedMarkdown(await marked.parse(prepped));
+      const wikiPreview: IngestPreview = {
+        source: n.id,
+        sourceLabel: n.id,
+        title: n.title,
+        markdown: stripped,
+        via: "solaris-vault-note",
+      };
+      topWikiAction.appendChild(renderReaderWikiAction(wikiPreview, "top"));
+      topWikiAction.classList.remove("hidden");
       openNoteWords = countWords(stripped);
       updateBrandStats();
       // External URL links open in a new tab so they never replace the app.
@@ -1683,10 +1758,15 @@ async function boot() {
       // Runs on the sanitized DOM (no innerHTML), so DOMPurify stays intact.
       if (highlightSnippet) highlightPassage(body, highlightSnippet);
       // Fixed-order footer: related notes (async) above research questions.
+      const showBottomWikiAction =
+        openNoteWords >= 300 || stripped.length >= 2000;
+      const wikiSlot = document.createElement("div");
       const relatedSlot = document.createElement("div");
       const orphanSlot = document.createElement("div");
       const questionsSlot = document.createElement("div");
-      body.append(relatedSlot, orphanSlot, questionsSlot);
+      if (showBottomWikiAction)
+        wikiSlot.appendChild(renderReaderWikiAction(wikiPreview, "bottom"));
+      body.append(wikiSlot, relatedSlot, orphanSlot, questionsSlot);
       void appendRelated(n, relatedSlot);
       void appendOrphanLink(n, orphanSlot);
       appendNoteQuestions(n, questionsSlot);
@@ -1726,25 +1806,32 @@ async function boot() {
     prev.classList.toggle("hidden", !hasHistory);
     next.classList.toggle("hidden", !hasHistory);
     status.classList.toggle("hidden", readerPreviewingVersion);
-    status.textContent = i18n.t(readerNoteVersioned ? "reader.versioned" : "reader.unversioned");
+    status.textContent = i18n.t(
+      readerNoteVersioned ? "reader.versioned" : "reader.unversioned",
+    );
     status.classList.toggle("versioned", readerNoteVersioned);
     status.classList.toggle("unversioned", !readerNoteVersioned);
     sel.disabled = !hasHistory;
     prev.disabled = !hasHistory || idx === history.length - 1;
     next.disabled = !hasHistory || idx < 0;
-    checkpoint.disabled = readerPreviewingVersion || !readerNoteDirty || !openNodeId;
-    restore.classList.toggle("hidden", !readerPreviewingVersion || !sel.value || !readerNoteVersioned);
+    checkpoint.disabled =
+      readerPreviewingVersion || !readerNoteDirty || !openNodeId;
+    restore.classList.toggle(
+      "hidden",
+      !readerPreviewingVersion || !sel.value || !readerNoteVersioned,
+    );
   }
 
-  async function renderVersionMarkdown(markdown: string) {
+  async function renderVersionMarkdown(markdown: string, title: string) {
     const body = $("#reader-body");
     const stripped = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
-    const prepped = stripped.replace(
+    const titled = ensureReaderTitle(stripped, title);
+    const prepped = titled.replace(
       /\[\[([^\]|#\n]+)(?:#[^\]|\n]*)?(?:\|([^\]\n]*))?\]\]/g,
       (_m: string, target: string, alias?: string) =>
         `<a class="wiki" data-target="${target.trim().replace(/"/g, "&quot;")}">${alias ?? target}</a>`,
     );
-    body.innerHTML = DOMPurify.sanitize(await marked.parse(prepped));
+    body.innerHTML = sanitizeRenderedMarkdown(await marked.parse(prepped));
     for (const a of body.querySelectorAll<HTMLAnchorElement>("a[href]")) {
       a.target = "_blank";
       a.rel = "noopener noreferrer";
@@ -1776,7 +1863,10 @@ async function boot() {
         opt.textContent = `${d} — ${v.subject || v.commit.slice(0, 7)}`;
         verSel.appendChild(opt);
       }
-      const shouldShowToggle = readerNoteVersioned || readerNoteDirty || selectableVersions().length > 0;
+      const shouldShowToggle =
+        readerNoteVersioned ||
+        readerNoteDirty ||
+        selectableVersions().length > 0;
       if (!shouldShowToggle) {
         $("#reader-find").classList.remove("versions-expanded");
         toggle.classList.add("hidden");
@@ -1805,7 +1895,7 @@ async function boot() {
       const { markdown } = await api<{ markdown: string }>(
         `/api/note?id=${encodeURIComponent(n.id)}&nolog=1`,
       );
-      await renderVersionMarkdown(markdown);
+      await renderVersionMarkdown(markdown, selected?.title ?? "Note");
       readerPreviewingVersion = false;
       updateVersionControls();
     } catch {
@@ -1820,7 +1910,7 @@ async function boot() {
       const { markdown } = await api<{ markdown: string }>(
         `/api/note-version?id=${encodeURIComponent(n.id)}&commit=${encodeURIComponent(commit)}`,
       );
-      await renderVersionMarkdown(markdown);
+      await renderVersionMarkdown(markdown, selected?.title ?? "Note");
       readerPreviewingVersion = true;
       updateVersionControls();
     } catch {
@@ -1875,20 +1965,23 @@ async function boot() {
     }
   }
 
-  ($("#reader-versions") as HTMLSelectElement).addEventListener("change", (e) => {
-    const sel = e.target as HTMLSelectElement;
-    const commit = sel.value;
-    if (!commit || !openNodeId) {
-      $("#reader-version-restore").classList.add("hidden");
-      readerPreviewingVersion = false;
-      const node = openNodeId ? byId.get(openNodeId) : null;
-      if (node) void viewCurrentVersion(node);
-      updateVersionControls();
-      return;
-    }
-    const node = byId.get(openNodeId);
-    if (node) void viewVersion(node, commit);
-  });
+  ($("#reader-versions") as HTMLSelectElement).addEventListener(
+    "change",
+    (e) => {
+      const sel = e.target as HTMLSelectElement;
+      const commit = sel.value;
+      if (!commit || !openNodeId) {
+        $("#reader-version-restore").classList.add("hidden");
+        readerPreviewingVersion = false;
+        const node = openNodeId ? byId.get(openNodeId) : null;
+        if (node) void viewCurrentVersion(node);
+        updateVersionControls();
+        return;
+      }
+      const node = byId.get(openNodeId);
+      if (node) void viewVersion(node, commit);
+    },
+  );
   $("#reader-versions-toggle").addEventListener("click", () => {
     const bar = $("#reader-find");
     if (bar.classList.contains("versions-expanded")) {
@@ -2172,11 +2265,7 @@ async function boot() {
       reader.classList.toggle("floating", geom.floating);
       if (geom.floating) {
         geom.height = clamp(geom.height, 220, window.innerHeight - 24);
-        geom.left = clamp(
-          geom.left,
-          0,
-          Math.max(0, viewportW - geom.width),
-        );
+        geom.left = clamp(geom.left, 0, Math.max(0, viewportW - geom.width));
         geom.top = clamp(geom.top, 0, window.innerHeight - 48);
         reader.style.width = geom.width + "px";
         reader.style.left = geom.left + "px";
@@ -2317,7 +2406,8 @@ async function boot() {
       clearSelection();
       await rescan(false);
     } catch (e) {
-      $("#reader-body").innerHTML = `<p class="muted">${escapeHtml(e instanceof Error ? e.message : i18n.t("reader.archiveFailed"))}</p>`;
+      $("#reader-body").innerHTML =
+        `<p class="muted">${escapeHtml(e instanceof Error ? e.message : i18n.t("reader.archiveFailed"))}</p>`;
     }
   });
   graph.onNodeRightClick((n: GNode) => openInObsidian(n));
@@ -2453,15 +2543,64 @@ async function boot() {
   function buildLegend() {
     const legend = $("#legend");
     legend.innerHTML = "";
-    for (const g of groups) {
+    const addHeader = (
+      title: string,
+      keys: string[],
+      store: Record<string, boolean>,
+    ) => {
+      if (!keys.length) return;
+      const head = document.createElement("div");
+      head.className = "legend-section-head";
+      const label = document.createElement("span");
+      label.textContent = title;
+      const toggle = document.createElement("button");
+      toggle.className = "legend-section-toggle";
+      const active = keys.some((key) => store[key] !== false);
+      toggle.textContent = active ? "Active" : "Inactive";
+      toggle.setAttribute("aria-pressed", String(active));
+      const setAll = (on: boolean) => {
+        for (const key of keys) {
+          if (on) delete store[key];
+          else store[key] = false;
+        }
+        buildLegend();
+        refreshVisibility();
+      };
+      toggle.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setAll(!active);
+      });
+      head.append(label, toggle);
+      legend.appendChild(head);
+    };
+
+    const groupKeys = groups.filter((g) => g !== "Unwritten");
+    addHeader(
+      groupMode === "tag"
+        ? "Tags"
+        : groupMode === "cluster"
+          ? "Clusters"
+          : "Folders",
+      groupKeys,
+      pillarOn,
+    );
+    for (const g of groupKeys) {
       if (g === "Unwritten") continue;
       const row = document.createElement("div");
       row.className = "legend-row";
       row.classList.toggle("off", pillarOn[g] === false);
-      row.innerHTML =
-        `<input type="color" class="dot-pick" value="${colorOf[g]}" title="Pick a color for ${g}">` +
-        `<span class="legend-name">${g}</span><span class="count">${groupCounts.get(g) ?? 0}</span>`;
-      const pick = row.querySelector(".dot-pick") as HTMLInputElement;
+      const pick = document.createElement("input");
+      pick.type = "color";
+      pick.className = "dot-pick";
+      pick.value = colorOf[g];
+      pick.title = `Pick a color for ${g}`;
+      const name = document.createElement("span");
+      name.className = "legend-name";
+      name.textContent = g;
+      const count = document.createElement("span");
+      count.className = "count";
+      count.textContent = String(groupCounts.get(g) ?? 0);
+      row.append(pick, name, count);
       pick.addEventListener("click", (e) => e.stopPropagation());
       pick.addEventListener("input", () => {
         customColors[g] = pick.value;
@@ -2477,14 +2616,75 @@ async function boot() {
       });
       legend.appendChild(row);
     }
+
+    if (enabledWikis.length) {
+      const keys = enabledWikis.map((w) => w.id);
+      const counts = new Map<string, number>(keys.map((id) => [id, 0]));
+      for (const n of data.nodes) {
+        const wiki = wikiForId(n.id);
+        if (wiki) counts.set(wiki.id, (counts.get(wiki.id) ?? 0) + 1);
+      }
+      addHeader("Wikis", keys, wikiOn);
+      for (const wiki of enabledWikis) {
+        const row = document.createElement("div");
+        row.className = "legend-row";
+        row.classList.toggle("off", wikiOn[wiki.id] === false);
+        const key = wikiColorKey(wiki);
+        const pick = document.createElement("input");
+        pick.type = "color";
+        pick.className = "dot-pick";
+        pick.value = colorOf[key];
+        pick.title = `Pick a color for ${wikiDisplayName(wiki)}`;
+        const name = document.createElement("span");
+        name.className = "legend-name";
+        name.textContent = wikiDisplayName(wiki);
+        const count = document.createElement("span");
+        count.className = "count";
+        count.textContent = String(counts.get(wiki.id) ?? 0);
+        row.append(pick, name, count);
+        pick.addEventListener("click", (e) => e.stopPropagation());
+        pick.addEventListener("input", () => {
+          customColors[key] = pick.value;
+          prefs.setColors(customColors);
+          recomputeColors();
+          repaint();
+        });
+        row.addEventListener("click", (e) => {
+          e.stopPropagation();
+          wikiOn[wiki.id] = wikiOn[wiki.id] === false;
+          row.classList.toggle("off", wikiOn[wiki.id] === false);
+          refreshVisibility();
+        });
+        legend.appendChild(row);
+      }
+    }
   }
   buildLegend();
 
   // --- group-by mode (folder structure vs #tags) ---
-  ($("#group") as HTMLSelectElement).value = groupMode;
-  ($("#group") as HTMLSelectElement).addEventListener("change", async (e) => {
+  const groupSelect = $("#group") as HTMLSelectElement;
+  function syncGroupSelectOptions() {
+    const existingWikiOption = groupSelect.querySelector<HTMLOptionElement>(
+      'option[value="wiki"]',
+    );
+    if (enabledWikis.length && !existingWikiOption) {
+      const option = document.createElement("option");
+      option.value = "wiki";
+      option.textContent = "wiki";
+      groupSelect.appendChild(option);
+    } else if (!enabledWikis.length && existingWikiOption) {
+      existingWikiOption.remove();
+    }
+    groupSelect.value = groupMode;
+  }
+  syncGroupSelectOptions();
+  groupSelect.addEventListener("change", async (e) => {
     const sel = e.target as HTMLSelectElement;
     const mode = sel.value as GroupMode;
+    if (mode === "wiki" && !enabledWikis.length) {
+      sel.value = groupMode;
+      return;
+    }
     if (mode === "cluster") {
       sel.disabled = true;
       const ok = await fetchSemantic();
@@ -2607,6 +2807,17 @@ async function boot() {
   $("#filters-btn").addEventListener("click", () =>
     $("#filters").classList.toggle("hidden"),
   );
+  document.addEventListener("click", (e) => {
+    const target = e.target as Node;
+    const filtersPanel = $("#filters");
+    const settingsPanel = $("#settings");
+    const insideFloatingPanel = filtersPanel.contains(target) || settingsPanel.contains(target);
+    const fromPanelButton = ["#filters-btn", "#settings-btn", "#mi-filters", "#mi-settings"]
+      .some((id) => $(id).contains(target));
+    if (insideFloatingPanel || fromPanelButton) return;
+    filtersPanel.classList.add("hidden");
+    settingsPanel.classList.add("hidden");
+  });
   {
     const modeBtn = $("#filter-mode") as HTMLButtonElement;
     const input = $("#filter-input") as HTMLInputElement;
@@ -2755,14 +2966,24 @@ async function boot() {
     read: prefs.getLabelDistance,
     write: prefs.setLabelDistance,
   });
-  bindRange("label-size", String, (v) => {
-    labelSize = v;
-    for (const s of sprites.values()) s.textHeight = v;
-  }, { read: prefs.getLabelSize, write: prefs.setLabelSize });
-  bindRange("node-size", String, (v) => {
-    sizeFactor = v;
-    rescaleNodes();
-  }, { read: prefs.getNodeSize, write: prefs.setNodeSize });
+  bindRange(
+    "label-size",
+    String,
+    (v) => {
+      labelSize = v;
+      for (const s of sprites.values()) s.textHeight = v;
+    },
+    { read: prefs.getLabelSize, write: prefs.setLabelSize },
+  );
+  bindRange(
+    "node-size",
+    String,
+    (v) => {
+      sizeFactor = v;
+      rescaleNodes();
+    },
+    { read: prefs.getNodeSize, write: prefs.setNodeSize },
+  );
   const bindWeight = (id: string, key: "in" | "out" | "words" | "contrast") => {
     const el = $(`#${id}`) as HTMLInputElement;
     el.value = String(sizeWeights[key]);
@@ -2888,14 +3109,15 @@ async function boot() {
       runModeQuery(activeMode, q, context ?? undefined);
       return;
     }
-    if (!activeMode && q) (results.firstElementChild as HTMLElement | null)?.click();
+    if (!activeMode && q)
+      (results.firstElementChild as HTMLElement | null)?.click();
   }
 
   const addResult = (n: GNode, snippetText?: string) => {
     const row = document.createElement("div");
     row.className = "result";
     row.innerHTML =
-      `<span class="dot" style="background:${colorOf[groupOf(n)]}"></span>` +
+      `<span class="dot" style="background:${colorOf[colorGroupOf(n)]}"></span>` +
       `<span class="result-main"><span>${n.title}</span>` +
       (snippetText ? `<span class="snippet"></span>` : "") +
       `</span><span class="count">${n.pillar}</span>`;
@@ -2989,7 +3211,8 @@ async function boot() {
   function pointInSelection(sel: Selection, x: number, y: number): boolean {
     for (let i = 0; i < sel.rangeCount; i++) {
       for (const r of Array.from(sel.getRangeAt(i).getClientRects())) {
-        if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return true;
+        if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)
+          return true;
       }
     }
     return false;
@@ -2997,9 +3220,9 @@ async function boot() {
 
   function currentResearchEntry(): ResearchEntry | null {
     return currentEntryId
-      ? researchHistory.find((r) => r.id === currentEntryId) ?? null
+      ? (researchHistory.find((r) => r.id === currentEntryId) ?? null)
       : historyIdx >= 0
-        ? researchHistory[historyIdx] ?? null
+        ? (researchHistory[historyIdx] ?? null)
         : null;
   }
 
@@ -3024,7 +3247,9 @@ async function boot() {
           el.closest<HTMLAnchorElement>('a[href^="http"]') ??
           el
             .closest(".web-result")
-            ?.querySelector<HTMLAnchorElement>('a.web-result-title[href^="http"]');
+            ?.querySelector<HTMLAnchorElement>(
+              'a.web-result-title[href^="http"]',
+            );
         if (link?.href) return link.href;
       }
     }
@@ -3035,7 +3260,8 @@ async function boot() {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
     const target = document.activeElement as HTMLElement | null;
-    if (target?.closest("input, textarea, select, button, .dropdown")) return null;
+    if (target?.closest("input, textarea, select, button, .dropdown"))
+      return null;
     let host: HTMLElement | null = null;
     for (let i = 0; i < sel.rangeCount; i++) {
       const h = selectionHostForRange(sel.getRangeAt(i));
@@ -3088,13 +3314,31 @@ async function boot() {
   function showSelectionMenu(x: number, y: number, slot: SelectionContext) {
     setSelectionContext(slot);
     const actions: Array<[string, () => void]> = [
-      ["Semantic search", () => runSemanticQuery("", currentSelectionSnapshot(), "Selected text")],
-      ["Keyword search", () => runKeywordQuery("", currentSelectionSnapshot(), "Selected text")],
-      ["Web search", () => runWebQuery("", currentSelectionSnapshot(), "Selected text", false)],
-      ["Deep research", () => runWebQuery("", currentSelectionSnapshot(), "Selected text", true)],
-      ["Copy", () => {
-        if (navigator.clipboard) void navigator.clipboard.writeText(slot.text).catch(() => {});
-      }],
+      [
+        "Semantic search",
+        () => runSemanticQuery("", currentSelectionSnapshot(), "Selected text"),
+      ],
+      [
+        "Keyword search",
+        () => runKeywordQuery("", currentSelectionSnapshot(), "Selected text"),
+      ],
+      [
+        "Web search",
+        () =>
+          runWebQuery("", currentSelectionSnapshot(), "Selected text", false),
+      ],
+      [
+        "Deep research",
+        () =>
+          runWebQuery("", currentSelectionSnapshot(), "Selected text", true),
+      ],
+      [
+        "Copy",
+        () => {
+          if (navigator.clipboard)
+            void navigator.clipboard.writeText(slot.text).catch(() => {});
+        },
+      ],
     ];
     selectionMenu.innerHTML = "";
     for (const [label, run] of actions) {
@@ -3127,7 +3371,13 @@ async function boot() {
   // is detected (GET /api/integrations). Persisted as akasha-mode.
   type ModeName = "vault" | "web" | "ingest";
   type VaultScope = "semantic" | "keyword";
-  type ResearchMode = "web" | "semantic" | "keyword" | "ingest" | "article" | "document";
+  type ResearchMode =
+    | "web"
+    | "semantic"
+    | "keyword"
+    | "ingest"
+    | "article"
+    | "document";
   interface IntegrationsStatus {
     tools: {
       qmd: { installed: boolean; version: string | null };
@@ -3139,11 +3389,13 @@ async function boot() {
     defaultModel: string | null;
     writeDestination: string;
     archiveDestination: string;
+    imagesDestination: string;
     admin?: {
       activeVaultPath: string | null;
+      excludes: string[];
       vaults: Record<
         string,
-        { path: string; wikis: AdminWikiConfig[] }
+        { path: string; excludes?: string[]; wikis: AdminWikiConfig[] }
       >;
       promptDefaults: Record<string, string>;
       prompts: Record<string, string>;
@@ -3204,8 +3456,11 @@ async function boot() {
   let webScope: "deep" | "web" = prefs.getWebScope();
   let vaultScope: VaultScope = prefs.getVaultScope();
 
-  const postConfig = (patch: object) =>
-    api("/api/integrations/config", { json: patch });
+  const postConfig = async (patch: object) => {
+    const result = await api("/api/integrations/config", { json: patch });
+    enabledWikisLoaded = false;
+    return result;
+  };
 
   const modeReady = (m: ModeName): boolean => {
     const t = integrations?.tools;
@@ -3246,71 +3501,42 @@ async function boot() {
 
   // Fetch enabled wikis for the ingest choice card. Returns [] on failure.
   async function loadEnabledWikis(): Promise<AdminWikiConfig[]> {
-    try {
-      const { wikis } = await api<{ wikis: AdminWikiConfig[] }>("/api/wikis");
-      return wikis.filter((w) => w.enabled);
-    } catch {
-      return [];
+    if (enabledWikisLoaded) return enabledWikis;
+    if (enabledWikisRequest) return enabledWikisRequest;
+    enabledWikisRequest = (async () => {
+      try {
+        const { wikis } = await api<{ wikis: AdminWikiConfig[] }>("/api/wikis");
+        enabledWikis = wikis.filter((w) => w.enabled);
+        enabledWikisLoaded = true;
+        return enabledWikis;
+      } catch {
+        enabledWikis = [];
+        enabledWikisLoaded = false;
+        return [];
+      } finally {
+        enabledWikisRequest = null;
+      }
+    })();
+    return enabledWikisRequest;
+  }
+
+  async function refreshEnabledWikiLayers() {
+    enabledWikisLoaded = false;
+    enabledWikisRequest = null;
+    await loadEnabledWikis();
+    if (!enabledWikis.length && groupMode === "wiki") {
+      groupMode = "folder";
+      prefs.setGroup(groupMode);
     }
+    syncGroupSelectOptions();
+    computeGroups();
+    recomputeColors();
+    buildLegend();
+    refreshVisibility();
+    repaint();
   }
 
-  // Render the Inbox-vs-wiki chooser under an already converted preview.
-  function renderIngestChoice(
-    body: HTMLElement,
-    onAction: (target: { wikiId?: string; captureOnly?: boolean }) => Promise<void>,
-  ) {
-    const card = document.createElement("div");
-    card.className = "ingest-choice";
-    const select = document.createElement("select");
-    select.title = i18n.t("ingest.targetChoose");
-    const go = document.createElement("button");
-    const updateButtonLabel = () => {
-      go.textContent = select.value === "__capture"
-        ? i18n.t("ingest.actionCapture")
-        : i18n.t("ingest.actionWiki");
-    };
-    updateButtonLabel();
-    go.disabled = true;
-    card.append(select, go);
-    body.appendChild(card);
-
-    void loadEnabledWikis().then((enabled) => {
-      if (!enabled.length) {
-        const only = document.createElement("option");
-        only.value = "__capture";
-        only.textContent = i18n.t("ingest.capture");
-        select.appendChild(only);
-        select.value = "__capture";
-        updateButtonLabel();
-        go.disabled = false;
-        return;
-      }
-      const add = (value: string, text: string) => {
-        const o = document.createElement("option");
-        o.value = value;
-        o.textContent = text;
-        select.appendChild(o);
-      };
-      if (enabled.length > 1) add("", i18n.t("ingest.targetChoose"));
-      for (const w of enabled) add(w.id, w.label || w.path);
-      add("__capture", i18n.t("ingest.capture"));
-      select.value = enabled.length > 1 ? "" : (enabled[0].id || "__capture");
-      updateButtonLabel();
-      go.disabled = !select.value;
-      select.addEventListener("change", () => {
-        updateButtonLabel();
-        go.disabled = !select.value;
-      });
-    });
-
-    go.addEventListener("click", async () => {
-      if (select.value === "__capture") {
-        await onAction({ captureOnly: true });
-      } else if (select.value) {
-        await onAction({ wikiId: select.value });
-      }
-    });
-  }
+  void refreshEnabledWikiLayers();
 
   function setMode(m: ModeName | null) {
     // Web mode is gated behind one-time egress consent (R18/AE8).
@@ -3357,7 +3583,9 @@ async function boot() {
     prefs.setVaultScope(s);
     renderVaultScope();
   }
-  $("#scope-semantic").addEventListener("click", () => setVaultScope("semantic"));
+  $("#scope-semantic").addEventListener("click", () =>
+    setVaultScope("semantic"),
+  );
   $("#scope-keyword").addEventListener("click", () => setVaultScope("keyword"));
   renderVaultScope();
 
@@ -3382,7 +3610,9 @@ async function boot() {
       const r = el.getBoundingClientRect();
       const topbar = document.getElementById("topbar");
       const above =
-        !!el.closest("#topbar.topbar-rail #search-wrap, #selection-context-strip") ||
+        !!el.closest(
+          "#topbar.topbar-rail #search-wrap, #selection-context-strip",
+        ) ||
         (!!el.closest("#topbar-rail") &&
           !!topbar?.classList.contains("topbar-bottom-rail"));
       tip.classList.toggle("above", above);
@@ -3880,7 +4110,11 @@ async function boot() {
           const key = String(payload.key ?? "");
           const vars: Record<string, string | number> = {};
           for (const [k, v] of Object.entries(payload)) {
-            if (k !== "key" && k !== "type" && (typeof v === "string" || typeof v === "number"))
+            if (
+              k !== "key" &&
+              k !== "type" &&
+              (typeof v === "string" || typeof v === "number")
+            )
               vars[k] = v;
           }
           el.textContent = i18n.t(key, vars);
@@ -3945,7 +4179,8 @@ async function boot() {
 
   function restartLiveVoiceIfKeyed(provider: string) {
     if (!voiceSession) return;
-    const keyed = !!integrations?.voice?.keys[provider as "gemini" | "openai" | "xai"];
+    const keyed =
+      !!integrations?.voice?.keys[provider as "gemini" | "openai" | "xai"];
     restartVoiceAfterClose = keyed;
     voiceSession.stop(); // provider voices are fixed at session setup
   }
@@ -4041,7 +4276,9 @@ async function boot() {
       }
     });
   }
-  const integrationsLoaded = refreshIntegrations().then(() => refreshQmdStatus());
+  const integrationsLoaded = refreshIntegrations().then(() =>
+    refreshQmdStatus(),
+  );
 
   // ---- semantic surfaces: related notes, setup prompt, collection toggles (U4) ----
   type QmdState = "missing" | "uncovered" | "indexing" | "error" | "ready";
@@ -4453,8 +4690,7 @@ async function boot() {
     // Rail offset: a docked right panel shrinks by the rail width (CSS subtracts
     // --rail-w from --dock-w), and the corner buttons clear panel + rail.
     const bottomRail =
-      rail &&
-      (vw < 482 || window.matchMedia("(pointer: coarse)").matches);
+      rail && (vw < 482 || window.matchMedia("(pointer: coarse)").matches);
     const railW = rail && !bottomRail ? 40 : 0;
     root.style.setProperty("--rail-w", `${railW}px`);
     root.style.setProperty("--mobile-search-h", `${rail ? 64 : 0}px`);
@@ -4555,9 +4791,7 @@ async function boot() {
       dockBtn.title = i18n.t(rDockKey);
       if (rGeom.floating) {
         const minW = Math.min(300, maxW);
-        rGeom.width = floatingWasMaxed
-          ? maxW
-          : cl(rGeom.width, minW, maxW);
+        rGeom.width = floatingWasMaxed ? maxW : cl(rGeom.width, minW, maxW);
         rGeom.height = cl(
           rGeom.height || Math.round(window.innerHeight * 0.72),
           240,
@@ -4577,9 +4811,7 @@ async function boot() {
         // Docked: store the user width in --dock-w; CSS computes the effective
         // width (minus --rail-w when the rail is showing) and the right offset.
         const minW = Math.min(300, maxW);
-        rGeom.dockW = dockWasMaxed
-          ? maxW
-          : cl(rGeom.dockW || 400, minW, maxW);
+        rGeom.dockW = dockWasMaxed ? maxW : cl(rGeom.dockW || 400, minW, maxW);
         research.style.setProperty("--dock-w", `${rGeom.dockW}px`);
         Object.assign(research.style, {
           left: "",
@@ -4724,9 +4956,15 @@ async function boot() {
     else void runSemanticQuery(query, context);
   }
 
-  function appendContextNotices(body: HTMLElement, context?: SelectionSnapshot) {
+  function appendContextNotices(
+    body: HTMLElement,
+    context?: SelectionSnapshot,
+  ) {
     if (!context) return;
-    for (const text of [contextUseNotice(context), contextTrimNotice(context)]) {
+    for (const text of [
+      contextUseNotice(context),
+      contextTrimNotice(context),
+    ]) {
       if (!text) continue;
       const p = document.createElement("p");
       p.className = "research-notice";
@@ -4846,7 +5084,12 @@ async function boot() {
 
   function renderKeywordInto(
     body: HTMLElement,
-    results: Array<{ id: string; title: string; score?: number; snippet: string }>,
+    results: Array<{
+      id: string;
+      title: string;
+      score?: number;
+      snippet: string;
+    }>,
     query?: string,
   ) {
     if (query) {
@@ -4856,7 +5099,10 @@ async function boot() {
       body.appendChild(q);
     }
     if (!results.length) {
-      body.insertAdjacentHTML("beforeend", '<p class="muted">no keyword matches</p>');
+      body.insertAdjacentHTML(
+        "beforeend",
+        '<p class="muted">no keyword matches</p>',
+      );
       return;
     }
     for (const r of results) {
@@ -5069,8 +5315,11 @@ async function boot() {
   async function loadHistory() {
     try {
       researchHistory =
-        (await api<{ entries?: typeof researchHistory }>("/api/research/history"))
-          .entries ?? [];
+        (
+          await api<{ entries?: typeof researchHistory }>(
+            "/api/research/history",
+          )
+        ).entries ?? [];
     } catch {
       researchHistory = [];
     }
@@ -5253,7 +5502,10 @@ async function boot() {
     context?: SelectionSnapshot,
     label?: string,
   ) {
-    const effective = buildSemanticQuery(query, context ?? emptySelectionState());
+    const effective = buildSemanticQuery(
+      query,
+      context ?? emptySelectionState(),
+    );
     const shownQuery = displayQuery(query, label ?? "Selected text", context);
     openResearch("semantic");
     const body = $("#research-body");
@@ -5269,7 +5521,9 @@ async function boot() {
           score?: number;
           snippet: string;
         }>;
-      }>(`/api/passages?q=${encodeURIComponent(effective)}&displayQuery=${encodeURIComponent(shownQuery)}`);
+      }>(
+        `/api/passages?q=${encodeURIComponent(effective)}&displayQuery=${encodeURIComponent(shownQuery)}`,
+      );
       body.innerHTML = "";
       appendContextNotices(body, context);
       if (data.state === "indexing") {
@@ -5295,7 +5549,9 @@ async function boot() {
     context?: SelectionSnapshot,
     label?: string,
   ) {
-    const effective = context ? buildKeywordQuery(query, context) : query.trim();
+    const effective = context
+      ? buildKeywordQuery(query, context)
+      : query.trim();
     if (!effective) return;
     const shownQuery = displayQuery(query, label ?? "Selected text", context);
     openResearch("keyword");
@@ -5303,7 +5559,12 @@ async function boot() {
     body.innerHTML = '<p class="muted">searching keywords…</p>';
     try {
       const data = await api<{
-        results: Array<{ id: string; title: string; score?: number; snippet: string }>;
+        results: Array<{
+          id: string;
+          title: string;
+          score?: number;
+          snippet: string;
+        }>;
         historyId?: string;
       }>(
         `/api/search?q=${encodeURIComponent(effective)}&history=1&displayQuery=${encodeURIComponent(shownQuery)}`,
@@ -5315,10 +5576,11 @@ async function boot() {
       if (data.historyId) await noteQueryPersisted(data.historyId);
     } catch (e) {
       body.innerHTML = "";
-      const msg = e instanceof ApiError
-        ? ((e.body as { message?: string; error?: string } | null)?.message ??
-          (e.body as { message?: string; error?: string } | null)?.error)
-        : null;
+      const msg =
+        e instanceof ApiError
+          ? ((e.body as { message?: string; error?: string } | null)?.message ??
+            (e.body as { message?: string; error?: string } | null)?.error)
+          : null;
       researchError(msg ?? "keyword search failed — is the server running?");
     }
   }
@@ -5354,7 +5616,12 @@ async function boot() {
         historyId?: string;
         contextWarning?: string | null;
       }>("/api/research", {
-        json: { query: requestQuery, deep, contexts: context, displayQuery: shownQuery },
+        json: {
+          query: requestQuery,
+          deep,
+          contexts: context,
+          displayQuery: shownQuery,
+        },
       });
       body.innerHTML = "";
       appendContextNotices(body, context);
@@ -5369,7 +5636,8 @@ async function boot() {
     } catch (e) {
       body.innerHTML = "";
       if (e instanceof ApiError) {
-        const msg = (e.body as { message?: string } | null | undefined)?.message;
+        const msg = (e.body as { message?: string } | null | undefined)
+          ?.message;
         researchError(msg ?? "research failed");
       } else {
         researchError("research failed — is the server running?");
@@ -5399,7 +5667,8 @@ async function boot() {
     } catch (e) {
       body.innerHTML = "";
       if (e instanceof ApiError) {
-        const msg = (e.body as { message?: string } | null | undefined)?.message;
+        const msg = (e.body as { message?: string } | null | undefined)
+          ?.message;
         researchError(msg ?? "article fetch failed");
       } else {
         researchError("article fetch failed — is the server running?");
@@ -5507,65 +5776,89 @@ async function boot() {
     body.appendChild(actions);
   }
 
-  function renderIngestPreview(body: HTMLElement, preview: IngestPreview) {
-    body.innerHTML = "";
-    const h = document.createElement("h2");
-    h.className = "research-query";
-    h.textContent = preview.title;
-    body.appendChild(h);
-
-    if (/^https?:\/\//i.test(preview.source)) {
-      const src = document.createElement("a");
-      src.href = preview.source;
-      src.target = "_blank";
-      src.rel = "noopener noreferrer";
-      src.className = "answer-source article-source";
-      try {
-        src.textContent = new URL(preview.source).hostname;
-      } catch {
-        src.textContent = preview.source;
+  async function showWikiProposal(preview: IngestPreview, wikiId?: string) {
+    openResearch("ingest");
+    const body = $("#research-body");
+    body.innerHTML = '<p class="muted">building wiki proposal…</p>';
+    try {
+      const proposal = await api<WikiIngestProposal>(
+        "/api/wiki-ingest/propose",
+        {
+          json: { converted: preview, wikiId },
+        },
+      );
+      renderWikiProposal(body, proposal);
+    } catch (e) {
+      body.innerHTML = "";
+      if (e instanceof ApiError) {
+        const msg = (
+          e.body as { message?: string; error?: string } | null | undefined
+        )?.message;
+        researchError(msg ?? "ingest failed");
+      } else {
+        researchError(e instanceof Error ? e.message : "ingest failed");
       }
-      src.insertAdjacentHTML("beforeend", EXT_ICON);
-      body.appendChild(src);
     }
+  }
 
+  function renderReaderWikiAction(
+    preview: IngestPreview,
+    placement: "top" | "bottom",
+  ): HTMLElement {
     const actions = document.createElement("div");
-    actions.className = "ingest-preview-actions";
-    renderIngestChoice(actions, async (target) => {
-      body.innerHTML = `<p class="muted">${target.captureOnly ? "saving to Inbox…" : "building wiki proposal…"}</p>`;
-      try {
-        if (target.captureOnly) {
-          const data = await api<{ id: string }>("/api/ingest/save", {
-            json: { converted: preview },
-          });
-          body.innerHTML = '<p class="muted">saved — opening the note…</p>';
-          await openAfterIngest(String(data.id));
-          return;
-        }
-        const proposal = await api<WikiIngestProposal>("/api/wiki-ingest/propose", {
-          json: { converted: preview, wikiId: target.wikiId },
-        });
-        renderWikiProposal(body, proposal);
-      } catch (e) {
-        body.innerHTML = "";
-        if (e instanceof ApiError) {
-          const msg = (e.body as { message?: string; error?: string } | null | undefined)?.message;
-          researchError(msg ?? "ingest failed");
-        } else {
-          researchError(e instanceof Error ? e.message : "ingest failed");
+    actions.className = `reader-wiki-action reader-wiki-action-${placement}`;
+    const select = document.createElement("select");
+    select.className = "hidden";
+    const btn = document.createElement("button");
+    btn.className = "web-save";
+    btn.textContent = i18n.t("ingest.actionWiki");
+    btn.disabled = true;
+    actions.append(select, btn);
+
+    void loadEnabledWikis().then((wikis) => {
+      const currentWiki = wikiForId(preview.source);
+      if (currentWiki) {
+        btn.disabled = true;
+        btn.textContent = i18n.t("ingest.alreadyWiki");
+        return;
+      }
+      if (!wikis.length) {
+        btn.disabled = true;
+        btn.textContent = i18n.t("ingest.noWiki");
+        return;
+      }
+      if (wikis.length > 1) {
+        select.classList.remove("hidden");
+        for (const wiki of wikis) {
+          const o = document.createElement("option");
+          o.value = wiki.id;
+          o.textContent = wikiDisplayName(wiki);
+          select.appendChild(o);
         }
       }
+      btn.disabled = false;
+      btn.addEventListener("click", () => {
+        btn.disabled = true;
+        void showWikiProposal(
+          preview,
+          wikis.length > 1 ? select.value : wikis[0].id,
+        ).finally(() => {
+          btn.disabled = false;
+        });
+      });
     });
-    body.appendChild(actions);
 
-    const content = document.createElement("div");
-    content.className = "article-body";
-    body.appendChild(content);
-    void Promise.resolve(
-      marked.parse(stripLeadingTitle(preview.markdown, preview.title)),
-    ).then((html) => {
-      content.innerHTML = DOMPurify.sanitize(html);
+    return actions;
+  }
+
+  async function savePreviewToInbox(preview: IngestPreview) {
+    const data = await api<{ id: string }>("/api/ingest/save", {
+      json: { converted: preview },
     });
+    await openAfterIngest(String(data.id));
+    readerLeftPinned = true;
+    setReaderCtxLeft(true);
+    closeResearch();
   }
 
   // Hot-swap a rescanned graph into the LIVE scene: diff against the current
@@ -5700,11 +5993,14 @@ async function boot() {
       const preview = await api<IngestPreview>("/api/ingest/preview", {
         json: { source },
       });
-      renderIngestPreview(body, preview);
+      body.innerHTML = '<p class="muted">saving to Inbox…</p>';
+      await savePreviewToInbox(preview);
     } catch (e) {
       body.innerHTML = "";
       if (e instanceof ApiError) {
-        const msg = (e.body as { message?: string; error?: string } | null | undefined)?.message;
+        const msg = (
+          e.body as { message?: string; error?: string } | null | undefined
+        )?.message;
         researchError(msg ?? "ingest failed");
       } else {
         researchError(e instanceof Error ? e.message : "ingest failed");
@@ -5730,15 +6026,22 @@ async function boot() {
       try {
         const buf = await file.arrayBuffer();
         const params = new URLSearchParams({ name: file.name });
-        const res = await apiRaw(`/api/ingest/preview-upload?${params.toString()}`, {
-          method: "POST",
-          headers: { "content-type": "application/octet-stream" },
-          body: buf,
-          token: true,
-        });
-        const preview = (await res.json()) as IngestPreview & { message?: string; error?: string };
+        const res = await apiRaw(
+          `/api/ingest/preview-upload?${params.toString()}`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/octet-stream" },
+            body: buf,
+            token: true,
+          },
+        );
+        const preview = (await res.json()) as IngestPreview & {
+          message?: string;
+          error?: string;
+        };
         if (!res.ok) throw new Error(preview.message ?? preview.error);
-        renderIngestPreview(body, preview);
+        body.innerHTML = '<p class="muted">saving to Inbox…</p>';
+        await savePreviewToInbox(preview);
       } catch (e) {
         body.innerHTML = "";
         researchError(e instanceof Error ? e.message : "ingest failed");
@@ -6277,9 +6580,18 @@ async function boot() {
   // discovered wikis via /api/wikis (which already merges with saved state).
   async function openAdmin() {
     const T = (k: string) => i18n.t(k);
-    const vaultPath = integrations?.admin?.activeVaultPath ?? data.meta.vaultPath ?? "";
+    const vaultPath =
+      integrations?.admin?.activeVaultPath ?? data.meta.vaultPath ?? "";
     const inboxFolder = integrations?.writeDestination ?? "inbox";
     const archiveFolder = integrations?.archiveDestination ?? "archive";
+    const imagesFolder = integrations?.imagesDestination ?? "images";
+    const currentExcludes = withoutAutoManagedExcludes(
+      integrations?.admin?.vaults[vaultPath]?.excludes ??
+        integrations?.admin?.excludes ??
+        data.meta.excludes ??
+        [],
+      [archiveFolder, imagesFolder],
+    );
     const body = $("#modal-body");
     showModal(T("admin.title"), "");
     $("#modal").classList.add("admin-modal");
@@ -6291,7 +6603,9 @@ async function boot() {
           <div class="admin-folder-row">
             <label class="admin-folder-field"><span>${T("admin.inboxFolder")}</span><input id="admin-inbox-input" type="text" value="${escapeHtml(inboxFolder)}"></label>
             <label class="admin-folder-field"><span>${T("admin.archiveFolder")}</span><input id="admin-archive-input" type="text" value="${escapeHtml(archiveFolder)}"></label>
+            <label class="admin-folder-field"><span>${T("admin.imagesFolder")}</span><input id="admin-images-input" type="text" value="${escapeHtml(imagesFolder)}"></label>
           </div>
+          <label class="admin-folder-field admin-excludes-field"><span>${T("admin.excludeFolders")}</span><textarea id="admin-excludes-input" rows="2" placeholder="${T("admin.excludePlaceholder")}">${escapeHtml(currentExcludes.join(", "))}</textarea><small>${T("admin.excludeHint")}</small></label>
         </div>
       </section>
       <section class="admin-section">
@@ -6350,10 +6664,7 @@ async function boot() {
         return;
       }
       if (!(await startMaint(false, true, true))) {
-        showModal(
-          i18n.t("qmd.busyTitle"),
-          `<p>${i18n.t("qmd.busyBody")}</p>`,
-        );
+        showModal(i18n.t("qmd.busyTitle"), `<p>${i18n.t("qmd.busyBody")}</p>`);
       }
     });
   }
@@ -6371,7 +6682,9 @@ async function boot() {
       }
       const files = status.files ?? [];
       const clean = status.clean !== false;
-      const created = files.filter((f) => f.status === "??" || f.status.includes("A")).length;
+      const created = files.filter(
+        (f) => f.status === "??" || f.status.includes("A"),
+      ).length;
       const modified = files.filter((f) => /[MR]/.test(f.status)).length;
       const deleted = files.filter((f) => f.status.includes("D")).length;
       const other = Math.max(0, files.length - created - modified - deleted);
@@ -6527,16 +6840,24 @@ async function boot() {
       editor.appendChild(row);
     }
     const activate = (key: string) => {
-      list.querySelectorAll(".admin-prompt-tab").forEach((b) =>
-        b.classList.toggle("active", (b as HTMLElement).dataset.key === key),
-      );
-      editor.querySelectorAll(".admin-prompt-row").forEach((r) =>
-        r.classList.toggle("hidden", (r as HTMLElement).dataset.key !== key),
-      );
+      list
+        .querySelectorAll(".admin-prompt-tab")
+        .forEach((b) =>
+          b.classList.toggle("active", (b as HTMLElement).dataset.key === key),
+        );
+      editor
+        .querySelectorAll(".admin-prompt-row")
+        .forEach((r) =>
+          r.classList.toggle("hidden", (r as HTMLElement).dataset.key !== key),
+        );
     };
-    list.querySelectorAll(".admin-prompt-tab").forEach((b) =>
-      b.addEventListener("click", () => activate((b as HTMLElement).dataset.key!)),
-    );
+    list
+      .querySelectorAll(".admin-prompt-tab")
+      .forEach((b) =>
+        b.addEventListener("click", () =>
+          activate((b as HTMLElement).dataset.key!),
+        ),
+      );
     activate(PROMPT_KEYS[0]);
     box.querySelectorAll(".admin-reset").forEach((b) =>
       b.addEventListener("click", async () => {
@@ -6558,10 +6879,22 @@ async function boot() {
   async function saveAdmin(): Promise<boolean> {
     const status = $("#admin-status");
     status.textContent = i18n.t("admin.saving");
-    const vaultPath = integrations?.admin?.activeVaultPath ?? data.meta.vaultPath ?? "";
-    const requestedVaultPath = ($("#admin-vault-input") as HTMLInputElement).value.trim();
-    const inboxFolder = ($("#admin-inbox-input") as HTMLInputElement).value.trim() || "inbox";
-    const archiveFolder = ($("#admin-archive-input") as HTMLInputElement).value.trim() || "archive";
+    const vaultPath =
+      integrations?.admin?.activeVaultPath ?? data.meta.vaultPath ?? "";
+    const requestedVaultPath = (
+      $("#admin-vault-input") as HTMLInputElement
+    ).value.trim();
+    const inboxFolder =
+      ($("#admin-inbox-input") as HTMLInputElement).value.trim() || "inbox";
+    const archiveFolder =
+      ($("#admin-archive-input") as HTMLInputElement).value.trim() || "archive";
+    const previousArchiveFolder = integrations?.archiveDestination ?? "archive";
+    const previousImagesFolder = integrations?.imagesDestination ?? "images";
+    const imagesFolder =
+      ($("#admin-images-input") as HTMLInputElement).value.trim() || "images";
+    const excludes = parseAdminExcludes(
+      ($("#admin-excludes-input") as HTMLTextAreaElement).value,
+    );
     const prompts: Record<string, string | null> = {};
     const defaults = integrations?.admin?.promptDefaults ?? {};
     for (const row of document.querySelectorAll(
@@ -6583,13 +6916,43 @@ async function boot() {
         if (!body.graph)
           throw new Error(body.error ?? i18n.t("admin.saveFail"));
         applyGraphUpdate(body.graph);
+        const newVaultPath = body.graph.meta.vaultPath;
+        const existingWikis =
+          integrations?.admin?.vaults[newVaultPath]?.wikis ?? [];
         await postConfig({
+          vaults: newVaultPath
+            ? {
+                [newVaultPath]: {
+                  path: newVaultPath,
+                  excludes,
+                  wikis: existingWikis,
+                },
+              }
+            : {},
           prompts,
           writeDestination: inboxFolder,
           archiveDestination: archiveFolder,
+          imagesDestination: imagesFolder,
         });
         await refreshIntegrations();
-        ($("#admin-vault-input") as HTMLInputElement).value = body.graph.meta.vaultPath;
+        await refreshEnabledWikiLayers();
+        if (
+          excludesChanged(
+            excludes,
+            withoutAutoManagedExcludes(body.graph.meta.excludes ?? [], [
+              archiveFolder,
+              imagesFolder,
+            ]),
+          ) ||
+            archiveFolder !== previousArchiveFolder ||
+            imagesFolder !== previousImagesFolder
+        ) {
+          adminDirty = false;
+          await rescan(true);
+          return true;
+        }
+        ($("#admin-vault-input") as HTMLInputElement).value =
+          body.graph.meta.vaultPath;
         await renderAdminGit();
         await renderAdminWikis();
         adminDirty = false;
@@ -6625,13 +6988,30 @@ async function boot() {
       }
       await postConfig({
         vaults: vaultPath
-          ? { [vaultPath]: { path: vaultPath, wikis } }
+          ? { [vaultPath]: { path: vaultPath, excludes, wikis } }
           : {},
         prompts,
         writeDestination: inboxFolder,
         archiveDestination: archiveFolder,
+        imagesDestination: imagesFolder,
       });
       await refreshIntegrations();
+      await refreshEnabledWikiLayers();
+      if (
+        excludesChanged(
+          excludes,
+          withoutAutoManagedExcludes(data.meta.excludes ?? [], [
+            archiveFolder,
+            imagesFolder,
+          ]),
+        ) ||
+          archiveFolder !== previousArchiveFolder ||
+          imagesFolder !== previousImagesFolder
+      ) {
+        adminDirty = false;
+        await rescan(true);
+        return true;
+      }
       adminDirty = false;
       flashAdmin(i18n.t("admin.saved"));
       return true;
@@ -6639,6 +7019,50 @@ async function boot() {
       flashAdmin(e instanceof Error ? e.message : i18n.t("admin.saveFail"));
       return false;
     }
+  }
+
+  function parseAdminExcludes(value: string): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const part of value.split(/[,\n]+/)) {
+      const clean = part
+        .replace(/\\/g, "/")
+        .replace(/^\/+|\/+$/g, "")
+        .trim();
+      if (
+        !clean ||
+        clean === "." ||
+        clean.includes("..") ||
+        seen.has(clean.toLowerCase())
+      )
+        continue;
+      seen.add(clean.toLowerCase());
+      out.push(clean);
+    }
+    return out;
+  }
+
+  function withoutAutoManagedExcludes(
+    excludes: string[],
+    folders: string[],
+  ): string[] {
+    const managed = new Set(
+      folders
+        .map((p) => p.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "").toLowerCase())
+        .filter(Boolean),
+    );
+    return managed.size
+      ? excludes.filter(
+          (e) =>
+            !managed.has(
+              e.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "").toLowerCase(),
+            ),
+        )
+      : excludes;
+  }
+
+  function excludesChanged(a: string[], b: string[]): boolean {
+    return a.join("\n") !== b.join("\n");
   }
 
   function flashAdmin(msg: string) {
@@ -6659,7 +7083,6 @@ async function boot() {
     closeMenus();
     void openAdmin();
   });
-
 
   // ---- Help ----
   $("#mi-shortcuts").addEventListener("click", () => {
@@ -6860,10 +7283,11 @@ async function boot() {
       // View-menu dropdown so applyArrangement + persistence stay identical.
       if (k === "s") {
         const sel = $("#arrange") as HTMLSelectElement;
-        sel.value = ARRANGEMENT_ORDER[
-          (ARRANGEMENT_ORDER.indexOf(validArr(sel.value)) + 1) %
-            ARRANGEMENT_ORDER.length
-        ];
+        sel.value =
+          ARRANGEMENT_ORDER[
+            (ARRANGEMENT_ORDER.indexOf(validArr(sel.value)) + 1) %
+              ARRANGEMENT_ORDER.length
+          ];
         sel.dispatchEvent(new Event("change"));
         return;
       }
@@ -6921,7 +7345,6 @@ async function boot() {
     const target = byId.get(nodeId);
     if (target) select(target);
   });
-
 }
 
 // Translate the static chrome before boot() awaits the graph, so the menubar

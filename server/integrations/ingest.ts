@@ -92,16 +92,8 @@ function extractTitle(markdown: string): string | null {
   return null;
 }
 
-/** youtube.com/watch, youtu.be, /shorts, /live, /embed — markitdown only sees
- *  the SPA shell (no transcript), so these route to Exa /contents instead. */
-export function isYoutubeUrl(source: string): boolean {
-  return /^https?:\/\/(www\.|m\.)?(youtube\.com\/(watch|shorts|live|embed)|youtu\.be\/)/i.test(
-    source.trim(),
-  );
-}
-
-/** Write a note from already-fetched text (e.g. an Exa transcript), sharing the
- *  frontmatter + guarded-write path with ingestDocument. */
+/** Write a note from an already converted preview, sharing the frontmatter +
+ * guarded-write path with ingestDocument. */
 export async function ingestText(
   writeDeps: WriteDeps,
   opts: {

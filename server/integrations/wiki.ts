@@ -40,9 +40,7 @@ export function discoverWikis(
   if (!vaultRoot || !existsSync(vaultRoot)) return [];
   const readdir = deps.readdir ?? ((p) => readdirSync(p));
   const stat = deps.stat ?? ((p) => statSync(p));
-  const excludeSet = new Set(
-    excludes.map((e) => e.replace(/\\/g, "/").toLowerCase()),
-  );
+  const excludeSet = buildExcludeSet(excludes);
   const base = resolve(vaultRoot);
   const realBase = realpathSync(base);
   const found: WikiConfig[] = [];
@@ -71,7 +69,7 @@ export function discoverWikis(
       }
       if (real !== realBase && !real.startsWith(realBase + sep)) continue;
       const rel = relative(base, full).split(sep).join("/");
-      if (excludeSet.has(rel.toLowerCase())) continue;
+      if (isExcludedRel(rel, excludeSet)) continue;
       if (entry === "wiki") {
         found.push(buildWiki(rel || "wiki", base));
       }
@@ -173,6 +171,48 @@ export function discoverAndMerge(
   saved: WikiConfig[] = [],
   deps: DiscoverDeps = {},
 ): WikiConfig[] {
+  const excludeSet = buildExcludeSet(excludes);
   const discovered = discoverWikis(vaultRoot, excludes, deps);
-  return mergeWikis(discovered, saved);
+  return mergeWikis(
+    discovered,
+    saved.filter(
+      (w) => !isExcludedRel(w.path, excludeSet) && isExistingWikiDir(vaultRoot, w.path, deps),
+    ),
+  );
+}
+
+function isExistingWikiDir(
+  vaultRoot: string,
+  relPath: string,
+  deps: DiscoverDeps,
+): boolean {
+  const stat = deps.stat ?? ((p) => statSync(p));
+  try {
+    const base = resolve(vaultRoot);
+    const realBase = realpathSync(base);
+    const full = resolve(base, relPath);
+    const real = realpathSync(full);
+    if (real !== realBase && !real.startsWith(realBase + sep)) return false;
+    return stat(full).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function buildExcludeSet(excludes: string[]): Set<string> {
+  return new Set(
+    excludes.map((e) => normalizeRel(e)).filter(Boolean),
+  );
+}
+
+function normalizeRel(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "").toLowerCase();
+}
+
+function isExcludedRel(rel: string, excludeSet: Set<string>): boolean {
+  const clean = normalizeRel(rel);
+  for (const exclude of excludeSet) {
+    if (clean === exclude || clean.startsWith(`${exclude}/`)) return true;
+  }
+  return false;
 }

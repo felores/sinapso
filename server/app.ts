@@ -64,7 +64,6 @@ import {
   ingestBytes,
   ingestDocument,
   ingestText,
-  isYoutubeUrl,
   resolveIngestDestination,
   type ConvertedDocument,
 } from "./integrations/ingest.js";
@@ -259,8 +258,10 @@ export function createApp(
         defaultModel: cfg.defaultModel,
         writeDestination: cfg.writeDestination,
         archiveDestination: cfg.archiveDestination,
+        imagesDestination: cfg.imagesDestination,
         admin: {
           activeVaultPath: cfg.activeVaultPath,
+          excludes: graph.meta.excludes ?? [],
           vaults: cfg.vaults,
           promptDefaults: defaultPrompts(),
           prompts: effectivePrompts(cfg),
@@ -293,6 +294,7 @@ export function createApp(
         defaultModel: cfg.defaultModel,
         writeDestination: cfg.writeDestination,
         archiveDestination: cfg.archiveDestination,
+        imagesDestination: cfg.imagesDestination,
         activeVaultPath: cfg.activeVaultPath,
         vaults: cfg.vaults,
         promptDefaults: defaultPrompts(),
@@ -317,9 +319,9 @@ export function createApp(
         res.status(503).json({ error: "vault root is missing or not reachable" });
         return;
       }
-      const excludes = graph.meta.excludes ?? [];
       const cfg = loadConfig(configPath);
       const saved = cfg.vaults[vaultPath]?.wikis ?? [];
+      const excludes = effectiveExcludes(vaultPath, cfg);
       const wikis = discoverAndMerge(vaultPath, excludes, saved);
       res.json({ wikis });
     } catch (e) {
@@ -353,17 +355,20 @@ export function createApp(
     },
   );
 
-  // Exa /contents fetcher, shared by /api/article and the YouTube ingest path.
+  // Exa /contents fetcher for /api/article.
   const fetchArticle = createArticleFetcher(integrations?.exa);
   const ingestTargetConfig = (cfg: ReturnType<typeof loadConfig>) => {
-    const saved = cfg.vaults[vaultRoot]?.wikis ?? [];
+    const savedVault = cfg.vaults[vaultRoot];
+    const saved = savedVault?.wikis ?? [];
+    const excludes = effectiveExcludes(vaultRoot, cfg);
     return {
       ...cfg,
       vaults: {
         ...cfg.vaults,
         [vaultRoot]: {
           path: vaultRoot,
-          wikis: discoverAndMerge(vaultRoot, graph.meta.excludes ?? [], saved),
+          excludes,
+          wikis: discoverAndMerge(vaultRoot, excludes, saved),
         },
       },
     };
@@ -399,34 +404,6 @@ export function createApp(
     res: express.Response,
   ): Promise<ConvertedDocument | null> {
     const trimmed = source.trim();
-    if (isYoutubeUrl(trimmed)) {
-      if (
-        !requireWebConsent(
-          cfg,
-          res,
-          "Fetching a YouTube transcript goes through Exa — activate Web mode once to consent.",
-        ) ||
-        !requireExaKey(cfg, res, "Add your Exa API key in Tools → Integrations.")
-      ) {
-        return null;
-      }
-      const art = await fetchArticle(cfg.exaKey, trimmed);
-      if (!art.content) {
-        res.status(422).json({
-          error: "no-transcript",
-          message: "Exa returned no transcript for this video.",
-        });
-        return null;
-      }
-      return {
-        source: trimmed,
-        sourceLabel: trimmed,
-        title: title?.trim() || art.title,
-        markdown: art.content,
-        via: "exa-youtube",
-      };
-    }
-
     const bin = await requireMarkitdown(toolCache, () => detectAll(detectDeps), res);
     if (!bin) return null;
     return convertDocument(
@@ -519,41 +496,6 @@ export function createApp(
         wikiId: b.wikiId,
         captureOnly: b.captureOnly,
       });
-      // YouTube: markitdown only sees the SPA shell (no transcript), so fetch
-      // via Exa /contents, which extracts the transcript. Egress → gated on web
-      // consent + an Exa key, same as web research.
-      if (isYoutubeUrl(b.source)) {
-        if (
-          !requireWebConsent(
-            cfg,
-            res,
-            "Fetching a YouTube transcript goes through Exa — activate Web mode once to consent.",
-          ) ||
-          !requireExaKey(cfg, res, "Add your Exa API key in Tools → Integrations.")
-        ) {
-          return;
-        }
-        const art = await fetchArticle(cfg.exaKey, b.source.trim());
-        if (!art.content) {
-          res.status(422).json({
-            error: "no-transcript",
-            message: "Exa returned no transcript for this video.",
-          });
-          return;
-        }
-        const yr = await ingestText(
-          { vaultRoot, dataDir: dirname(graphPath) },
-          {
-            source: b.source.trim(),
-            title: art.title,
-            content: art.content,
-            via: "exa-youtube",
-            destination,
-          },
-        );
-        res.json({ ok: true, id: yr.id });
-        return;
-      }
       const bin = await requireMarkitdown(
         toolCache,
         () => detectAll(detectDeps),
@@ -2136,15 +2078,25 @@ export function createApp(
   };
 
   const scanAndReload = (vault: string, full = false) => {
+    const cfg = loadConfig(configPath);
+    const exclude = effectiveExcludes(vault, cfg);
     const g = scanVault({
       vault,
       out: graphPath,
-      exclude: graph.meta.excludes ?? [],
+      exclude,
       full,
     });
     reload();
     updateConfig({ activeVaultPath: g.meta.vaultPath }, configPath);
     return g;
+  };
+
+  const effectiveExcludes = (vault: string, cfg = loadConfig(configPath)) => {
+    const configured = cfg.vaults[vault]?.excludes ?? graph.meta.excludes ?? [];
+    const managed = [cfg.archiveDestination, cfg.imagesDestination]
+      .map((p) => p.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "").trim())
+      .filter((p) => p && !p.includes(".."));
+    return [...new Set([...configured, ...managed])];
   };
 
   // POST /api/rescan: Trigger incremental rescan of the vault

@@ -9,7 +9,7 @@
  */
 
 export type ModeName = "vault" | "web" | "ingest";
-export type GroupMode = "folder" | "tag" | "cluster";
+export type GroupMode = "folder" | "tag" | "cluster" | "wiki";
 export type QualityKey = "low" | "medium" | "high";
 export type NodeStyle = "classic" | "dodecahedron" | "starlight" | "particles";
 export type Arrangement = "links" | "semantic" | "hybrid";
@@ -191,7 +191,9 @@ function defaultStorage(): PrefsStorage {
   const w = (globalThis as { window?: { localStorage?: PrefsStorage } }).window;
   const ls = w?.localStorage;
   if (!ls) {
-    throw new Error("prefs: no storage injected and window.localStorage is unavailable");
+    throw new Error(
+      "prefs: no storage injected and window.localStorage is unavailable",
+    );
   }
   return ls;
 }
@@ -228,7 +230,9 @@ export function createPrefs(storage: PrefsStorage = defaultStorage()): Prefs {
 
     getGroup() {
       const v = get(KEY.group);
-      return v === "folder" || v === "tag" || v === "cluster" ? v : "folder";
+      return v === "folder" || v === "tag" || v === "cluster" || v === "wiki"
+        ? v
+        : "folder";
     },
     setGroup(v) {
       set(KEY.group, v);
