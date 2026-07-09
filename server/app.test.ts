@@ -394,6 +394,8 @@ describe("server: git note versions", () => {
       const res = await request(app).get("/api/note-versions?id=real.md");
       expect(res.status).toBe(200);
       expect(res.body.available).toBe(true);
+      expect(res.body.versioned).toBe(true);
+      expect(res.body.dirty).toBe(false);
       expect(res.body.versions.length).toBe(2);
       expect(res.body.versions[0].subject).toBe("second");
       expect(res.body.versions[0]).toHaveProperty("commit");
@@ -475,6 +477,69 @@ describe("server: git note versions", () => {
         .post("/api/note-version/restore")
         .send({ id: "real.md", commit: "deadbeef" });
       expect(res.status).toBe(403);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("checkpoints only the selected note", async () => {
+    const f = gitFixture();
+    try {
+      writeFileSync(join(f.vault, "real.md"), "# checkpoint\n");
+      writeFileSync(join(f.vault, "sibling.md"), "# staged sibling\n");
+      git(["add", "sibling.md"], f.vault);
+      const { app } = gitApp(f);
+      const token = (await request(app).get("/api/session")).body.token;
+
+      const res = await request(app)
+        .post("/api/note-version/checkpoint")
+        .set("x-solaris-token", token)
+        .send({ id: "real.md" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.checkpointed).toBe(true);
+      expect(res.body.versioned).toBe(true);
+      expect(
+        execFileSync("git", ["show", "--name-only", "--pretty=format:", "HEAD"], {
+          cwd: f.vault,
+        })
+          .toString()
+          .trim(),
+      ).toBe("real.md");
+      expect(
+        execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: f.vault })
+          .toString()
+          .trim(),
+      ).toBe("sibling.md");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not create duplicate checkpoints for clean notes", async () => {
+    const f = gitFixture();
+    try {
+      const { app } = gitApp(f);
+      const token = (await request(app).get("/api/session")).body.token;
+      const headBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: f.vault })
+        .toString()
+        .trim();
+
+      const res = await request(app)
+        .post("/api/note-version/checkpoint")
+        .set("x-solaris-token", token)
+        .send({ id: "real.md" });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(
+        expect.objectContaining({ ok: true, checkpointed: false, versioned: true }),
+      );
+      expect(
+        execFileSync("git", ["rev-parse", "HEAD"], { cwd: f.vault })
+          .toString()
+          .trim(),
+      ).toBe(headBefore);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }

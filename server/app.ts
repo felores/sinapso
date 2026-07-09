@@ -1024,6 +1024,22 @@ export function createApp(
     }
   }
 
+  type GitNoteContext = { available: true; repoRoot: string; repoRelativePath: string };
+  async function noteVersionState(ctx: GitNoteContext) {
+    const [versions, status] = await Promise.all([
+      gitFileHistory(realRunner, ctx.repoRoot, ctx.repoRelativePath),
+      gitStatus(realRunner, ctx.repoRoot, ctx.repoRelativePath),
+    ]);
+    return {
+      versions,
+      dirty: !status.clean,
+      versioned: status.clean && versions.length > 0,
+    };
+  }
+
+  const noteCheckpointMessage = (id: string) =>
+    `Checkpoint note: ${id.split(/[\\/]/).pop() || id}`;
+
   const noteSlug = (title: string) =>
     title
       .normalize("NFKD")
@@ -1616,12 +1632,7 @@ export function createApp(
         res.json({ available: false, versions: [] });
         return;
       }
-      const versions = await gitFileHistory(
-        realRunner,
-        ctx.repoRoot,
-        ctx.repoRelativePath,
-      );
-      res.json({ available: true, versions });
+      res.json({ available: true, ...(await noteVersionState(ctx)) });
     } catch (e) {
       writeFail(res, e, "note versions");
     }
@@ -1687,6 +1698,49 @@ export function createApp(
         res.json({ ok: true, id: r.id });
       } catch (e) {
         writeFail(res, e, "note version restore");
+      }
+    },
+  );
+
+  app.post(
+    "/api/note-version/checkpoint",
+    guarded,
+    express.json({ limit: "16kb" }),
+    async (req, res) => {
+      try {
+        const { id } = (req.body ?? {}) as Record<string, unknown>;
+        if (typeof id !== "string") {
+          res.status(400).json({ error: "id required" });
+          return;
+        }
+        const ctx = await gitContextForNote(id);
+        if (!ctx.available) {
+          res.status(404).json({ ok: false, error: "git history unavailable" });
+          return;
+        }
+        const before = await noteVersionState(ctx);
+        if (before.versioned) {
+          res.json({ ok: true, checkpointed: false, output: "Already checkpointed.", ...before });
+          return;
+        }
+        if (!before.dirty) {
+          res.status(400).json({ ok: false, error: "Nothing to checkpoint.", ...before });
+          return;
+        }
+        const result = await gitStageAndCommit(
+          realRunner,
+          ctx.repoRoot,
+          ctx.repoRelativePath,
+          noteCheckpointMessage(id),
+        );
+        const after = result.ok ? await noteVersionState(ctx) : before;
+        res.status(result.ok ? 200 : 400).json({
+          ...result,
+          checkpointed: result.ok,
+          ...after,
+        });
+      } catch (e) {
+        writeFail(res, e, "note checkpoint");
       }
     },
   );

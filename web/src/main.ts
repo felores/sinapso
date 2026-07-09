@@ -1600,7 +1600,16 @@ async function boot() {
     $("#reader-find").classList.remove("versions-expanded");
     ($("#reader-versions") as HTMLSelectElement).innerHTML = "";
     $("#reader-version-restore").classList.add("hidden");
+    $("#reader-version-status").classList.add("hidden");
+    $("#reader-version-prev").classList.add("hidden");
+    $("#reader-version-next").classList.add("hidden");
+    $("#reader-version-checkpoint").classList.add("hidden");
     $("#reader-versions-toggle").classList.add("hidden");
+    readerVersions = [];
+    readerNoteVersioned = false;
+    readerNoteDirty = false;
+    readerPreviewingVersion = false;
+    updateVersionControls();
     openNodeId = nextOpenNodeId;
     const body = $("#reader-body");
     if (n.phantom) {
@@ -1668,51 +1677,164 @@ async function boot() {
   }
 
   // ---- Git note versions: history select, old-version preview, restore ----
+  function selectedVersionIndex(): number {
+    const commit = ($("#reader-versions") as HTMLSelectElement).value;
+    return selectableVersions().findIndex((v) => v.commit === commit);
+  }
+
+  function selectableVersions(): NoteVersion[] {
+    return readerNoteVersioned ? readerVersions.slice(1) : [];
+  }
+
+  function updateVersionControls() {
+    const sel = $("#reader-versions") as HTMLSelectElement;
+    const status = $("#reader-version-status");
+    const prev = $("#reader-version-prev") as HTMLButtonElement;
+    const next = $("#reader-version-next") as HTMLButtonElement;
+    const checkpoint = $("#reader-version-checkpoint") as HTMLButtonElement;
+    const restore = $("#reader-version-restore") as HTMLButtonElement;
+    const history = selectableVersions();
+    const hasHistory = history.length > 0;
+    const showSelect = hasHistory || readerNoteVersioned;
+    const idx = selectedVersionIndex();
+    sel.classList.toggle("hidden", !showSelect);
+    prev.classList.toggle("hidden", !hasHistory);
+    next.classList.toggle("hidden", !hasHistory);
+    status.classList.toggle("hidden", readerPreviewingVersion);
+    status.textContent = i18n.t(readerNoteVersioned ? "reader.versioned" : "reader.unversioned");
+    status.classList.toggle("versioned", readerNoteVersioned);
+    status.classList.toggle("unversioned", !readerNoteVersioned);
+    sel.disabled = !hasHistory;
+    prev.disabled = !hasHistory || idx === history.length - 1;
+    next.disabled = !hasHistory || idx < 0;
+    checkpoint.disabled = readerPreviewingVersion || !readerNoteDirty || !openNodeId;
+    restore.classList.toggle("hidden", !readerPreviewingVersion || !sel.value || !readerNoteVersioned);
+  }
+
+  async function renderVersionMarkdown(markdown: string) {
+    const body = $("#reader-body");
+    const stripped = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+    const prepped = stripped.replace(
+      /\[\[([^\]|#\n]+)(?:#[^\]|\n]*)?(?:\|([^\]\n]*))?\]\]/g,
+      (_m: string, target: string, alias?: string) =>
+        `<a class="wiki" data-target="${target.trim().replace(/"/g, "&quot;")}">${alias ?? target}</a>`,
+    );
+    body.innerHTML = DOMPurify.sanitize(await marked.parse(prepped));
+    for (const a of body.querySelectorAll<HTMLAnchorElement>("a[href]")) {
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+    }
+  }
+
   async function loadNoteVersions(n: GNode) {
     const verSel = $("#reader-versions") as HTMLSelectElement;
     const toggle = $("#reader-versions-toggle");
     try {
-      const data = await api<{ available: boolean; versions?: Array<{ commit: string; committedAt: string; subject?: string }> }>(
+      const data = await api<NoteVersionsResponse>(
         `/api/note-versions?id=${encodeURIComponent(n.id)}`,
       );
-      if (!data.available || !data.versions?.length) return;
+      if (!data.available) return;
+      readerVersions = data.versions ?? [];
+      readerNoteVersioned = !!data.versioned;
+      readerNoteDirty = !!data.dirty;
       verSel.innerHTML = "";
       const cur = document.createElement("option");
       cur.value = "";
-      cur.textContent = i18n.t("reader.versions");
+      cur.textContent = selectableVersions().length
+        ? i18n.t("reader.versions")
+        : i18n.t("reader.noMoreVersions");
       verSel.appendChild(cur);
-      for (const v of data.versions) {
+      for (const v of selectableVersions()) {
         const opt = document.createElement("option");
         opt.value = v.commit;
         const d = new Date(v.committedAt).toLocaleString();
         opt.textContent = `${d} — ${v.subject || v.commit.slice(0, 7)}`;
         verSel.appendChild(opt);
       }
+      const shouldShowToggle = readerNoteVersioned || readerNoteDirty || selectableVersions().length > 0;
+      if (!shouldShowToggle) {
+        $("#reader-find").classList.remove("versions-expanded");
+        toggle.classList.add("hidden");
+        $("#reader-version-status").classList.add("hidden");
+        $("#reader-version-prev").classList.add("hidden");
+        $("#reader-version-next").classList.add("hidden");
+        $("#reader-version-checkpoint").classList.add("hidden");
+        $("#reader-version-restore").classList.add("hidden");
+        return;
+      }
       toggle.classList.remove("hidden");
+      $("#reader-version-status").classList.remove("hidden");
+      $("#reader-version-prev").classList.remove("hidden");
+      $("#reader-version-next").classList.remove("hidden");
+      $("#reader-version-checkpoint").classList.remove("hidden");
+      updateVersionControls();
     } catch {
       // No git / no history: silently hide.
     }
   }
 
+  async function viewCurrentVersion(n: GNode) {
+    const body = $("#reader-body");
+    body.innerHTML = '<p class="muted">loading…</p>';
+    try {
+      const { markdown } = await api<{ markdown: string }>(
+        `/api/note?id=${encodeURIComponent(n.id)}&nolog=1`,
+      );
+      await renderVersionMarkdown(markdown);
+      readerPreviewingVersion = false;
+      updateVersionControls();
+    } catch {
+      body.innerHTML = '<p class="muted">could not load note</p>';
+    }
+  }
+
   async function viewVersion(n: GNode, commit: string) {
     const body = $("#reader-body");
-    const restore = $("#reader-version-restore");
     body.innerHTML = '<p class="muted">loading…</p>';
     try {
       const { markdown } = await api<{ markdown: string }>(
         `/api/note-version?id=${encodeURIComponent(n.id)}&commit=${encodeURIComponent(commit)}`,
       );
-      const stripped = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
-      const prepped = stripped.replace(
-        /\[\[([^\]|#\n]+)(?:#[^\]|\n]*)?(?:\|([^\]\n]*))?\]\]/g,
-        (_m: string, target: string, alias?: string) =>
-          `<a class="wiki" data-target="${target.trim().replace(/"/g, "&quot;")}">${alias ?? target}</a>`,
-      );
-      body.innerHTML = DOMPurify.sanitize(await marked.parse(prepped));
-      restore.classList.remove("hidden");
+      await renderVersionMarkdown(markdown);
+      readerPreviewingVersion = true;
+      updateVersionControls();
     } catch {
       body.innerHTML = '<p class="muted">could not load version</p>';
     }
+  }
+
+  async function checkpointVersion(n: GNode) {
+    const checkpoint = $("#reader-version-checkpoint") as HTMLButtonElement;
+    checkpoint.disabled = true;
+    try {
+      await api("/api/note-version/checkpoint", { json: { id: n.id } });
+      readerPreviewingVersion = false;
+      await loadNoteVersions(n);
+      if (readerNoteDirty || selectableVersions().length > 0)
+        $("#reader-find").classList.add("versions-expanded");
+    } catch {
+      alert(i18n.t("reader.checkpointFailed"));
+    } finally {
+      updateVersionControls();
+    }
+  }
+
+  function goVersion(delta: number) {
+    const history = selectableVersions();
+    if (!openNodeId || !history.length) return;
+    const node = byId.get(openNodeId);
+    if (!node) return;
+    const current = selectedVersionIndex();
+    const next = current < 0 ? (delta > 0 ? 0 : -1) : current + delta;
+    if (next < 0) {
+      ($("#reader-versions") as HTMLSelectElement).value = "";
+      void viewCurrentVersion(node);
+      return;
+    }
+    if (next >= history.length) return;
+    const sel = $("#reader-versions") as HTMLSelectElement;
+    sel.value = history[next].commit;
+    void viewVersion(node, history[next].commit);
   }
 
   async function restoreVersion(n: GNode, commit: string) {
@@ -1733,6 +1855,10 @@ async function boot() {
     const commit = sel.value;
     if (!commit || !openNodeId) {
       $("#reader-version-restore").classList.add("hidden");
+      readerPreviewingVersion = false;
+      const node = openNodeId ? byId.get(openNodeId) : null;
+      if (node) void viewCurrentVersion(node);
+      updateVersionControls();
       return;
     }
     const node = byId.get(openNodeId);
@@ -1744,6 +1870,7 @@ async function boot() {
       bar.classList.remove("versions-expanded");
       $("#reader-version-restore").classList.add("hidden");
       ($("#reader-versions") as HTMLSelectElement).value = "";
+      readerPreviewingVersion = false;
       // Reopen current note to restore live content.
       if (openNodeId) {
         const node = byId.get(openNodeId);
@@ -1754,6 +1881,13 @@ async function boot() {
       bar.classList.add("versions-expanded");
       showFindBar();
     }
+  });
+  $("#reader-version-prev").addEventListener("click", () => goVersion(1));
+  $("#reader-version-next").addEventListener("click", () => goVersion(-1));
+  $("#reader-version-checkpoint").addEventListener("click", () => {
+    if (!openNodeId || readerPreviewingVersion) return;
+    const node = byId.get(openNodeId);
+    if (node) void checkpointVersion(node);
   });
   $("#reader-version-restore").addEventListener("click", () => {
     const commit = ($("#reader-versions") as HTMLSelectElement).value;
@@ -2235,6 +2369,10 @@ async function boot() {
     lastLinks = 0;
   let openNoteWords: number | null = null;
   let openNodeId: string | null = null;
+  let readerVersions: NoteVersion[] = [];
+  let readerNoteVersioned = false;
+  let readerNoteDirty = false;
+  let readerPreviewingVersion = false;
   let voiceStartedAt = 0;
   let voiceTimer: number | null = null;
   let voiceStatusTimer: number | null = null;
@@ -2975,6 +3113,17 @@ async function boot() {
     files?: Array<{ path: string; status: string }>;
   }
   type GitActionResult = { ok: boolean; output?: string; error?: string };
+  interface NoteVersion {
+    commit: string;
+    committedAt: string;
+    subject?: string;
+  }
+  interface NoteVersionsResponse {
+    available: boolean;
+    versions?: NoteVersion[];
+    versioned?: boolean;
+    dirty?: boolean;
+  }
   const PROMPT_KEYS = [
     "wikiIngest",
     "noteQuestions",
