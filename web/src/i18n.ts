@@ -23,11 +23,11 @@ const EN: Dict = {
   "file.export": "Export Image (PNG)",
   "file.copyLink": "Copy Link to Selected Note",
   "file.obsidian": "Open Selected in Obsidian",
-  "file.clearHistory": "Clear History",
+  "file.clearResearchHistory": "Clear Research History",
+  "file.clearNoteHistory": "Clear Note History",
   "file.admin": "Admin…",
   "hint.incremental": "incremental",
   "hint.coldReread": "cold, re-reads all",
-  "hint.researchNotes": "research + notes",
   // Admin modal
   "admin.title": "Admin",
   "admin.vault": "Vault",
@@ -172,7 +172,8 @@ const EN: Dict = {
   "mode.ingest.name": "Ingest",
   "ingest.targetChoose": "choose target…",
   "ingest.capture": "Inbox / capture only",
-  "ingest.action": "ingest",
+  "ingest.actionWiki": "Ingest in Wiki",
+  "ingest.actionCapture": "Save to Inbox",
   "mode.vault.missing":
     "Vault search — qmd not installed. Add it via the addons install (Tools → Integrations).",
   "mode.web.missing":
@@ -281,11 +282,11 @@ const ES: Dict = {
   "file.export": "Exportar imagen (PNG)",
   "file.copyLink": "Copiar enlace a la nota seleccionada",
   "file.obsidian": "Abrir seleccionada en Obsidian",
-  "file.clearHistory": "Borrar historial",
+  "file.clearResearchHistory": "Borrar historial de investigación",
+  "file.clearNoteHistory": "Borrar historial de notas",
   "file.admin": "Admin…",
   "hint.incremental": "incremental",
   "hint.coldReread": "en frío, relee todo",
-  "hint.researchNotes": "investigación + notas",
   "admin.title": "Admin",
   "admin.vault": "Bóveda",
   "admin.vaultPath": "Ruta de bóveda activa",
@@ -426,7 +427,8 @@ const ES: Dict = {
   "mode.ingest.name": "Ingesta",
   "ingest.targetChoose": "elige destino…",
   "ingest.capture": "Inbox / solo captura",
-  "ingest.action": "ingesta",
+  "ingest.actionWiki": "Ingestar en Wiki",
+  "ingest.actionCapture": "Guardar en Inbox",
   "mode.vault.missing":
     "Búsqueda en bóveda: qmd no está instalado. Añádelo desde la instalación de addons (Herramientas → Integraciones).",
   "mode.web.missing":

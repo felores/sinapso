@@ -2071,6 +2071,7 @@ body > :not(#graph) {
   padding: 8px;
 }
 .wiki-proposal-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 8px; }
+.ingest-preview-actions { display: flex; justify-content: flex-end; padding: 0 8px 12px; }
 .ingest-choice {
   display: flex;
   align-items: center;
@@ -2101,6 +2102,7 @@ body > :not(#graph) {
   cursor: pointer;
   white-space: nowrap;
 }
+.ingest-preview-actions .ingest-choice button { height: 34px; padding: 0 18px; font-size: 13px; }
 .ingest-choice button:disabled { opacity: 0.6; cursor: default; }
 
 /* ---------- agent chat styles (inside the research column) ---------- */

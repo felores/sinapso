@@ -124,6 +124,7 @@ describe("VOICE_TOOLS declarations", () => {
       "archive_vault_note",
       "web_research",
       "fetch_url",
+      "open_resource",
     ]) {
       expect(names.has(expected), `missing tool: ${expected}`).toBe(true);
     }
@@ -415,7 +416,7 @@ describe("createVoiceToolSession — write_document", () => {
     expect(headers["x-solaris-token"]).toBe(TEST_TOKEN);
   });
 
-  it("reuses the same working doc id on a second write_document call (no second mint)", async () => {
+  it("keeps old-style write_document calls as active-document edits", async () => {
     const { ctx, fake } = makeCtx();
     fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
     const session = createVoiceToolSession(ctx);
@@ -434,6 +435,80 @@ describe("createVoiceToolSession — write_document", () => {
     const secondBody = JSON.parse(fake.calls[1].init?.body as string);
     expect(secondBody.id).toBe(first.id);
     expect(secondBody.content).toBe("M1 edited");
+  });
+
+  it("creates separate document ids when operation=create is requested", async () => {
+    const { ctx, fake } = makeCtx();
+    fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
+    const session = createVoiceToolSession(ctx);
+
+    const first = (await session.run("write_document", {
+      operation: "create",
+      title: "A",
+      markdown: "one",
+    })) as { id: string };
+    const second = (await session.run("write_document", {
+      operation: "create",
+      title: "B",
+      markdown: "two",
+    })) as { id: string };
+
+    expect(first.id).not.toBe(second.id);
+    expect(JSON.parse(fake.calls[0].init?.body as string)).toMatchObject({
+      id: first.id,
+      title: "A",
+      content: "one",
+    });
+    expect(JSON.parse(fake.calls[1].init?.body as string)).toMatchObject({
+      id: second.id,
+      title: "B",
+      content: "two",
+    });
+  });
+
+  it("updates a specific document id without touching the active document", async () => {
+    const { ctx, fake } = makeCtx();
+    fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
+    const session = createVoiceToolSession(ctx);
+
+    const first = (await session.run("write_document", {
+      operation: "create",
+      title: "A",
+      markdown: "one",
+    })) as { id: string };
+    await session.run("write_document", {
+      operation: "create",
+      title: "B",
+      markdown: "two",
+    });
+    fake.calls.length = 0;
+
+    const out = (await session.run("write_document", {
+      operation: "update",
+      documentId: first.id,
+      title: "A",
+      markdown: "one edited",
+    })) as { id: string };
+
+    expect(out.id).toBe(first.id);
+    const body = JSON.parse(fake.calls[0].init?.body as string);
+    expect(body).toEqual({ id: first.id, title: "A", content: "one edited" });
+  });
+
+  it("rejects an unknown documentId without writing", async () => {
+    const { ctx, fake } = makeCtx();
+    fake.on("/api/research/history", () => jsonResponse({ entries: [] }));
+    const session = createVoiceToolSession(ctx);
+
+    const out = (await session.run("write_document", {
+      operation: "update",
+      documentId: "doc-missing",
+      title: "A",
+      markdown: "x",
+    })) as { error: string };
+
+    expect(out.error).toBe("unknown documentId");
+    expect(fake.url(`${BASE}/api/document`)).toHaveLength(0);
   });
 
   it("falls back to the 'doc' slug when the title slugs to an empty string", async () => {
@@ -537,6 +612,48 @@ describe("createVoiceToolSession — promote and edit", () => {
     });
   });
 
+  it("save_working_document can promote a specified document while another is active", async () => {
+    const { ctx, fake } = makeCtx();
+    fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
+    fake.on("/api/wiki-contracts", () =>
+      jsonResponse({ wiki: { id: "w", path: "w" } }),
+    );
+    fake.on((url) => url.includes("/promote"), () =>
+      jsonResponse({ id: "w/note.md", ids: ["w/note.md"], removedHistory: true }),
+    );
+    const session = createVoiceToolSession(ctx);
+
+    const first = (await session.run("write_document", {
+      operation: "create",
+      title: "A",
+      markdown: "one",
+    })) as { id: string };
+    const second = (await session.run("write_document", {
+      operation: "create",
+      title: "B",
+      markdown: "two",
+    })) as { id: string };
+    await session.run("read_wiki_contract", { wikiId: "w" });
+    fake.calls.length = 0;
+
+    const out = (await session.run("save_working_document", {
+      documentId: first.id,
+      kind: "wiki_note",
+      wikiId: "w",
+    })) as { ok: boolean };
+
+    expect(out.ok).toBe(true);
+    expect(fake.calls[0].url).toBe(
+      `${BASE}/api/document/${encodeURIComponent(first.id)}/promote`,
+    );
+
+    fake.calls.length = 0;
+    await session.run("save_working_document", { kind: "raw_copy" });
+    expect(fake.calls[0].url).toBe(
+      `${BASE}/api/document/${encodeURIComponent(second.id)}/promote`,
+    );
+  });
+
   it("save_working_document surfaces the server error message when the promote endpoint fails", async () => {
     const { ctx, fake } = makeCtx();
     fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
@@ -621,6 +738,147 @@ describe("createVoiceToolSession — promote and edit", () => {
 });
 
 describe("createVoiceToolSession — web tools", () => {
+  it("current_view includes recent research ids and web result URLs", async () => {
+    const { ctx, fake } = makeCtx();
+    fake.on("/api/reader-history", () => jsonResponse({ entries: [] }));
+    fake.on("/api/research/history", () =>
+      jsonResponse({
+        entries: [
+          {
+            id: "hist-web",
+            mode: "web",
+            query: "q",
+            results: [
+              { title: "A", url: "https://a.example" },
+              { title: "B", url: "https://b.example" },
+            ],
+          },
+          {
+            id: "doc-a",
+            mode: "document",
+            query: "Doc A",
+            document: { title: "Doc A", content: "body" },
+          },
+        ],
+      }),
+    );
+    const session = createVoiceToolSession(ctx);
+
+    const out = (await session.run("current_view", {})) as {
+      recentResearch: Array<Record<string, unknown>>;
+    };
+
+    expect(out.recentResearch[0]).toMatchObject({
+      id: "hist-web",
+      mode: "web",
+      query: "q",
+      results: [
+        { title: "A", url: "https://a.example" },
+        { title: "B", url: "https://b.example" },
+      ],
+    });
+    expect(out.recentResearch[1]).toMatchObject({
+      id: "doc-a",
+      mode: "document",
+      document: { title: "Doc A" },
+    });
+  });
+
+  it("open_note rejects http URLs without sending an open_note action", async () => {
+    const { ctx, sent } = makeCtx();
+    const session = createVoiceToolSession(ctx);
+
+    const out = (await session.run("open_note", {
+      note: "https://example.com/a",
+    })) as { error: string };
+
+    expect(out.error).toBe("target is a web URL; use open_resource or fetch_url");
+    expect(sent).not.toContainEqual({
+      type: "action",
+      action: "open_note",
+      note: "https://example.com/a",
+    });
+  });
+
+  it("open_resource routes http URLs through /api/article and opens research", async () => {
+    const { ctx, fake, sent } = makeCtx();
+    fake.on("/api/article", () =>
+      jsonResponse({ title: "An article", content: "hello", historyId: "hist-article" }),
+    );
+    const session = createVoiceToolSession(ctx);
+
+    const out = (await session.run("open_resource", {
+      target: "https://example.com/a",
+    })) as { title: string; text: string };
+
+    expect(out).toEqual({ title: "An article", text: "hello" });
+    expect(fake.calls[0].url).toBe(`${BASE}/api/article`);
+    expect(JSON.parse(fake.calls[0].init?.body as string)).toEqual({
+      url: "https://example.com/a",
+    });
+    expect(sent).toContainEqual({
+      type: "action",
+      action: "open_research",
+      id: "hist-article",
+    });
+  });
+
+  it("open_resource routes vault note paths to open_note", async () => {
+    const { ctx, fake, sent } = makeCtx();
+    fake.on("/api/note", () => jsonResponse({ markdown: "# Note\n\nbody" }));
+    const session = createVoiceToolSession(ctx);
+
+    const out = (await session.run("open_resource", {
+      target: "folder/note.md",
+    })) as { path: string; title: string };
+
+    expect(out.path).toBe("folder/note.md");
+    expect(out.title).toBe("Note");
+    expect(sent).toContainEqual({
+      type: "action",
+      action: "open_note",
+      note: "folder/note.md",
+    });
+  });
+
+  it("open_resource reopens an existing research-history id", async () => {
+    const { ctx, fake, sent } = makeCtx();
+    fake.on("/api/research/history", () =>
+      jsonResponse({
+        entries: [
+          {
+            id: "hist-1",
+            mode: "article",
+            query: "An article",
+            article: { title: "An article", url: "https://example.com/a" },
+          },
+        ],
+      }),
+    );
+    const session = createVoiceToolSession(ctx);
+
+    const out = (await session.run("open_resource", {
+      target: "hist-1",
+    })) as { id: string; mode: string };
+
+    expect(out).toMatchObject({ id: "hist-1", mode: "article" });
+    expect(sent).toContainEqual({
+      type: "action",
+      action: "open_research",
+      id: "hist-1",
+    });
+  });
+
+  it("open_resource rejects unknown non-note resources", async () => {
+    const { ctx, fake } = makeCtx();
+    fake.on("/api/research/history", () => jsonResponse({ entries: [] }));
+    const session = createVoiceToolSession(ctx);
+
+    await expect(
+      session.run("open_resource", { target: "not-a-known-resource" }),
+    ).resolves.toEqual({ error: "unknown resource; use search tools first" });
+  });
+
   it("web_research POSTs to /api/research with deep:true and the query, carries the session token", async () => {
     const { ctx, fake } = makeCtx();
     fake.on("/api/research", () =>

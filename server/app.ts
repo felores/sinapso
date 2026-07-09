@@ -369,6 +369,141 @@ export function createApp(
     };
   };
 
+  function convertedFromBody(body: unknown): ConvertedDocument | null {
+    const converted = (body as { converted?: unknown })?.converted;
+    if (converted == null) return null;
+    if (typeof converted !== "object")
+      throw new WriteError(400, "converted document required");
+    const c = converted as Record<string, unknown>;
+    const source = typeof c.source === "string" ? c.source.trim() : "";
+    const title = typeof c.title === "string" ? c.title.trim() : "";
+    const markdown = typeof c.markdown === "string" ? c.markdown.trim() : "";
+    if (!source || !title || !markdown)
+      throw new WriteError(400, "converted source, title and markdown required");
+    return {
+      source,
+      sourceLabel:
+        typeof c.sourceLabel === "string" && c.sourceLabel.trim()
+          ? c.sourceLabel.trim()
+          : source,
+      title,
+      markdown,
+      via: typeof c.via === "string" && c.via.trim() ? c.via.trim() : undefined,
+    };
+  }
+
+  async function convertIngestPreview(
+    source: string,
+    title: string | undefined,
+    cfg: ReturnType<typeof loadConfig>,
+    res: express.Response,
+  ): Promise<ConvertedDocument | null> {
+    const trimmed = source.trim();
+    if (isYoutubeUrl(trimmed)) {
+      if (
+        !requireWebConsent(
+          cfg,
+          res,
+          "Fetching a YouTube transcript goes through Exa — activate Web mode once to consent.",
+        ) ||
+        !requireExaKey(cfg, res, "Add your Exa API key in Tools → Integrations.")
+      ) {
+        return null;
+      }
+      const art = await fetchArticle(cfg.exaKey, trimmed);
+      if (!art.content) {
+        res.status(422).json({
+          error: "no-transcript",
+          message: "Exa returned no transcript for this video.",
+        });
+        return null;
+      }
+      return {
+        source: trimmed,
+        sourceLabel: trimmed,
+        title: title?.trim() || art.title,
+        markdown: art.content,
+        via: "exa-youtube",
+      };
+    }
+
+    const bin = await requireMarkitdown(toolCache, () => detectAll(detectDeps), res);
+    if (!bin) return null;
+    return convertDocument(
+      integrations?.detectDeps?.run ?? realRunner,
+      bin,
+      { source: trimmed, title },
+    );
+  }
+
+  app.post("/api/ingest/preview", guarded, express.json(), async (req, res) => {
+    try {
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      if (typeof b.source !== "string" || !b.source.trim()) {
+        res.status(400).json({ error: "source (file path or URL) required" });
+        return;
+      }
+      const converted = await convertIngestPreview(
+        b.source,
+        typeof b.title === "string" ? b.title : undefined,
+        loadConfig(configPath),
+        res,
+      );
+      if (converted) res.json(converted);
+    } catch (e) {
+      writeFail(res, e, "ingest preview");
+    }
+  });
+
+  app.post(
+    "/api/ingest/preview-upload",
+    guarded,
+    express.raw({ type: "*/*", limit: "50mb" }),
+    async (req, res) => {
+      try {
+        if (!Buffer.isBuffer(req.body) || !req.body.length) {
+          res.status(400).json({ error: "file body required" });
+          return;
+        }
+        const bin = await requireMarkitdown(toolCache, () => detectAll(detectDeps), res);
+        if (!bin) return;
+        const name = typeof req.query.name === "string" ? req.query.name : "upload";
+        res.json(
+          await convertBytes(
+            integrations?.detectDeps?.run ?? realRunner,
+            bin,
+            { name, bytes: req.body },
+          ),
+        );
+      } catch (e) {
+        writeFail(res, e, "ingest upload preview");
+      }
+    },
+  );
+
+  app.post(
+    "/api/ingest/save",
+    guarded,
+    express.json({ limit: "10mb" }),
+    async (req, res) => {
+      try {
+        const converted = convertedFromBody(req.body);
+        if (!converted) throw new WriteError(400, "converted document required");
+        const cfg = loadConfig(configPath);
+        const r = await ingestText(writeDeps(), {
+          source: converted.sourceLabel,
+          title: converted.title,
+          content: converted.markdown,
+          via: converted.via ?? "markitdown",
+          destination: cfg.writeDestination,
+        });
+        res.json({ ok: true, id: r.id });
+      } catch (e) {
+        writeFail(res, e, "ingest save");
+      }
+    },
+  );
+
   // POST /api/ingest: convert a document or URL to a Markdown note via
   // markitdown (F023). Reads may come from anywhere (importing is the
   // point); the write goes through the guarded path into the vault.
@@ -1123,7 +1258,7 @@ export function createApp(
   }
 
   async function wikiIngestProposal(
-    converted: Awaited<ReturnType<typeof convertDocument>>,
+    converted: ConvertedDocument,
     wikiId: unknown,
   ) {
     const cfg = loadConfig(configPath);
@@ -1159,10 +1294,6 @@ export function createApp(
           res.status(400).json({ error: "capture-only uses /api/ingest" });
           return;
         }
-        if (typeof b.source !== "string" || !b.source.trim()) {
-          res.status(400).json({ error: "source (file path or URL) required" });
-          return;
-        }
         const cfg = loadConfig(configPath);
         if (
           !requireOpenRouterKey(
@@ -1173,13 +1304,25 @@ export function createApp(
         ) {
           return;
         }
-        const bin = await markitdownBinOrFail(res);
-        if (!bin) return;
-        const converted = await convertDocument(
-          integrations?.detectDeps?.run ?? realRunner,
-          bin,
-          { source: b.source, title: typeof b.title === "string" ? b.title : undefined },
-        );
+        const converted =
+          convertedFromBody(b) ??
+          (await (async () => {
+            const bin = await markitdownBinOrFail(res);
+            if (!bin) return null;
+            if (typeof b.source !== "string" || !b.source.trim()) {
+              res.status(400).json({ error: "source (file path or URL) required" });
+              return null;
+            }
+            return convertDocument(
+              integrations?.detectDeps?.run ?? realRunner,
+              bin,
+              {
+                source: b.source,
+                title: typeof b.title === "string" ? b.title : undefined,
+              },
+            );
+          })());
+        if (!converted) return;
         res.json(await wikiIngestProposal(converted, b.wikiId));
       } catch (e) {
         writeFail(res, e, "wiki ingest proposal");

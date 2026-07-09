@@ -113,6 +113,27 @@ describe("selection context helpers", () => {
     expect(keyword).toContain("typed question");
   });
 
+  it("includes research URLs in effective queries", () => {
+    const state = updateSelectionSlot(
+      emptySelectionState(),
+      selectionSlot({
+        source: "research",
+        mode: "web",
+        text: "selected result text",
+        title: "Result",
+        url: "https://example.com/result",
+      }),
+    );
+    const snap = buildSelectionSnapshot(state);
+
+    expect(buildSemanticQuery("dig deeper", snap)).toContain(
+      "URL: https://example.com/result",
+    );
+    expect(buildKeywordQuery("dig deeper", snap)).toContain(
+      "URL: https://example.com/result",
+    );
+  });
+
   it("uses selected text in generated history titles", () => {
     const state = updateSelectionSlot(
       emptySelectionState(),

@@ -76,7 +76,7 @@ export async function buildWikiIngestProposal(
   ]);
   const operations = validateWikiOperations(deps.vaultRoot, wiki, [
     ...(raw ? [raw] : []),
-    ...parseOperations(reply),
+    ...parseOperations(reply).filter((op) => isContentProposal(wiki, op)),
   ]);
   if (!operations.length) throw new WriteError(422, "no wiki proposals returned");
   return {
@@ -86,6 +86,16 @@ export async function buildWikiIngestProposal(
     contracts,
     operations,
   };
+}
+
+function isContentProposal(wiki: WikiConfig, op: WikiIngestOperation): boolean {
+  const path = op.path.replace(/\\/g, "/").toLowerCase();
+  const name = path.split("/").pop() ?? "";
+  if (["index.md", "log.md", "hot.md"].includes(name)) return false;
+  const contractPaths = new Set(
+    wiki.contractFiles.map((file) => `${wiki.path}/${file}`.replace(/\/+/g, "/").toLowerCase()),
+  );
+  return !contractPaths.has(path);
 }
 
 export function applyWikiIngestOperations(

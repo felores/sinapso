@@ -158,6 +158,29 @@ describe("wiki ingest proposals", () => {
     );
   });
 
+  it("drops generated contract and meta operations from the proposal", async () => {
+    const f = fixture({
+      llm: JSON.stringify({
+        operations: [
+          { type: "edit", path: "wiki/index.md", content: "# Index\nnew" },
+          { type: "edit", path: "wiki/log.md", content: "log" },
+          { type: "edit", path: "wiki/hot.md", content: "hot" },
+          { type: "edit", path: "wiki/AGENTS.md", content: "contract" },
+          { type: "create", path: "wiki/source-title.md", content: "# Source\n" },
+        ],
+      }),
+    });
+    const res = await request(f.app)
+      .post("/api/wiki-ingest/propose")
+      .set(TOKEN_HEADER, await token(f.app))
+      .send({ source: f.doc, wikiId: "wiki" });
+    expect(res.status).toBe(200);
+    expect(res.body.operations.map((op: { path: string }) => op.path)).toEqual([
+      expect.stringMatching(/^raw\/\d{4}-\d{2}-\d{2}_source-title\.md$/),
+      "wiki/source-title.md",
+    ]);
+  });
+
   it("includes contract files and the configured prompt in the OpenRouter call", async () => {
     const f = fixture({ prompt: "Custom wiki ingest prompt" });
     const res = await request(f.app)
@@ -260,5 +283,25 @@ describe("wiki ingest proposals", () => {
       .send("raw bytes");
     expect(res.status).toBe(200);
     expect(res.body.operations[0].path).toMatch(/raw\/.*source-title\.md$/);
+  });
+
+  it("accepts an already converted preview payload", async () => {
+    const f = fixture({ llm: '{"operations":[]}' });
+    const res = await request(f.app)
+      .post("/api/wiki-ingest/propose")
+      .set(TOKEN_HEADER, await token(f.app))
+      .send({
+        wikiId: "wiki",
+        converted: {
+          source: "https://youtu.be/abc123",
+          sourceLabel: "https://youtu.be/abc123",
+          title: "Video Title",
+          markdown: "Transcript body.",
+          via: "exa-youtube",
+        },
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe("Video Title");
+    expect(res.body.operations[0]).toMatchObject({ raw: true });
   });
 });

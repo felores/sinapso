@@ -4,7 +4,7 @@
  * Pure tool layer for the voice bridge. Owns the `VOICE_TOOLS`
  * declarations, the loopback-HTTP `callTool` (read-only) and
  * `runTool` (stateful) bodies, and the mutable session state
- * (`workingDocId`, `contractWikisRead`). `voice.ts` keeps the Gemini
+ * (`activeWorkingDocId`, `contractWikisRead`). `voice.ts` keeps the Gemini
  * session, the audio relay, and the prompt assembly — its tool-call
  * loop delegates to a session object built here.
  *
@@ -19,7 +19,7 @@
  * `send` is the browser action side-channel (open_note, show_document,
  * open_research, open_saved_note) — also injected for full unit
  * control. Returning the session's `run` (not the whole state) means
- * a misbehaving caller cannot poke at workingDocId or the wiki set
+ * a misbehaving caller cannot poke at activeWorkingDocId or the wiki set
  * directly.
  */
 
@@ -69,6 +69,7 @@ function cap(s: string, n = 6000): string {
 
 const SELECTED_WORDS = 300;
 const SELECTED_CHARS = 3000;
+const DOC_ID_RE = /^[a-z0-9-]+$/;
 const emptySelectedContext = (): SelectedContextState => ({
   current: null,
 });
@@ -77,6 +78,7 @@ const clean = (s: unknown): string | undefined =>
 const words = (s: string): string[] => s.split(/\s+/).filter(Boolean);
 const count = (n: unknown): number | undefined =>
   typeof n === "number" && Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+const isHttpUrl = (s: string): boolean => /^https?:\/\//i.test(s.trim());
 
 function normalizeSlot(raw: unknown): SelectedSlot | null {
   if (!raw || typeof raw !== "object") return null;
@@ -128,6 +130,9 @@ interface ResearchHist {
   mode: string;
   query: string;
   answer?: { content: string } | null;
+  results?: unknown[];
+  article?: { title: string; url: string; content?: string };
+  document?: { title: string; content?: string };
 }
 
 interface VoiceWikiSummary {
@@ -267,7 +272,7 @@ export const VOICE_TOOLS: FunctionDeclaration[] = [
   {
     name: "open_note",
     description:
-      "Open a note in the reader so it appears on the user's screen, and get a preview of what's in it. Give 'note' (a path from a previous result, or one the user named). Use when they ask to open / show / pull up a note: 'open X', 'show me that note', 'abre X', 'muéstrame esa nota'.",
+      "Open a vault note in the reader and get a preview. Give 'note' as a vault-relative .md path from a previous result or current_view. Do NOT use this for http(s) URLs; use open_resource or fetch_url for links.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -277,6 +282,21 @@ export const VOICE_TOOLS: FunctionDeclaration[] = [
         },
       },
       required: ["note"],
+    },
+  },
+  {
+    name: "open_resource",
+    description:
+      "Open whatever the user points at: an http(s) URL opens as a temporary web article in research, a research-history id reopens that stored research entry, and a vault-relative .md path opens the note reader. Use this for 'open that link/result/resource' when the domain may be ambiguous.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        target: {
+          type: Type.STRING,
+          description: "URL, research-history id, or vault-relative .md note path.",
+        },
+      },
+      required: ["target"],
     },
   },
   {
@@ -315,11 +335,19 @@ export const VOICE_TOOLS: FunctionDeclaration[] = [
   {
     name: "write_document",
     description:
-      "Create or update THE working document shown in the research panel. There is ONE working document per conversation; call this again to edit it — always pass the COMPLETE new markdown (previous body plus your changes), never a fragment, because it REPLACES the document in place (it is not a chat log). Use it to synthesize notes/results, draft, find relations or gaps, and iterate turn by turn as the user asks for edits. The user can then save it as a vault note.",
+      "Create or update a temporary working document shown in the research panel. Use operation='create' for a separate new artifact, draft, alternate version, or second document. Use operation='update' with documentId when revising a known document. If operation is omitted, the current active document is updated; if none exists, a new one is created. Always pass the COMPLETE new markdown, never a fragment, because it REPLACES that document in place. The user can then save it as a vault note.",
     parameters: {
       type: Type.OBJECT,
       properties: {
         title: { type: Type.STRING, description: "Document title." },
+        operation: {
+          type: Type.STRING,
+          description: "Optional: 'create' for a separate new document, or 'update' to revise an existing document.",
+        },
+        documentId: {
+          type: Type.STRING,
+          description: "Optional id of the temporary document to update.",
+        },
         markdown: {
           type: Type.STRING,
           description: "The complete document body in markdown.",
@@ -352,6 +380,11 @@ export const VOICE_TOOLS: FunctionDeclaration[] = [
         title: {
           type: Type.STRING,
           description: "Optional title override for the saved note.",
+        },
+        documentId: {
+          type: Type.STRING,
+          description:
+            "Optional id of the temporary document to save. Defaults to the active document.",
         },
       },
     },
@@ -431,8 +464,9 @@ export function createVoiceToolSession(
   const fetchFn: typeof fetch = ctx.fetchFn ?? globalThis.fetch.bind(globalThis);
   const { base, getSessionToken, send } = ctx;
 
-  // Mutable session state — one per conversation.
-  let workingDocId: string | null = null;
+  // Mutable session state - one per conversation.
+  let activeWorkingDocId: string | null = null;
+  const knownDocumentIds = new Set<string>();
   const contractWikisRead = new Set<string>();
   let selectedContext = emptySelectedContext();
 
@@ -480,6 +514,56 @@ export function createVoiceToolSession(
     }
   }
 
+  function documentIdForTitle(title: string): string {
+    const slug =
+      title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 32) || "doc";
+    const prefix = `doc-${Date.now().toString(36)}-${slug}`;
+    let id = prefix;
+    for (let i = 2; knownDocumentIds.has(id); i++) id = `${prefix}-${i}`;
+    return id;
+  }
+
+  async function knownDocumentId(id: string): Promise<boolean> {
+    if (!DOC_ID_RE.test(id)) return false;
+    if (knownDocumentIds.has(id)) return true;
+    const found = (await researchEntries()).some(
+      (e) => e.id === id && e.mode === "document" && e.document,
+    );
+    if (found) knownDocumentIds.add(id);
+    return found;
+  }
+
+  function webResults(entry: ResearchHist): Array<{ title?: unknown; url?: unknown }> {
+    return Array.isArray(entry.results)
+      ? entry.results.filter((r): r is { title?: unknown; url?: unknown } => !!r && typeof r === "object")
+      : [];
+  }
+
+  function researchSummary(entry: ResearchHist): Record<string, unknown> {
+    const base: Record<string, unknown> = {
+      id: entry.id,
+      mode: entry.mode,
+      query: entry.query,
+    };
+    if (entry.mode === "web") {
+      base.results = webResults(entry)
+        .slice(0, 4)
+        .map((r) => ({ title: clean(r.title), url: clean(r.url) }))
+        .filter((r) => r.title || r.url);
+    }
+    if (entry.article) {
+      base.article = { title: entry.article.title, url: entry.article.url };
+    }
+    if (entry.document) {
+      base.document = { title: entry.document.title };
+    }
+    return base;
+  }
+
   async function wikiSummaries(): Promise<VoiceWikiSummary[]> {
     try {
       const d = (await (
@@ -500,6 +584,44 @@ export function createVoiceToolSession(
     } catch {
       return null;
     }
+  }
+
+  async function openNotePath(path: string): Promise<VoiceResult> {
+    if (isHttpUrl(path))
+      return { error: "target is a web URL; use open_resource or fetch_url" };
+    send({ type: "status", key: "voice.status.openingNote", note: path });
+    const preview = await notePreview(path);
+    if (!preview.error) send({ type: "action", action: "open_note", note: path });
+    return preview;
+  }
+
+  async function fetchUrl(url: string): Promise<VoiceResult> {
+    if (!isHttpUrl(url)) return { error: "a valid http(s) URL is required" };
+    send({ type: "status", key: "voice.status.fetchingUrl", url });
+    const r = await fetchFn(`${base}/api/article`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-solaris-token": getSessionToken(),
+      },
+      body: JSON.stringify({ url }),
+    });
+    const d = (await r.json().catch(() => ({}))) as {
+      message?: string;
+      historyId?: string;
+      title?: string;
+      content?: string;
+    };
+    if (!r.ok) return { error: d.message ?? "web request failed" };
+    if (d.historyId) send({ type: "action", action: "open_research", id: d.historyId });
+    return { title: d.title, text: cap(d.content ?? "") };
+  }
+
+  async function openResearchId(id: string): Promise<VoiceResult | null> {
+    const entry = (await researchEntries()).find((e) => e.id === id);
+    if (!entry) return null;
+    send({ type: "action", action: "open_research", id: entry.id });
+    return researchSummary(entry);
   }
 
   // Query tool dispatch: reuse loopback endpoints so guards/history stay shared.
@@ -635,17 +757,22 @@ export function createVoiceToolSession(
         openNote: noteId ? await notePreview(noteId) : null,
         recentResearch: (await researchEntries())
           .slice(0, 6)
-          .map((e) => ({ mode: e.mode, query: e.query })),
+          .map(researchSummary),
         selectedContext,
       };
     }
     if (name === "open_note") {
       const path = String(args.note ?? "");
-      send({ type: "status", key: "voice.status.openingNote", note: path });
-      const preview = await notePreview(path);
-      if (!preview.error)
-        send({ type: "action", action: "open_note", note: path });
-      return preview;
+      return openNotePath(path);
+    }
+    if (name === "open_resource") {
+      const target = String(args.target ?? "").trim();
+      if (!target) return { error: "target required" };
+      if (isHttpUrl(target)) return fetchUrl(target);
+      const research = await openResearchId(target);
+      if (research) return research;
+      if (target.toLowerCase().endsWith(".md")) return openNotePath(target);
+      return { error: "unknown resource; use search tools first" };
     }
     if (name === "open_last_note") {
       send({ type: "status", key: "voice.status.openingLastNote" });
@@ -678,14 +805,21 @@ export function createVoiceToolSession(
       const title = String(args.title ?? "").trim() || "Untitled";
       send({ type: "status", key: "voice.status.writingDocument", title });
       const content = String(args.markdown ?? "");
-      if (!workingDocId) {
-        const slug =
-          title
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-+|-+$/g, "")
-            .slice(0, 32) || "doc";
-        workingDocId = `doc-${Date.now().toString(36)}-${slug}`;
+      const requestedId = clean(args.documentId);
+      const operation = args.operation === "create" || args.operation === "update" ? args.operation : null;
+      let documentId: string;
+      if (operation === "create") {
+        documentId = documentIdForTitle(title);
+      } else if (requestedId) {
+        if (!(await knownDocumentId(requestedId)))
+          return { error: "unknown documentId" };
+        documentId = requestedId;
+      } else if (activeWorkingDocId) {
+        documentId = activeWorkingDocId;
+      } else if (operation === "update") {
+        return { error: "documentId required to update a document" };
+      } else {
+        documentId = documentIdForTitle(title);
       }
       const r = await fetchFn(`${base}/api/document`, {
         method: "POST",
@@ -693,21 +827,26 @@ export function createVoiceToolSession(
           "content-type": "application/json",
           "x-solaris-token": getSessionToken(),
         },
-        body: JSON.stringify({ id: workingDocId, title, content }),
+        body: JSON.stringify({ id: documentId, title, content }),
       });
       if (!r.ok) return { error: "could not save the document" };
+      knownDocumentIds.add(documentId);
+      activeWorkingDocId = documentId;
       send({
         type: "action",
         action: "show_document",
-        id: workingDocId,
+        id: documentId,
         title,
         content,
       });
-      return { ok: true, id: workingDocId, chars: content.length };
+      return { ok: true, id: documentId, chars: content.length };
     }
     if (name === "save_working_document") {
       send({ type: "status", key: "voice.status.savingDocument" });
-      if (!workingDocId) return { error: "no working document to save" };
+      const requestedId = clean(args.documentId);
+      const documentId = requestedId ?? activeWorkingDocId;
+      if (!documentId) return { error: "no working document to save" };
+      if (!(await knownDocumentId(documentId))) return { error: "unknown documentId" };
       if (
         args.kind !== "raw_copy" &&
         typeof args.wikiId === "string" &&
@@ -719,7 +858,7 @@ export function createVoiceToolSession(
         };
       }
       const r = await fetchFn(
-        `${base}/api/document/${encodeURIComponent(workingDocId)}/promote`,
+        `${base}/api/document/${encodeURIComponent(documentId)}/promote`,
         {
           method: "POST",
           headers: {
@@ -741,7 +880,8 @@ export function createVoiceToolSession(
         removedHistory?: boolean;
       };
       if (!r.ok || !d.id) return { error: d.error ?? "could not save document" };
-      workingDocId = null;
+      knownDocumentIds.delete(documentId);
+      if (activeWorkingDocId === documentId) activeWorkingDocId = null;
       send({ type: "action", action: "open_saved_note", note: d.id });
       return {
         ok: true,
@@ -794,30 +934,20 @@ export function createVoiceToolSession(
     // Web tools (Exa): spend-bearing, so the guarded routes need the session
     // token — they cannot go through the token-less callTool path. fetch_url
     // covers both articles and YouTube transcripts (same /api/article endpoint).
-    if (name === "web_research" || name === "fetch_url") {
-      const isFetch = name === "fetch_url";
-      let payload: Record<string, unknown>;
-      if (isFetch) {
-        const url = String(args.url ?? "").trim();
-        if (!/^https?:\/\//i.test(url))
-          return { error: "a valid http(s) URL is required" };
-        send({ type: "status", key: "voice.status.fetchingUrl", url });
-        payload = { url };
-      } else {
-        const query = String(args.query ?? "").trim();
-        if (!query) return { error: "empty query" };
-        send({ type: "status", key: "voice.status.searchingWeb", query });
-        payload = { query, deep: true };
-      }
+    if (name === "fetch_url") return fetchUrl(String(args.url ?? "").trim());
+    if (name === "web_research") {
+      const query = String(args.query ?? "").trim();
+      if (!query) return { error: "empty query" };
+      send({ type: "status", key: "voice.status.searchingWeb", query });
       const r = await fetchFn(
-        `${base}${isFetch ? "/api/article" : "/api/research"}`,
+        `${base}/api/research`,
         {
           method: "POST",
           headers: {
             "content-type": "application/json",
             "x-solaris-token": getSessionToken(),
           },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ query, deep: true }),
         },
       );
       const d = (await r.json().catch(() => ({}))) as {
@@ -825,20 +955,16 @@ export function createVoiceToolSession(
         historyId?: string;
         answer?: { content?: string } | null;
         results?: Array<{ title?: string; url?: string }>;
-        title?: string;
-        content?: string;
       };
       if (!r.ok) return { error: d.message ?? "web request failed" };
       if (d.historyId)
         send({ type: "action", action: "open_research", id: d.historyId });
-      return isFetch
-        ? { title: d.title, text: cap(d.content ?? "") }
-        : {
-            answer: cap(d.answer?.content ?? ""),
-            sources: (d.results ?? [])
-              .slice(0, 6)
-              .map((x) => ({ title: x.title, url: x.url })),
-          };
+      return {
+        answer: cap(d.answer?.content ?? ""),
+        sources: (d.results ?? [])
+          .slice(0, 6)
+          .map((x) => ({ title: x.title, url: x.url })),
+      };
     }
     return callTool(name, args);
   }

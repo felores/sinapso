@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   saveEntry,
+  upsertEntry,
   listEntries,
   deleteEntry,
   clearEntries,
@@ -62,5 +63,47 @@ describe("research history", () => {
 
   it("listEntries is empty when nothing has been saved", () => {
     expect(listEntries(DATA)).toEqual([]);
+  });
+
+  it("keeps two document entries with different ids", () => {
+    upsertEntry(DATA, {
+      id: "doc-a",
+      mode: "document",
+      query: "A",
+      document: { title: "A", content: "one" },
+    });
+    upsertEntry(DATA, {
+      id: "doc-b",
+      mode: "document",
+      query: "B",
+      document: { title: "B", content: "two" },
+    });
+
+    expect(listEntries(DATA).map((e) => e.id).sort()).toEqual(["doc-a", "doc-b"]);
+  });
+
+  it("upserting one document does not remove another", () => {
+    upsertEntry(DATA, {
+      id: "doc-a",
+      mode: "document",
+      query: "A",
+      document: { title: "A", content: "one" },
+    });
+    upsertEntry(DATA, {
+      id: "doc-b",
+      mode: "document",
+      query: "B",
+      document: { title: "B", content: "two" },
+    });
+    upsertEntry(DATA, {
+      id: "doc-a",
+      mode: "document",
+      query: "A",
+      document: { title: "A", content: "one edited" },
+    });
+
+    const byId = new Map(listEntries(DATA).map((e) => [e.id, e]));
+    expect(byId.get("doc-a")?.document?.content).toBe("one edited");
+    expect(byId.get("doc-b")?.document?.content).toBe("two");
   });
 });

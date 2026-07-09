@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../app";
 import { updateConfig } from "./config";
+import type { ExaClientLike } from "./exa";
 import { TOKEN_HEADER } from "./security";
 import { ingestBytes, ingestDocument } from "./ingest";
 import { readChangeLog } from "./write";
@@ -190,6 +191,85 @@ describe("POST /api/ingest", () => {
     expect(res.status).toBe(200);
     expect(res.body.id.startsWith("inbox/")).toBe(true);
     expect(existsSync(join(VAULT, res.body.id))).toBe(true);
+  });
+
+  it("previews converted content without writing a note", async () => {
+    const app = makeApp(true);
+    const t = (await request(app).get("/api/session")).body.token;
+    const before = readChangeLog(DATA).length;
+    const res = await request(app)
+      .post("/api/ingest/preview")
+      .set(TOKEN_HEADER, t)
+      .send({ source: DOC });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ title: "Converted" });
+    expect(res.body.markdown).toContain("body");
+    expect(readChangeLog(DATA)).toHaveLength(before);
+  });
+
+  it("saves a converted preview with the ingest date prefix", async () => {
+    const app = makeApp(true);
+    const t = (await request(app).get("/api/session")).body.token;
+    const res = await request(app)
+      .post("/api/ingest/save")
+      .set(TOKEN_HEADER, t)
+      .send({
+        converted: {
+          source: DOC,
+          sourceLabel: DOC,
+          title: "Converted",
+          markdown: "# Converted\n\nbody",
+        },
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.id).toMatch(/^inbox\/\d{4}-\d{2}-\d{2}_converted(?:-\d+)?\.md$/);
+    expect(readFileSync(join(VAULT, res.body.id), "utf-8")).toContain(
+      "via: markitdown",
+    );
+  });
+
+  it("previews YouTube URLs through Exa instead of markitdown", async () => {
+    const configPath = join(DATA, `config-youtube-${appSeq++}.json`);
+    updateConfig({ consents: { web: true }, exaKey: "exa-key" }, configPath);
+    const calls: string[] = [];
+    const app = createApp(graphPath, undefined, {
+      configPath,
+      detectDeps: {
+        home: "/h",
+        env: { PATH: "/fake/bin" },
+        fileExists: () => false,
+        run: async (cmd) => {
+          calls.push(cmd);
+          return fail("markitdown should not run");
+        },
+      },
+      exa: {
+        makeClient: ((_key: string): ExaClientLike => ({
+          search: async () => ({ results: [] }),
+          getContents: async () => ({
+            results: [
+              {
+                url: "https://youtu.be/abc123",
+                title: "Video Title",
+                text: "Transcript body.",
+              },
+            ],
+          }),
+        })) as never,
+      },
+    }).app;
+    const t = (await request(app).get("/api/session")).body.token;
+    const res = await request(app)
+      .post("/api/ingest/preview")
+      .set(TOKEN_HEADER, t)
+      .send({ source: "https://youtu.be/abc123" });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      title: "Video Title",
+      markdown: "Transcript body.",
+      via: "exa-youtube",
+    });
+    expect(calls).toHaveLength(0);
   });
 
   it("POST /api/ingest-upload ingests uploaded bytes end to end", async () => {

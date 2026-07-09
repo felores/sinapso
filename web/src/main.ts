@@ -269,7 +269,9 @@ async function boot() {
 
   const initialSelectionParams = new URLSearchParams(window.location.search);
   const pendingSelect = sessionStorage.getItem("solaris-pending-select");
+  const pendingSelectNoLog = sessionStorage.getItem("solaris-pending-select-nolog") === "1";
   if (pendingSelect) sessionStorage.removeItem("solaris-pending-select");
+  sessionStorage.removeItem("solaris-pending-select-nolog");
   function hashNodeId(): string | null {
     return new URLSearchParams(window.location.hash.slice(1)).get("node");
   }
@@ -294,7 +296,7 @@ async function boot() {
 
     if (pendingSelect) {
       const target = byId.get(pendingSelect);
-      if (target) select(target);
+      if (target) select(target, undefined, !pendingSelectNoLog);
       initialSelectionHandled = true;
     }
   }
@@ -1478,13 +1480,13 @@ async function boot() {
     window.history.replaceState(null, "", url);
   }
 
-  function select(n: GNode, highlightSnippet?: string) {
+  function select(n: GNode, highlightSnippet?: string, logReader = true) {
     selected = n;
     focusSet = bfs(n.id, focusDepth);
     syncNodeUrl(n);
     flyTo(n);
     repaint();
-    openReader(n, false, highlightSnippet);
+    openReader(n, !logReader, highlightSnippet);
   }
 
   function clearSelection() {
@@ -2969,6 +2971,34 @@ async function boot() {
         : null;
   }
 
+  function elementForNode(node: Node): Element | null {
+    return node instanceof Element ? node : node.parentElement;
+  }
+
+  function selectedResearchUrl(
+    sel: Selection,
+    entry: ResearchEntry | null,
+  ): string | undefined {
+    for (let i = 0; i < sel.rangeCount; i++) {
+      const range = sel.getRangeAt(i);
+      for (const node of [
+        range.commonAncestorContainer,
+        range.startContainer,
+        range.endContainer,
+      ]) {
+        const el = elementForNode(node);
+        if (!el) continue;
+        const link =
+          el.closest<HTMLAnchorElement>('a[href^="http"]') ??
+          el
+            .closest(".web-result")
+            ?.querySelector<HTMLAnchorElement>('a.web-result-title[href^="http"]');
+        if (link?.href) return link.href;
+      }
+    }
+    return entry?.article?.url;
+  }
+
   function readDomSelection(): SelectionContext | null {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
@@ -2995,6 +3025,7 @@ async function boot() {
     }
     const entry = currentResearchEntry();
     const article = entry?.article;
+    const url = selectedResearchUrl(sel, entry);
     return selectionSlot({
       source,
       text,
@@ -3002,7 +3033,7 @@ async function boot() {
       mode: entry?.mode,
       title: article?.title ?? entry?.query,
       query: entry?.query,
-      url: article?.url,
+      url,
     });
   }
 
@@ -3191,20 +3222,22 @@ async function boot() {
     }
   }
 
-  // Render the Inbox-vs-wiki chooser in the research body. The action button
-  // resolves to the picked target and runs the appropriate ingest path.
+  // Render the Inbox-vs-wiki chooser under an already converted preview.
   function renderIngestChoice(
     body: HTMLElement,
-    label: string,
     onAction: (target: { wikiId?: string; captureOnly?: boolean }) => Promise<void>,
   ) {
-    body.innerHTML = "";
     const card = document.createElement("div");
     card.className = "ingest-choice";
     const select = document.createElement("select");
     select.title = i18n.t("ingest.targetChoose");
     const go = document.createElement("button");
-    go.textContent = label;
+    const updateButtonLabel = () => {
+      go.textContent = select.value === "__capture"
+        ? i18n.t("ingest.actionCapture")
+        : i18n.t("ingest.actionWiki");
+    };
+    updateButtonLabel();
     go.disabled = true;
     card.append(select, go);
     body.appendChild(card);
@@ -3216,6 +3249,7 @@ async function boot() {
         only.textContent = i18n.t("ingest.capture");
         select.appendChild(only);
         select.value = "__capture";
+        updateButtonLabel();
         go.disabled = false;
         return;
       }
@@ -3229,8 +3263,10 @@ async function boot() {
       for (const w of enabled) add(w.id, w.label || w.path);
       add("__capture", i18n.t("ingest.capture"));
       select.value = enabled.length > 1 ? "" : (enabled[0].id || "__capture");
+      updateButtonLabel();
       go.disabled = !select.value;
       select.addEventListener("change", () => {
+        updateButtonLabel();
         go.disabled = !select.value;
       });
     });
@@ -3852,9 +3888,12 @@ async function boot() {
             );
             currentEntryId = String(p.id ?? "") || null;
             void loadHistory().then(() => {
-              historyIdx = 0;
-                updateHistoryNav();
-              });
+              const i = currentEntryId
+                ? researchHistory.findIndex((r) => r.id === currentEntryId)
+                : -1;
+              historyIdx = i >= 0 ? i : 0;
+              updateHistoryNav();
+            });
           } else if (action === "open_saved_note") {
             const note = String(p.note ?? "");
             if (note) void openAfterIngest(note).then(loadHistory);
@@ -4974,6 +5013,14 @@ async function boot() {
           json: { title: doc.title, content: noteBody },
         });
         save.textContent = i18n.t("research.saved");
+        if (currentEntryId) {
+          await apiDelete(
+            `/api/research/history/${encodeURIComponent(currentEntryId)}`,
+          );
+          currentEntryId = null;
+          await loadHistory();
+          updateHistoryNav();
+        }
         await openAfterIngest(String(data.id));
       } catch {
         save.disabled = false;
@@ -5047,17 +5094,20 @@ async function boot() {
     updateHistoryNav();
   }
 
-  async function clearAllHistory() {
+  async function clearResearchHistory() {
     await apiDelete("/api/research/history");
-    await apiDelete("/api/reader-history");
     researchHistory = [];
     historyIdx = -1;
     currentEntryId = null;
+    updateHistoryNav();
+    if (!$("#research").classList.contains("hidden")) closeResearch();
+  }
+
+  async function clearNoteHistory() {
+    await apiDelete("/api/reader-history");
     readerHistory = [];
     readerIdx = -1;
-    updateHistoryNav();
     updateReaderNav();
-    if (!$("#research").classList.contains("hidden")) closeResearch();
   }
 
   $("#research-prev").addEventListener("click", () => {
@@ -5325,18 +5375,18 @@ async function boot() {
     }
   }
 
-  // Ingest a document or URL as a vault note via markitdown (F023).
-  // After ingesting, rescan (so the new note joins the graph) and reopen to
-  // it: stash the id, reload via rescan, and boot selects it.
+  // After saving an ingested note, rescan so the new note joins the graph.
   // Create a note, then rescan-diff the vault (no reload) and fly to the new
   // note once it joins the live graph with its resolved links.
-  async function openAfterIngest(id: string) {
+  async function openAfterIngest(id: string, logReader = false) {
     sessionStorage.setItem("solaris-pending-select", id); // survives a fallback reload
+    if (!logReader) sessionStorage.setItem("solaris-pending-select-nolog", "1");
     await rescan(false);
     const n = byId.get(id);
     if (n) {
       sessionStorage.removeItem("solaris-pending-select");
-      select(n);
+      sessionStorage.removeItem("solaris-pending-select-nolog");
+      select(n, undefined, logReader);
     }
   }
 
@@ -5353,6 +5403,13 @@ async function boot() {
     title: string;
     operations: WikiIngestOperation[];
   }
+  interface IngestPreview {
+    source: string;
+    sourceLabel: string;
+    title: string;
+    markdown: string;
+    via?: string;
+  }
 
   function renderWikiProposal(body: HTMLElement, proposal: WikiIngestProposal) {
     body.innerHTML = "";
@@ -5362,9 +5419,13 @@ async function boot() {
     body.appendChild(h);
     const meta = document.createElement("p");
     meta.className = "muted wiki-proposal-meta";
-    meta.textContent = `${proposal.operations.length} proposed write(s). Review before applying.`;
+    const visible = proposal.operations.filter((op) => !op.raw);
+    const hidden = proposal.operations.length - visible.length;
+    meta.textContent = visible.length
+      ? `${visible.length} content page proposal(s).${hidden ? " Source copy will also be stored." : ""}`
+      : "Source copy only. No content pages were proposed.";
     body.appendChild(meta);
-    for (const op of proposal.operations) {
+    for (const op of visible) {
       const row = document.createElement("div");
       row.className = "wiki-proposal-op";
       const title = document.createElement("div");
@@ -5412,6 +5473,67 @@ async function boot() {
     });
     actions.append(approve, reject);
     body.appendChild(actions);
+  }
+
+  function renderIngestPreview(body: HTMLElement, preview: IngestPreview) {
+    body.innerHTML = "";
+    const h = document.createElement("h2");
+    h.className = "research-query";
+    h.textContent = preview.title;
+    body.appendChild(h);
+
+    if (/^https?:\/\//i.test(preview.source)) {
+      const src = document.createElement("a");
+      src.href = preview.source;
+      src.target = "_blank";
+      src.rel = "noopener noreferrer";
+      src.className = "answer-source article-source";
+      try {
+        src.textContent = new URL(preview.source).hostname;
+      } catch {
+        src.textContent = preview.source;
+      }
+      src.insertAdjacentHTML("beforeend", EXT_ICON);
+      body.appendChild(src);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "ingest-preview-actions";
+    renderIngestChoice(actions, async (target) => {
+      body.innerHTML = `<p class="muted">${target.captureOnly ? "saving to Inbox…" : "building wiki proposal…"}</p>`;
+      try {
+        if (target.captureOnly) {
+          const data = await api<{ id: string }>("/api/ingest/save", {
+            json: { converted: preview },
+          });
+          body.innerHTML = '<p class="muted">saved — opening the note…</p>';
+          await openAfterIngest(String(data.id));
+          return;
+        }
+        const proposal = await api<WikiIngestProposal>("/api/wiki-ingest/propose", {
+          json: { converted: preview, wikiId: target.wikiId },
+        });
+        renderWikiProposal(body, proposal);
+      } catch (e) {
+        body.innerHTML = "";
+        if (e instanceof ApiError) {
+          const msg = (e.body as { message?: string; error?: string } | null | undefined)?.message;
+          researchError(msg ?? "ingest failed");
+        } else {
+          researchError(e instanceof Error ? e.message : "ingest failed");
+        }
+      }
+    });
+    body.appendChild(actions);
+
+    const content = document.createElement("div");
+    content.className = "article-body";
+    body.appendChild(content);
+    void Promise.resolve(
+      marked.parse(stripLeadingTitle(preview.markdown, preview.title)),
+    ).then((html) => {
+      content.innerHTML = DOMPurify.sanitize(html);
+    });
   }
 
   // Hot-swap a rescanned graph into the LIVE scene: diff against the current
@@ -5541,28 +5663,25 @@ async function boot() {
   async function runIngest(source: string) {
     openResearch("ingest");
     const body = $("#research-body");
-    renderIngestChoice(body, i18n.t("ingest.action"), async (target) => {
-      const propose = !target.captureOnly;
-      body.innerHTML = `<p class="muted">${propose ? "building wiki proposal…" : "importing…"}</p>`;
-      try {
-        const data = await api<{ id?: string; message?: string; error?: string } & Partial<WikiIngestProposal>>(
-          propose ? "/api/wiki-ingest/propose" : "/api/ingest",
-          { json: { source, ...target } },
-        );
-        if (propose) renderWikiProposal(body, data as WikiIngestProposal);
-        else {
-          body.innerHTML = '<p class="muted">saved — opening the note…</p>';
-          openAfterIngest(String(data.id));
-        }
-      } catch (e) {
-        body.innerHTML = "";
+    body.innerHTML = '<p class="muted">converting preview…</p>';
+    try {
+      const preview = await api<IngestPreview>("/api/ingest/preview", {
+        json: { source },
+      });
+      renderIngestPreview(body, preview);
+    } catch (e) {
+      body.innerHTML = "";
+      if (e instanceof ApiError) {
+        const msg = (e.body as { message?: string; error?: string } | null | undefined)?.message;
+        researchError(msg ?? "ingest failed");
+      } else {
         researchError(e instanceof Error ? e.message : "ingest failed");
       }
-    });
+    }
   }
 
-  // Browse button (shown in ingest mode): click the hidden file input, then
-  // defer upload until the user picks an Inbox/wiki target in the choice card.
+  // Browse button (shown in ingest mode): click the hidden file input, convert
+  // it to a preview, then let the user choose Inbox or wiki ingest.
   $("#ingest-browse").addEventListener("click", () =>
     ($("#ingest-file") as HTMLInputElement).click(),
   );
@@ -5575,35 +5694,23 @@ async function boot() {
       input.value = ""; // allow re-picking the same file
       openResearch("ingest");
       const body = $("#research-body");
-      renderIngestChoice(body, i18n.t("ingest.action"), async (target) => {
-        const propose = !target.captureOnly;
-        body.innerHTML = `<p class="muted">${propose ? "building wiki proposal" : "converting"} ${file.name} via markitdown…</p>`;
-        try {
-          const buf = await file.arrayBuffer();
-          const params = new URLSearchParams({ name: file.name });
-          if (target.wikiId) params.set("wikiId", target.wikiId);
-          if (target.captureOnly) params.set("captureOnly", "1");
-          const res = await apiRaw(
-            `/${propose ? "api/wiki-ingest/propose-upload" : "api/ingest-upload"}?${params.toString()}`,
-            {
-              method: "POST",
-              headers: { "content-type": "application/octet-stream" },
-              body: buf,
-              token: true,
-            },
-          );
-          const data = (await res.json()) as { id?: string; message?: string; error?: string } & Partial<WikiIngestProposal>;
-          if (!res.ok) throw new Error(data.message ?? data.error);
-          if (propose) renderWikiProposal(body, data as WikiIngestProposal);
-          else {
-            body.innerHTML = '<p class="muted">saved — opening the note…</p>';
-            openAfterIngest(String(data.id));
-          }
-        } catch (e) {
-          body.innerHTML = "";
-          researchError(e instanceof Error ? e.message : "ingest failed");
-        }
-      });
+      body.innerHTML = `<p class="muted">converting ${file.name} via markitdown…</p>`;
+      try {
+        const buf = await file.arrayBuffer();
+        const params = new URLSearchParams({ name: file.name });
+        const res = await apiRaw(`/api/ingest/preview-upload?${params.toString()}`, {
+          method: "POST",
+          headers: { "content-type": "application/octet-stream" },
+          body: buf,
+          token: true,
+        });
+        const preview = (await res.json()) as IngestPreview & { message?: string; error?: string };
+        if (!res.ok) throw new Error(preview.message ?? preview.error);
+        renderIngestPreview(body, preview);
+      } catch (e) {
+        body.innerHTML = "";
+        researchError(e instanceof Error ? e.message : "ingest failed");
+      }
     },
   );
 
@@ -6087,13 +6194,15 @@ async function boot() {
     a.href = graph.renderer().domElement.toDataURL("image/png");
     a.click();
   });
-  $("#mi-clear-history").addEventListener("click", () => {
+  $("#mi-clear-research-history").addEventListener("click", () => {
     closeMenus();
-    void clearAllHistory();
+    void clearResearchHistory();
+  });
+  $("#mi-clear-note-history").addEventListener("click", () => {
+    closeMenus();
+    void clearNoteHistory();
   });
 
-  // Ingest a document or URL via markitdown (F023): switch to Ingest mode
-  // so the search field becomes the path/URL input.
   // ---- View ----
   $("#mi-fullscreen").addEventListener("click", () => {
     closeMenus();
