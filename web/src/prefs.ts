@@ -76,6 +76,7 @@ const KEY = {
   nodeSize: `${PREFIX}node-size`,
   linkOpacity: `${PREFIX}link-opacity`,
   minWeight: `${PREFIX}min-weight`,
+  intensity: `${PREFIX}intensity`,
 } as const;
 
 const DEFAULT_SIZE_WEIGHTS: SizeWeights = {
@@ -178,6 +179,9 @@ export interface Prefs {
 
   getMinWeight(): number | null;
   setMinWeight(v: number): void;
+
+  getIntensity(): number | null;
+  setIntensity(v: number): void;
 }
 
 function defaultStorage(): PrefsStorage {
@@ -197,7 +201,7 @@ export function createPrefs(storage: PrefsStorage = defaultStorage()): Prefs {
   const set = (k: string, v: string) => storage.setItem(k, v);
   const del = (k: string) => storage.removeItem(k);
 
-  // raw number slider helper (5 keys share this shape)
+  // raw number slider helper (6 keys share this shape)
   const numPref = (k: string) => {
     const read = (): number | null => {
       const v = get(k);
@@ -212,6 +216,7 @@ export function createPrefs(storage: PrefsStorage = defaultStorage()): Prefs {
   const [getNodeSize, setNodeSize] = numPref(KEY.nodeSize);
   const [getLinkOpacity, setLinkOpacity] = numPref(KEY.linkOpacity);
   const [getMinWeight, setMinWeight] = numPref(KEY.minWeight);
+  const [getIntensity, setIntensity] = numPref(KEY.intensity);
 
   return {
     getTheme() {
@@ -430,5 +435,7 @@ export function createPrefs(storage: PrefsStorage = defaultStorage()): Prefs {
     setLinkOpacity,
     getMinWeight,
     setMinWeight,
+    getIntensity,
+    setIntensity,
   };
 }

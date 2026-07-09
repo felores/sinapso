@@ -450,19 +450,18 @@ describe("prefs: JSON keys — research geometry (akasha-research)", () => {
     };
     prefs.setResearch(g);
     expect(prefs.getResearch()).toEqual(g);
-    expect(JSON.parse(storage.getItem("akasha-research") as string)).toEqual(
-      g,
-    );
+    expect(JSON.parse(storage.getItem("akasha-research") as string)).toEqual(g);
   });
 });
 
-describe("prefs: dynamic slider keys (5 numeric ranges)", () => {
+describe("prefs: dynamic slider keys (6 numeric ranges)", () => {
   it("getNumber: default null when key missing", () => {
     expect(prefs.getLabelDistance()).toBeNull();
     expect(prefs.getLabelSize()).toBeNull();
     expect(prefs.getNodeSize()).toBeNull();
     expect(prefs.getLinkOpacity()).toBeNull();
     expect(prefs.getMinWeight()).toBeNull();
+    expect(prefs.getIntensity()).toBeNull();
   });
 
   it("each slider writes its own akasha-* key and round-trips", () => {
@@ -471,16 +470,19 @@ describe("prefs: dynamic slider keys (5 numeric ranges)", () => {
     prefs.setNodeSize(5);
     prefs.setLinkOpacity(75);
     prefs.setMinWeight(2);
+    prefs.setIntensity(40);
     expect(storage.getItem("akasha-label-distance")).toBe("500");
     expect(storage.getItem("akasha-label-size")).toBe("6");
     expect(storage.getItem("akasha-node-size")).toBe("5");
     expect(storage.getItem("akasha-link-opacity")).toBe("75");
     expect(storage.getItem("akasha-min-weight")).toBe("2");
+    expect(storage.getItem("akasha-intensity")).toBe("40");
     expect(prefs.getLabelDistance()).toBe(500);
     expect(prefs.getLabelSize()).toBe(6);
     expect(prefs.getNodeSize()).toBe(5);
     expect(prefs.getLinkOpacity()).toBe(75);
     expect(prefs.getMinWeight()).toBe(2);
+    expect(prefs.getIntensity()).toBe(40);
   });
 });
 

@@ -534,6 +534,28 @@ async function boot() {
     syncEnvironment();
   }
 
+  // Scene intensity: a CSS filter on the WebGL container attenuates everything
+  // the scene draws (nodes, links, stars, bloom, labels) without touching the
+  // render pipeline. Dark themes fade toward black; light themes fade toward
+  // the paper (lower contrast + slight brightness lift instead of darkening).
+  let sceneIntensity = 100;
+  function applyIntensity(v: number) {
+    sceneIntensity = v;
+    const el = $("#graph") as HTMLElement;
+    if (v >= 100) {
+      el.style.filter = "";
+      return;
+    }
+    const t = v / 100;
+    const c = new THREE.Color(T().bg);
+    const light = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b > 0.5;
+    // At 0 the geometry stays barely visible: dark themes sink almost to the
+    // background, light themes fade the ink almost into the paper.
+    el.style.filter = light
+      ? `saturate(${t}) contrast(${0.15 + 0.85 * t}) brightness(${1 + 0.7 * (1 - t)})`
+      : `saturate(${t}) brightness(${0.15 + 0.85 * t})`;
+  }
+
   function applyTheme(k: string) {
     theme = THEMES[k] ? k : "midnight";
     prefs.setTheme(theme);
@@ -566,6 +588,7 @@ async function boot() {
     buildLegend();
     syncEnvironment();
     updateLinkColors();
+    applyIntensity(sceneIntensity); // dark/light ramp depends on theme bg
     repaint();
   }
 
@@ -2770,16 +2793,25 @@ async function boot() {
     }
     if (nodeStyle === "particles") rebuildNodes();
   });
+  bindRange("scene-intensity", (v) => `${v}%`, applyIntensity, {
+    read: prefs.getIntensity,
+    write: prefs.setIntensity,
+  });
   bindRange(
     "link-opacity",
     (v) => `${v}%`,
     (v) => (lineMat.opacity = v / 100),
     { read: prefs.getLinkOpacity, write: prefs.setLinkOpacity },
   );
-  bindRange("min-weight", String, (v) => {
-    minWeight = v;
-    refreshVisibility();
-  }, { read: prefs.getMinWeight, write: prefs.setMinWeight });
+  bindRange(
+    "min-weight",
+    String,
+    (v) => {
+      minWeight = v;
+      refreshVisibility();
+    },
+    { read: prefs.getMinWeight, write: prefs.setMinWeight },
+  );
   const depthSel = $("#depth") as HTMLSelectElement;
   depthSel.value = String(focusDepth); // reflect the persisted choice on boot
   depthSel.addEventListener("change", (e) => {
