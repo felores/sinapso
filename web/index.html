@@ -165,6 +165,40 @@
             <div class="integ-help hidden" id="llm-model-help">
               <a href="https://openrouter.ai/models" target="_blank" rel="noopener" data-i18n="integ.browseModels">Browse models <svg class="ext-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/></svg></a>
             </div>
+            <div class="integ-row" id="integ-deepseek"><b data-i18n="integ.deepseek">DeepSeek API</b><span class="integ-status"></span></div>
+            <input type="password" id="deepseek-key" placeholder="DeepSeek API key — paste + Enter" data-i18n-ph="ph.dsKey" autocomplete="off" />
+            <div class="integ-help">
+              <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener" data-i18n="integ.getKey">Get a key <svg class="ext-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/></svg></a>
+            </div>
+            <div class="integ-row"><b data-i18n="integ.tiers">Model Tiers</b></div>
+            <div class="voice-selects tier-slot" data-tier="worker">
+              <label class="voice-col" data-i18n="tier.worker">Worker
+                <select id="worker-provider">
+                  <option value="">default model</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="deepseek">DeepSeek</option>
+                </select>
+              </label>
+              <label class="voice-col hidden" id="worker-model-col" data-i18n="tier.model">Model
+                <select id="worker-model"></select>
+              </label>
+              <span class="tier-fixed hidden" id="worker-fixed"></span>
+            </div>
+            <input type="text" id="worker-model-custom" class="hidden" placeholder="provider/model + Enter" data-i18n-ph="ph.llmModel" autocomplete="off" spellcheck="false" />
+            <div class="voice-selects tier-slot" data-tier="thinker">
+              <label class="voice-col" data-i18n="tier.thinker">Thinker
+                <select id="thinker-provider">
+                  <option value="">default model</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="deepseek">DeepSeek</option>
+                </select>
+              </label>
+              <label class="voice-col hidden" id="thinker-model-col" data-i18n="tier.model">Model
+                <select id="thinker-model"></select>
+              </label>
+              <span class="tier-fixed hidden" id="thinker-fixed"></span>
+            </div>
+            <input type="text" id="thinker-model-custom" class="hidden" placeholder="provider/model + Enter" data-i18n-ph="ph.llmModel" autocomplete="off" spellcheck="false" />
             <div class="integ-row" id="integ-voice"><b data-i18n="integ.voice">Voice Assistant</b><span class="integ-status"></span></div>
             <div class="voice-selects">
               <label class="voice-col" data-i18n="voice.provider">Provider

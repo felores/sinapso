@@ -50,6 +50,7 @@ import type { GNode, GLink } from "./types";
 import { filterFields, compileMatcher } from "./filters";
 import { computeSemanticClusters as computeSemanticClustersPure } from "./clusters";
 import { api, apiRaw, ApiError, getApiToken } from "./api";
+import { pickerState } from "./model-picker";
 import { createPrefs } from "./prefs";
 import {
   buildKeywordQuery,
@@ -3384,9 +3385,16 @@ async function boot() {
       markitdown: { installed: boolean; version: string | null };
       exa: { configured: boolean };
       openrouter: { configured: boolean };
+      deepseek: { configured: boolean };
     };
     consents: { web: boolean };
     defaultModel: string | null;
+    llm?: {
+      workerProvider: string | null;
+      workerModel: string | null;
+      thinkerProvider: string | null;
+      thinkerModel: string | null;
+    };
     writeDestination: string;
     archiveDestination: string;
     imagesDestination: string;
@@ -3694,6 +3702,7 @@ async function boot() {
       keyStatus("OpenRouter", t?.openrouter),
       !!t?.openrouter.configured,
     );
+    st("deepseek", keyStatus("DeepSeek", t?.deepseek), !!t?.deepseek.configured);
     if (integrations) {
       // Keys are stored server-side and never echoed back, so the fields
       // are always empty — make the placeholders say a key IS configured.
@@ -3709,6 +3718,13 @@ async function boot() {
           ? "key configured ✓ — paste + Enter to replace"
           : "OpenRouter API key — paste + Enter";
       }
+      const dsKey = $("#deepseek-key") as HTMLInputElement;
+      if (!dsKey.value) {
+        dsKey.placeholder = t?.deepseek.configured
+          ? "key configured ✓ — paste + Enter to replace"
+          : "DeepSeek API key — paste + Enter";
+      }
+      renderTierSlots();
       const sel = $("#llm-model-select") as HTMLSelectElement;
       const model = integrations.defaultModel ?? "";
       if ([...sel.options].some((o) => o.value === model)) {
@@ -3729,6 +3745,30 @@ async function boot() {
     // Live-validate the OpenRouter key for free (GET /key); Exa has no free
     // check, so it stays at "key set" until Web mode actually runs.
     if (t?.openrouter.configured) void testOpenRouter();
+    if (t?.deepseek.configured) void testDeepseek();
+  }
+
+  // Free DeepSeek key validation via the models-list endpoint.
+  async function testDeepseek() {
+    const el = $("#integ-deepseek .integ-status");
+    el.textContent = "DeepSeek · testing…";
+    el.classList.remove("ok", "warn");
+    try {
+      const r = await api<{
+        configured: boolean;
+        ok?: boolean;
+        unreachable?: boolean;
+      }>("/api/integrations/test/deepseek");
+      if (!r.configured) el.textContent = "DeepSeek · no key";
+      else if (r.unreachable) el.textContent = "DeepSeek · unreachable";
+      else if (!r.ok) el.textContent = "DeepSeek · invalid key";
+      else {
+        el.textContent = "DeepSeek · ready";
+        el.classList.add("ok");
+      }
+    } catch {
+      el.textContent = "DeepSeek · unreachable";
+    }
   }
 
   // Free OpenRouter key validation → real status + remaining credit.
@@ -3852,6 +3892,94 @@ async function boot() {
       llmModelInput.placeholder = "save failed — retry";
     }
   });
+  // DeepSeek key (BYO), mirroring the OpenRouter block. Powers the fixed
+  // v4 pair when a tier slot selects the DeepSeek provider.
+  const deepseekKeyInput = $("#deepseek-key") as HTMLInputElement;
+  deepseekKeyInput.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter") return;
+    const v = deepseekKeyInput.value.trim();
+    if (!v) return;
+    deepseekKeyInput.disabled = true;
+    try {
+      await postConfig({ deepseekKey: v });
+      deepseekKeyInput.value = "";
+      deepseekKeyInput.placeholder = "key saved ✓";
+      await refreshIntegrations();
+    } catch {
+      deepseekKeyInput.placeholder = "save failed — retry";
+    } finally {
+      deepseekKeyInput.disabled = false;
+    }
+  });
+  // ---- Model tiers (worker/thinker): per-slot provider select plus a
+  // parameterized model picker (KTD8). Option state is computed by the pure
+  // pickerState() helper; DeepSeek slots show the fixed model label (AE1).
+  function wireModelPicker(tier: "worker" | "thinker"): () => void {
+    const provider = $(`#${tier}-provider`) as HTMLSelectElement;
+    const modelCol = $(`#${tier}-model-col`);
+    const model = $(`#${tier}-model`) as HTMLSelectElement;
+    const custom = $(`#${tier}-model-custom`) as HTMLInputElement;
+    const fixed = $(`#${tier}-fixed`);
+    // Clone the curated options from the legacy picker: one list, no drift.
+    for (const o of [...llmModelSelect.options]) {
+      const opt = o.cloneNode(true) as HTMLOptionElement;
+      if (opt.value === "") opt.textContent = "default";
+      model.add(opt);
+    }
+    const curated = [...model.options]
+      .map((o) => o.value)
+      .filter((v) => v && v !== "__custom");
+    const render = () => {
+      const cfg = integrations?.llm;
+      const p = tier === "worker" ? cfg?.workerProvider : cfg?.thinkerProvider;
+      const m = tier === "worker" ? cfg?.workerModel : cfg?.thinkerModel;
+      const st = pickerState(tier, p ?? null, m ?? null, curated);
+      provider.value = st.providerValue;
+      modelCol.classList.toggle("hidden", !st.modelSelectVisible);
+      model.value = st.modelSelectValue;
+      custom.classList.toggle("hidden", !st.customVisible);
+      if (st.customVisible) custom.value = st.customValue;
+      fixed.classList.toggle("hidden", !st.fixedLabel);
+      fixed.textContent = st.fixedLabel ?? "";
+    };
+    const save = (patch: object) =>
+      postConfig(patch)
+        .then(() => refreshIntegrations())
+        .catch(() => refreshIntegrations());
+    provider.addEventListener("change", () => {
+      void save(
+        tier === "worker"
+          ? { workerProvider: provider.value || null }
+          : { thinkerProvider: provider.value || null },
+      );
+    });
+    model.addEventListener("change", () => {
+      if (model.value === "__custom") {
+        custom.classList.remove("hidden");
+        custom.focus();
+        return;
+      }
+      void save(
+        tier === "worker"
+          ? { workerModel: model.value || null }
+          : { thinkerModel: model.value || null },
+      );
+    });
+    custom.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      const v = custom.value.trim();
+      void save(
+        tier === "worker" ? { workerModel: v || null } : { thinkerModel: v || null },
+      );
+    });
+    return render;
+  }
+  const renderWorkerSlot = wireModelPicker("worker");
+  const renderThinkerSlot = wireModelPicker("thinker");
+  function renderTierSlots() {
+    renderWorkerSlot();
+    renderThinkerSlot();
+  }
   // ---- Voice Assistant config (Tools menu): provider → voice + per-provider
   // key. Keys post to the same 0600 config the local voice relay reads; the
   // browser only ever learns whether a key is present (booleans), never the key.
