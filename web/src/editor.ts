@@ -9,6 +9,7 @@ import {
   StateEffect,
   RangeSetBuilder,
   Compartment,
+  Annotation,
   type Extension,
 } from "@codemirror/state";
 import {
@@ -467,14 +468,48 @@ function buildBlockPreviews(state: EditorState): DecorationSet {
   return b.finish();
 }
 
+const parseSettled = Annotation.define<boolean>();
+
 const blockPreviewField = StateField.define<DecorationSet>({
   create: buildBlockPreviews,
   update(value, tr) {
-    if (tr.docChanged || tr.selection) return buildBlockPreviews(tr.state);
+    if (tr.docChanged || tr.selection || tr.annotation(parseSettled))
+      return buildBlockPreviews(tr.state);
     return value;
   },
   provide: (f) => EditorView.decorations.from(f),
 });
+
+// The field computes at state creation, when the incremental markdown parse
+// may not have reached a table yet (parse-heavy notes, inline code in
+// cells) — and a StateField never sees the parser's idle progress. This
+// watcher pokes ONE recompute once the tree covers the document, so block
+// previews appear on first paint instead of after the first click.
+const parseSettleWatcher = ViewPlugin.fromClass(
+  class {
+    settled = false;
+    timer: ReturnType<typeof setTimeout> | null = null;
+    constructor(readonly view: EditorView) {
+      this.check(view.state);
+    }
+    update(u: ViewUpdate) {
+      if (u.docChanged) this.settled = false;
+      if (!this.settled) this.check(u.state);
+    }
+    check(state: EditorState) {
+      if (syntaxTree(state).length < state.doc.length) return;
+      this.settled = true;
+      if (this.timer !== null) return;
+      this.timer = setTimeout(() => {
+        this.timer = null;
+        this.view.dispatch({ annotations: parseSettled.of(true) });
+      }, 0);
+    }
+    destroy() {
+      if (this.timer !== null) clearTimeout(this.timer);
+    }
+  },
+);
 
 // ---------- factory ----------
 
@@ -520,6 +555,7 @@ function buildExtensions(opts: NoteEditorOptions): Extension[] {
     livePreviewPlugin,
     wikiLinkPlugin(opts.onWikiLinkClick),
     blockPreviewField,
+    parseSettleWatcher,
     tooltipHost(),
     selectionToolbar(opts.toolbarExtras),
     history(),
