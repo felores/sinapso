@@ -54,8 +54,8 @@ export const REGISTRY: RegistryEntry[] = [
     description:
       "What the user is looking at RIGHT NOW: the note open in the reader, their recent research, and selectedContext.current from the one highlighted reader/research passage. Call this FIRST whenever they refer to what's on screen or selected text: 'this note', 'what I'm reading', 'this', 'the research I just did', 'esto', 'lo seleccionado'. Then use the open note's path or selectedContext source label with the other tools to answer specifics.",
     params: {
-      "type": "object",
-      "properties": {}
+      type: "object",
+      properties: {},
     },
     surfaces: ["voice"],
   },
@@ -94,11 +94,13 @@ export const REGISTRY: RegistryEntry[] = [
       properties: {
         query: {
           type: "string",
-          description: "Specific question, topic, or (with exact=true) the literal text to find.",
+          description:
+            "Specific question, topic, or (with exact=true) the literal text to find.",
         },
         note: {
           type: "string",
-          description: "Optional relative path of the note to restrict the search to.",
+          description:
+            "Optional relative path of the note to restrict the search to.",
         },
         exact: {
           type: "boolean",
@@ -149,21 +151,22 @@ export const REGISTRY: RegistryEntry[] = [
     description:
       "See how the vault is organized: the subfolders (with note counts) and notes directly inside a folder. Omit 'path' for the top level, or give a folder path to look inside it and navigate down. Use for 'what folders do I have', 'how is my vault organized', '¿qué hay en la carpeta saas?', 'las notas dentro de X', or to FIND WHERE a kind of note lives (meetings usually sit in a 'reuniones' subfolder, etc.). This covers the WHOLE vault, including folders the semantic search does not index.",
     params: {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "description": "Folder path to look inside (e.g. 'saas' or 'saas/climatia'). Omit for the top level."
-        }
-      }
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description:
+            "Folder path to look inside (e.g. 'saas' or 'saas/climatia'). Omit for the top level.",
+        },
+      },
     },
     surfaces: ["voice", "mcp", "cli"],
     route: {
-      "method": "GET",
-      "path": "/api/tree",
-      "query": {
-        "path": "path"
-      }
+      method: "GET",
+      path: "/api/tree",
+      query: {
+        path: "path",
+      },
     },
   },
   {
@@ -171,16 +174,14 @@ export const REGISTRY: RegistryEntry[] = [
     description:
       "Open a vault note in the reader and get a preview. Give 'note' as a vault-relative .md path from a previous result or current_view. Do NOT use this for http(s) URLs; use open_resource or fetch_url for links.",
     params: {
-      "type": "object",
-      "properties": {
-        "note": {
-          "type": "string",
-          "description": "Relative path of the note to open."
-        }
+      type: "object",
+      properties: {
+        note: {
+          type: "string",
+          description: "Relative path of the note to open.",
+        },
       },
-      "required": [
-        "note"
-      ]
+      required: ["note"],
     },
     surfaces: ["voice"],
   },
@@ -189,16 +190,15 @@ export const REGISTRY: RegistryEntry[] = [
     description:
       "Open whatever the user points at: an http(s) URL opens as a temporary web article in research, a research-history id reopens that stored research entry, and a vault-relative .md path opens the note reader. Use this for 'open that link/result/resource' when the domain may be ambiguous.",
     params: {
-      "type": "object",
-      "properties": {
-        "target": {
-          "type": "string",
-          "description": "URL, research-history id, or vault-relative .md note path."
-        }
+      type: "object",
+      properties: {
+        target: {
+          type: "string",
+          description:
+            "URL, research-history id, or vault-relative .md note path.",
+        },
       },
-      "required": [
-        "target"
-      ]
+      required: ["target"],
     },
     surfaces: ["voice"],
   },
@@ -207,8 +207,8 @@ export const REGISTRY: RegistryEntry[] = [
     description:
       "Reopen the most recently viewed note in the reader (even if nothing is open now) and get a preview of it — the voice equivalent of the reader's history button. Use for 'open the last note', 'reopen what I was reading', 'abre la última nota'. No arguments.",
     params: {
-      "type": "object",
-      "properties": {}
+      type: "object",
+      properties: {},
     },
     surfaces: ["voice"],
   },
@@ -217,8 +217,8 @@ export const REGISTRY: RegistryEntry[] = [
     description:
       "Reopen the most recent research result in the research panel and get its question + answer. Use for 'open the last research', 'show my last search', 'abre la última investigación'. No arguments.",
     params: {
-      "type": "object",
-      "properties": {}
+      type: "object",
+      properties: {},
     },
     surfaces: ["voice"],
   },
@@ -227,13 +227,13 @@ export const REGISTRY: RegistryEntry[] = [
     description:
       "List the enabled Admin-configured wikis, their vault-relative paths, raw folders, and contract files. Use before saving a working document into a wiki or raw folder. If only one wiki is returned, use it by default; if multiple are returned, choose from user context or ask.",
     params: {
-      "type": "object",
-      "properties": {}
+      type: "object",
+      properties: {},
     },
     surfaces: ["voice", "mcp", "cli"],
     route: {
-      "method": "GET",
-      "path": "/api/wikis"
+      method: "GET",
+      path: "/api/wikis",
     },
   },
   {
@@ -241,24 +241,22 @@ export const REGISTRY: RegistryEntry[] = [
     description:
       "Read the selected wiki's contract files (AGENTS.md, CLAUDE.md, index.md, README.md when present). Use before creating a structured wiki note so the note follows that wiki's node types, folders, wikilinks, sources, and connection conventions.",
     params: {
-      "type": "object",
-      "properties": {
-        "wikiId": {
-          "type": "string",
-          "description": "Wiki id or path from list_wikis."
-        }
+      type: "object",
+      properties: {
+        wikiId: {
+          type: "string",
+          description: "Wiki id or path from list_wikis.",
+        },
       },
-      "required": [
-        "wikiId"
-      ]
+      required: ["wikiId"],
     },
     surfaces: ["voice", "mcp", "cli"],
     route: {
-      "method": "GET",
-      "path": "/api/wiki-contracts",
-      "query": {
-        "wikiId": "wikiId"
-      }
+      method: "GET",
+      path: "/api/wiki-contracts",
+      query: {
+        wikiId: "wikiId",
+      },
     },
   },
   {
@@ -266,40 +264,38 @@ export const REGISTRY: RegistryEntry[] = [
     description:
       "Create or update a temporary working document shown in the research panel. Use operation='create' for a separate new artifact, draft, alternate version, or second document. Use operation='update' with documentId when revising a known document. If operation is omitted, the current active document is updated; if none exists, a new one is created. Always pass the COMPLETE new markdown, never a fragment, because it REPLACES that document in place. The user can then save it as a vault note.",
     params: {
-      "type": "object",
-      "properties": {
-        "title": {
-          "type": "string",
-          "description": "Document title."
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description: "Document title.",
         },
-        "operation": {
-          "type": "string",
-          "description": "Optional: 'create' for a separate new document, or 'update' to revise an existing document."
+        operation: {
+          type: "string",
+          description:
+            "Optional: 'create' for a separate new document, or 'update' to revise an existing document.",
         },
-        "documentId": {
-          "type": "string",
-          "description": "Optional id of the temporary document to update."
+        documentId: {
+          type: "string",
+          description: "Optional id of the temporary document to update.",
         },
-        "markdown": {
-          "type": "string",
-          "description": "The complete document body in markdown."
-        }
+        markdown: {
+          type: "string",
+          description: "The complete document body in markdown.",
+        },
       },
-      "required": [
-        "title",
-        "markdown"
-      ]
+      required: ["title", "markdown"],
     },
     surfaces: ["voice", "mcp", "cli"],
     route: {
-      "method": "POST",
-      "path": "/api/document",
-      "tokenRequired": true,
-      "body": {
-        "documentId": "id",
-        "title": "title",
-        "markdown": "content"
-      }
+      method: "POST",
+      path: "/api/document",
+      tokenRequired: true,
+      body: {
+        documentId: "id",
+        title: "title",
+        markdown: "content",
+      },
     },
   },
   {
@@ -307,41 +303,45 @@ export const REGISTRY: RegistryEntry[] = [
     description:
       "Promote the current working document out of temporary history into the vault. Use kind='wiki_note' for a structured note inside the selected wiki, after read_wiki_contract and any needed write_document revision. Use kind='raw_copy' to save the document as a raw source copy in the selected wiki's raw folder. On success it rescans and opens the saved note, and removes the temporary document from history.",
     params: {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "type": "string",
-          "description": "Either 'wiki_note' or 'raw_copy'. Defaults to wiki_note."
+      type: "object",
+      properties: {
+        kind: {
+          type: "string",
+          description:
+            "Either 'wiki_note' or 'raw_copy'. Defaults to wiki_note.",
         },
-        "wikiId": {
-          "type": "string",
-          "description": "Wiki id or path from list_wikis. Optional only when exactly one wiki is enabled."
+        wikiId: {
+          type: "string",
+          description:
+            "Wiki id or path from list_wikis. Optional only when exactly one wiki is enabled.",
         },
-        "path": {
-          "type": "string",
-          "description": "Optional vault-relative .md path for wiki_note, chosen from the wiki contract. Must stay under the selected wiki."
+        path: {
+          type: "string",
+          description:
+            "Optional vault-relative .md path for wiki_note, chosen from the wiki contract. Must stay under the selected wiki.",
         },
-        "title": {
-          "type": "string",
-          "description": "Optional title override for the saved note."
+        title: {
+          type: "string",
+          description: "Optional title override for the saved note.",
         },
-        "documentId": {
-          "type": "string",
-          "description": "Optional id of the temporary document to save. Defaults to the active document."
-        }
-      }
+        documentId: {
+          type: "string",
+          description:
+            "Optional id of the temporary document to save. Defaults to the active document.",
+        },
+      },
     },
     surfaces: ["voice", "mcp", "cli"],
     route: {
-      "method": "POST",
-      "path": "/api/document/{documentId}/promote",
-      "tokenRequired": true,
-      "body": {
-        "kind": "kind",
-        "wikiId": "wikiId",
-        "path": "path",
-        "title": "title"
-      }
+      method: "POST",
+      path: "/api/document/{documentId}/promote",
+      tokenRequired: true,
+      body: {
+        kind: "kind",
+        wikiId: "wikiId",
+        path: "path",
+        title: "title",
+      },
     },
   },
   {
@@ -349,31 +349,28 @@ export const REGISTRY: RegistryEntry[] = [
     description:
       "Edit an EXISTING vault note in place — replace its full content. Give 'note' (the vault-relative .md path from a previous result) and 'markdown' (the COMPLETE new body, not a fragment). Use when the user asks to revise, add to, or fix a note that is already in the vault: 'edita X', 'add sources to that note', 'arregla eso', 'actualiza la nota'. Always pass the full markdown including the unchanged parts. On success it rescans and reopens the note.",
     params: {
-      "type": "object",
-      "properties": {
-        "note": {
-          "type": "string",
-          "description": "Vault-relative .md path of the note to edit."
+      type: "object",
+      properties: {
+        note: {
+          type: "string",
+          description: "Vault-relative .md path of the note to edit.",
         },
-        "markdown": {
-          "type": "string",
-          "description": "The complete new markdown body for the note."
-        }
+        markdown: {
+          type: "string",
+          description: "The complete new markdown body for the note.",
+        },
       },
-      "required": [
-        "note",
-        "markdown"
-      ]
+      required: ["note", "markdown"],
     },
     surfaces: ["voice", "mcp", "cli"],
     route: {
-      "method": "PUT",
-      "path": "/api/notes",
-      "tokenRequired": true,
-      "body": {
-        "note": "id",
-        "markdown": "content"
-      }
+      method: "PUT",
+      path: "/api/notes",
+      tokenRequired: true,
+      body: {
+        note: "id",
+        markdown: "content",
+      },
     },
     mcpEditOptIn: true,
   },
@@ -382,25 +379,23 @@ export const REGISTRY: RegistryEntry[] = [
     description:
       "Archive a saved vault note by moving it to the Admin-configured archive folder. Use for delete/remove/trash/archive requests: this is NOT a hard delete. Give 'note' (the vault-relative .md path from current_view or a previous result). If the user says 'this note', call current_view first.",
     params: {
-      "type": "object",
-      "properties": {
-        "note": {
-          "type": "string",
-          "description": "Vault-relative .md path of the note to archive."
-        }
+      type: "object",
+      properties: {
+        note: {
+          type: "string",
+          description: "Vault-relative .md path of the note to archive.",
+        },
       },
-      "required": [
-        "note"
-      ]
+      required: ["note"],
     },
     surfaces: ["voice", "mcp", "cli"],
     route: {
-      "method": "POST",
-      "path": "/api/archive",
-      "tokenRequired": true,
-      "body": {
-        "note": "id"
-      }
+      method: "POST",
+      path: "/api/archive",
+      tokenRequired: true,
+      body: {
+        note: "id",
+      },
     },
   },
   {
@@ -408,25 +403,23 @@ export const REGISTRY: RegistryEntry[] = [
     description:
       "Search the WEB (not their vault) and return a synthesized answer with sources, via Exa deep research. Use when they ask about the wider world, current facts, or anything NOT in their own notes — 'look it up', 'search the web for X', 'investiga X en la web', 'qué dice internet sobre…'. Spends the user's Exa credit and needs Web mode enabled. The result also opens in their research panel.",
     params: {
-      "type": "object",
-      "properties": {
-        "query": {
-          "type": "string",
-          "description": "What to research on the web."
-        }
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "What to research on the web.",
+        },
       },
-      "required": [
-        "query"
-      ]
+      required: ["query"],
     },
     surfaces: ["voice", "mcp", "cli"],
     route: {
-      "method": "POST",
-      "path": "/api/research",
-      "tokenRequired": true,
-      "body": {
-        "query": "query"
-      }
+      method: "POST",
+      path: "/api/research",
+      tokenRequired: true,
+      body: {
+        query: "query",
+      },
     },
   },
   {
@@ -434,25 +427,23 @@ export const REGISTRY: RegistryEntry[] = [
     description:
       "Fetch the FULL text of a specific web page by its URL, via Exa. Use when they give you a link or ask to read/summarize a page: 'read this article', 'what does this page say', 'lee este enlace'. Give the exact http(s) URL. Spends Exa credit and needs Web mode. The result also opens in their research panel.",
     params: {
-      "type": "object",
-      "properties": {
-        "url": {
-          "type": "string",
-          "description": "The exact http(s) URL to fetch."
-        }
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description: "The exact http(s) URL to fetch.",
+        },
       },
-      "required": [
-        "url"
-      ]
+      required: ["url"],
     },
     surfaces: ["voice", "mcp", "cli"],
     route: {
-      "method": "POST",
-      "path": "/api/article",
-      "tokenRequired": true,
-      "body": {
-        "url": "url"
-      }
+      method: "POST",
+      path: "/api/article",
+      tokenRequired: true,
+      body: {
+        url: "url",
+      },
     },
   },
   {
@@ -464,7 +455,8 @@ export const REGISTRY: RegistryEntry[] = [
       properties: {
         task: {
           type: "string",
-          description: "What the reasoner should produce, in one or two sentences.",
+          description:
+            "What the reasoner should produce, in one or two sentences.",
         },
         notes: {
           type: "array",
@@ -541,6 +533,29 @@ export const REGISTRY: RegistryEntry[] = [
     route: { method: "POST", path: "/api/research", tokenRequired: true },
   },
   {
+    name: "selection_assist",
+    description:
+      "Run a free-form instruction over the reader's selected note text (with positional note context); the reply is previewed before it can replace or follow the selection.",
+    params: {
+      type: "object",
+      properties: {
+        instruction: {
+          type: "string",
+          description: "What to do with the selection.",
+        },
+        selection: { type: "string", description: "The selected note text." },
+      },
+      required: ["instruction", "selection"],
+    },
+    surfaces: ["http"],
+    tier: "thinker",
+    route: {
+      method: "POST",
+      path: "/api/selection-assist",
+      tokenRequired: true,
+    },
+  },
+  {
     name: "wiki_ingest_synthesis",
     description:
       "Synthesize wiki create/edit proposals from a converted source document against the wiki contract.",
@@ -569,9 +584,18 @@ export const REGISTRY: RegistryEntry[] = [
     params: {
       type: "object",
       properties: {
-        title: { type: "string", description: "Note title (used to derive the filename)." },
-        path: { type: "string", description: "Optional vault-relative .md path." },
-        content: { type: "string", description: "The complete note body in markdown." },
+        title: {
+          type: "string",
+          description: "Note title (used to derive the filename).",
+        },
+        path: {
+          type: "string",
+          description: "Optional vault-relative .md path.",
+        },
+        content: {
+          type: "string",
+          description: "The complete note body in markdown.",
+        },
         destination: {
           type: "string",
           description: "Optional vault-relative destination folder override.",
@@ -584,7 +608,12 @@ export const REGISTRY: RegistryEntry[] = [
       method: "POST",
       path: "/api/notes",
       tokenRequired: true,
-      body: { title: "title", path: "path", content: "content", destination: "destination" },
+      body: {
+        title: "title",
+        path: "path",
+        content: "content",
+        destination: "destination",
+      },
     },
   },
 ];
@@ -605,7 +634,11 @@ export function operationTier(name: string): LlmTier {
 function pathMatches(pattern: string, actual: string): boolean {
   if (!pattern.includes("{")) return pattern === actual;
   const re = new RegExp(
-    "^" + pattern.replace(/[.*+?^$()[\]\\|]/g, "\\$&").replace(/\{[^}]+\}/g, "[^/]+") + "$",
+    "^" +
+      pattern
+        .replace(/[.*+?^$()[\]\\|]/g, "\\$&")
+        .replace(/\{[^}]+\}/g, "[^/]+") +
+      "$",
   );
   return re.test(actual);
 }

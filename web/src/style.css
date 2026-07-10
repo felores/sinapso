@@ -1628,6 +1628,68 @@ body > :not(#graph) {
 .cm-tb-italic { font-style: italic; }
 .cm-tb-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
+/* AI input in the toolbar row (U7): same row as the tools, per design. */
+.cm-tb-ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+}
+.cm-tb-ai-icon { font-size: 13px; line-height: 1; }
+.cm-tb-ai-icon.busy { animation: cm-ai-pulse 1s ease-in-out infinite; }
+@keyframes cm-ai-pulse {
+  50% { opacity: 0.35; }
+}
+.cm-tb-ai-input {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--fg);
+  font-size: 12px;
+  padding: 3px 7px;
+  width: 150px;
+}
+.cm-tb-ai-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  width: 210px;
+}
+
+/* AI preview panel (U7): nothing touches the note until accepted. */
+#reader-ai-preview {
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+  padding: 8px 12px;
+  font-size: 13px;
+}
+#reader-ai-preview.hidden { display: none; }
+#reader-ai-preview-text {
+  max-height: 32vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+#reader-ai-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+#reader-ai-preview-actions .muted { margin-right: auto; font-size: 12px; }
+#reader-ai-preview-actions button {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 3px 10px;
+}
+#reader-ai-preview-actions button:hover { border-color: var(--accent); }
+
 /* Save-state indicator (R9) — subtle text chip in the reader header,
    distinct from the git working-tree indicator. */
 #reader-save-state {

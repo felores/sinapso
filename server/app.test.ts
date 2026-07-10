@@ -830,3 +830,121 @@ describe("server: delegation routes trust negatives (U6, release-blocking)", () 
     }
   });
 });
+
+describe("POST /api/selection-assist (plan 018 U7)", () => {
+  it("rejects a request without the session token", async () => {
+    const res = await request(app)
+      .post("/api/selection-assist")
+      .send({ instruction: "shorten", selection: "text" });
+    expect(res.status).toBe(403);
+  });
+
+  it("400s when no LLM tier is configured", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "solaris-assist-nokey-"));
+    try {
+      const { app: app2 } = createApp(graphPath, undefined, {
+        configPath: join(dir, "config.json"),
+      });
+      const token = (await request(app2).get("/api/session")).body.token;
+      const res = await request(app2)
+        .post("/api/selection-assist")
+        .set("x-solaris-token", token)
+        .send({ instruction: "shorten", selection: "some text" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("no LLM configured");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("400s when instruction or selection is missing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "solaris-assist-badreq-"));
+    try {
+      const { app: app2 } = createApp(graphPath, undefined, {
+        configPath: join(dir, "config.json"),
+      });
+      const token = (await request(app2).get("/api/session")).body.token;
+      const res = await request(app2)
+        .post("/api/selection-assist")
+        .set("x-solaris-token", token)
+        .send({ instruction: "  ", selection: "" });
+      expect(res.status).toBe(400);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("sends the positional envelope to the thinker and returns its text", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "solaris-assist-ok-"));
+    try {
+      const bodies: string[] = [];
+      const configPath = join(dir, "config.json");
+      updateConfig(
+        {
+          openrouterKey: "or-k",
+          thinkerProvider: "openrouter",
+          thinkerModel: "meta/thinker-model",
+        },
+        configPath,
+      );
+      const { app: app2 } = createApp(graphPath, undefined, {
+        configPath,
+        openrouter: {
+          fetch: (async (_url: string, init?: RequestInit) => {
+            bodies.push(String(init?.body ?? ""));
+            return new Response(
+              JSON.stringify({
+                choices: [{ message: { content: "a tighter line" } }],
+              }),
+              { status: 200 },
+            );
+          }) as never,
+        },
+      });
+      const token = (await request(app2).get("/api/session")).body.token;
+      const res = await request(app2)
+        .post("/api/selection-assist")
+        .set("x-solaris-token", token)
+        .send({
+          instruction: "make this tighter",
+          selection: "a long rambling line",
+          surrounding: "before\na long rambling line\nafter",
+          noteId: "folder/note.md",
+          noteTitle: "Note",
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.text).toBe("a tighter line");
+      expect(bodies[0]).toContain("meta/thinker-model");
+      expect(bodies[0]).toContain("make this tighter");
+      expect(bodies[0]).toContain("a long rambling line");
+      expect(bodies[0]).toContain("folder/note.md");
+      expect(bodies[0]).toContain("Surrounding lines");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("502s when the LLM call fails, without leaking details", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "solaris-assist-fail-"));
+    try {
+      const configPath = join(dir, "config.json");
+      updateConfig({ openrouterKey: "or-k" }, configPath);
+      const { app: app2 } = createApp(graphPath, undefined, {
+        configPath,
+        openrouter: {
+          fetch: (async () =>
+            new Response("upstream broke", { status: 500 })) as never,
+        },
+      });
+      const token = (await request(app2).get("/api/session")).body.token;
+      const res = await request(app2)
+        .post("/api/selection-assist")
+        .set("x-solaris-token", token)
+        .send({ instruction: "x", selection: "y" });
+      expect(res.status).toBe(502);
+      expect(res.body.error).toBe("selection assist failed");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

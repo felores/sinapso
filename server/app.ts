@@ -1690,6 +1690,64 @@ export function createApp(
     res.json({ job: delegate.status(String(req.query.sessionId ?? "")) });
   });
 
+  // POST /api/selection-assist (plan 018 U7): free-form instruction over the
+  // reader's selected text, thinker tier. Positional context (note id/title,
+  // surrounding lines, offsets) rides along so the model knows where in the
+  // note it is acting. The reply is preview-only client-side — nothing lands
+  // in the vault except through the normal editor buffer + autosave path.
+  app.post(
+    "/api/selection-assist",
+    guarded,
+    express.json({ limit: "1mb" }),
+    async (req, res) => {
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const str = (v: unknown) => (typeof v === "string" ? v : "");
+      const instruction = str(b.instruction).trim();
+      const selection = str(b.selection);
+      if (!instruction || !selection) {
+        res.status(400).json({ error: "instruction and selection required" });
+        return;
+      }
+      const cfg = loadConfig(configPath);
+      const llm = resolveTier(operationTier("selection_assist"), cfg);
+      if (!requireLlmTier(llm, res, "no LLM configured for selection assist"))
+        return;
+      const noteId = str(b.noteId);
+      const noteTitle = str(b.noteTitle);
+      const surrounding = str(b.surrounding).slice(0, 8000);
+      try {
+        const text = await tierCompletion(
+          llm,
+          [
+            {
+              role: "system",
+              content:
+                "You are the inline note assistant of Solaris, a local markdown vault app. " +
+                "The user selected text inside a note and typed an instruction. " +
+                "Follow the instruction against the selection, using the note context for grounding. " +
+                "Reply with ONLY the resulting text, ready to be placed into the note: " +
+                "no preamble, no explanations, no surrounding quotes or code fences unless the result itself is code. " +
+                "Match the note's language and markdown style.",
+            },
+            {
+              role: "user",
+              content:
+                `Note: ${noteId}${noteTitle ? ` (${noteTitle})` : ""}\n` +
+                (surrounding
+                  ? `Surrounding lines of the selection:\n${surrounding}\n\n`
+                  : "") +
+                `Selected text:\n${selection}\n\nInstruction: ${instruction}`,
+            },
+          ],
+          integrations?.openrouter,
+        );
+        res.json({ text });
+      } catch {
+        res.status(502).json({ error: "selection assist failed" });
+      }
+    },
+  );
+
   // GET /api/integrations/test/deepseek: validate the stored DeepSeek key for
   // FREE via the models-list endpoint (no completion charged). Mirrors the
   // OpenRouter test route.

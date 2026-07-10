@@ -38,6 +38,13 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import * as i18n from "./i18n";
 import { createNoteEditor, type NoteEditor } from "./editor";
 import { createAutosave, type Autosave, type AutosaveState } from "./autosave";
+import {
+  buildAssistRequest,
+  insertBelow,
+  replaceSelection,
+  type AssistRequest,
+} from "./ai-assist";
+import type { ToolbarExtras } from "./editor-toolbar";
 import { startVoice, type VoiceSession } from "./voice";
 import {
   THEMES,
@@ -1750,6 +1757,7 @@ async function boot() {
     noteEditor?.destroy();
     noteEditor = null;
     editorNoteId = null;
+    hideAssistPreview();
     hideReaderBanner();
     const stateEl = $("#reader-save-state");
     stateEl.className = "hidden";
@@ -1761,6 +1769,123 @@ async function boot() {
     const node =
       byBasename.get(t.split("/").pop()!) ?? byId.get(`phantom:${t}`);
     if (node) select(node);
+  }
+
+  // ---- AI selection assist (plan 018 U7): thinker-tier instruction over
+  // the selection; the reply previews in a panel and only ever lands in the
+  // editor buffer (autosave persists it like any other edit).
+  let pendingAssist: {
+    req: AssistRequest;
+    noteId: string;
+    text: string;
+  } | null = null;
+
+  function llmConfigured(): boolean {
+    return !!(
+      integrations?.tools.openrouter.configured ||
+      integrations?.tools.deepseek.configured
+    );
+  }
+
+  function hideAssistPreview() {
+    pendingAssist = null;
+    $("#reader-ai-preview").classList.add("hidden");
+    $("#reader-ai-preview-note").textContent = "";
+  }
+
+  function showAssistPreview(req: AssistRequest, text: string) {
+    if (!openNodeId) return;
+    pendingAssist = { req, noteId: openNodeId, text };
+    $("#reader-ai-preview-text").textContent = text;
+    $("#reader-ai-preview-note").textContent = "";
+    $("#reader-ai-preview").classList.remove("hidden");
+  }
+
+  async function submitAssist(input: HTMLInputElement, icon: HTMLElement) {
+    const node = openNodeId ? byId.get(openNodeId) : null;
+    const view = noteEditor?.view;
+    if (!node || !view) return;
+    const req = buildAssistRequest(view.state, input.value, {
+      id: node.id,
+      title: node.title,
+    });
+    if (!req) return;
+    icon.classList.add("busy");
+    input.disabled = true;
+    try {
+      const { text } = await api<{ text: string }>("/api/selection-assist", {
+        json: {
+          instruction: req.instruction,
+          selection: req.selection,
+          surrounding: req.surrounding,
+          noteId: req.noteId,
+          noteTitle: req.noteTitle,
+        },
+      });
+      showAssistPreview(req, text);
+      input.value = "";
+    } catch {
+      $("#reader-ai-preview-text").textContent = i18n.t("editor.ai.error");
+      $("#reader-ai-preview-note").textContent = "";
+      pendingAssist = null;
+      $("#reader-ai-preview").classList.remove("hidden");
+    } finally {
+      icon.classList.remove("busy");
+      input.disabled = false;
+    }
+  }
+
+  const aiToolbarExtras: ToolbarExtras = (dom) => {
+    if (!llmConfigured()) return;
+    const wrap = document.createElement("span");
+    wrap.className = "cm-tb-ai";
+    const icon = document.createElement("span");
+    icon.className = "cm-tb-ai-icon";
+    icon.textContent = "🤖";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "cm-tb-ai-input";
+    input.placeholder = i18n.t("editor.ai.placeholder");
+    // The input needs real focus (unlike the buttons, which preventDefault
+    // to keep the selection); CM keeps the selection in state either way.
+    input.onmousedown = (e) => e.stopPropagation();
+    input.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void submitAssist(input, icon);
+      } else if (e.key === "Escape") {
+        noteEditor?.view.focus();
+      }
+    };
+    wrap.append(icon, input);
+    dom.appendChild(wrap);
+  };
+
+  {
+    const apply = (mode: "replace" | "insert") => {
+      const view = noteEditor?.view;
+      if (!pendingAssist || !view || pendingAssist.noteId !== openNodeId)
+        return hideAssistPreview();
+      const { req, text } = pendingAssist;
+      if (mode === "replace") {
+        const spec = replaceSelection(view.state, req, text);
+        if (!spec) {
+          // Doc changed under the request: replacing would corrupt — offer
+          // the insert path instead of guessing.
+          $("#reader-ai-preview-note").textContent = i18n.t("editor.ai.stale");
+          return;
+        }
+        view.dispatch(spec);
+      } else {
+        view.dispatch(insertBelow(view.state, req, text));
+      }
+      view.focus();
+      hideAssistPreview();
+    };
+    $("#reader-ai-replace").addEventListener("click", () => apply("replace"));
+    $("#reader-ai-insert").addEventListener("click", () => apply("insert"));
+    $("#reader-ai-dismiss").addEventListener("click", hideAssistPreview);
   }
 
   // --- reader panel ---
@@ -1921,6 +2046,7 @@ async function boot() {
       noteEditor = createNoteEditor(editorHost, {
         content: markdown,
         onWikiLinkClick: navigateWikiTarget,
+        toolbarExtras: aiToolbarExtras,
         onChange: () => {
           noteAutosave?.notifyChange();
           onEditorDocChanged();
