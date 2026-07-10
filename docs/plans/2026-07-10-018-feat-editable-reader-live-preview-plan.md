@@ -69,6 +69,7 @@ The reader is read-only: notes render via `marked` + DOMPurify into `innerHTML`,
 - Slash-command or cursor-context insert menu (beyond the selection toolbar).
 - Editing inside the research column or working-document views.
 - Autosave-triggered incremental rescan (graph updates on save); `/api/rescan` stays manual.
+- Safe media embeds (YouTube and similar): recognize specific URL/iframe patterns and render an app-constructed sandboxed player widget — display-only decoration, note bytes untouched, no general HTML rendering. Applies to both the editor and read-only surfaces.
 
 ### Acceptance Examples
 
