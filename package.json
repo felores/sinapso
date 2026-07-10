@@ -1,7 +1,7 @@
 {
   "name": "solaris",
   "version": "1.0.1",
-  "description": "Solaris — your Obsidian vault or Open Knowledge Format bundle as a navigable 3D universe.",
+  "description": "Solaris \u2014 your Obsidian vault or Open Knowledge Format bundle as a navigable 3D universe.",
   "type": "module",
   "main": "desktop/dist/main.cjs",
   "bin": {
@@ -49,7 +49,8 @@
     "test:run": "vitest run",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run typecheck && npm run build && npm run build:cli"
+    "prepublishOnly": "npm run typecheck && npm run build && npm run build:cli",
+    "mcp": "tsx server/mcp.ts"
   },
   "dependencies": {
     "@google/genai": "^2.10.0",
