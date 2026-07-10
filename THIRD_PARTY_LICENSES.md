@@ -1,6 +1,6 @@
 # Third-Party Licenses
 
-Akasha bundles or depends on the following open-source packages in its
+Sinapso bundles or depends on the following open-source packages in its
 distributed artifacts (web bundle, CLI, and desktop builds). Each package's
 license text is reproduced below.
 

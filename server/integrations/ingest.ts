@@ -10,7 +10,7 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, join, relative, resolve, sep } from "node:path";
-import type { SolarisConfig, WikiConfig } from "./config.js";
+import type { SinapsoConfig, WikiConfig } from "./config.js";
 import type { Runner } from "./detect.js";
 import { guardedCreate, WriteError, type WriteDeps } from "./write.js";
 
@@ -35,7 +35,7 @@ export interface ConvertedDocument {
 
 export function resolveIngestDestination(
   vaultRoot: string,
-  cfg: Pick<SolarisConfig, "writeDestination" | "vaults">,
+  cfg: Pick<SinapsoConfig, "writeDestination" | "vaults">,
   target: { wikiId?: unknown; captureOnly?: unknown } = {},
 ): string {
   if (target.captureOnly === true) return cfg.writeDestination;
@@ -220,7 +220,7 @@ export async function convertBytes(
   markitdownBin: string,
   opts: { name: string; bytes: Uint8Array },
 ): Promise<ConvertedDocument> {
-  const dir = mkdtempSync(join(tmpdir(), "solaris-ingest-"));
+  const dir = mkdtempSync(join(tmpdir(), "sinapso-ingest-"));
   const safe =
     opts.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 64) || "upload";
   const tmp = join(dir, safe);

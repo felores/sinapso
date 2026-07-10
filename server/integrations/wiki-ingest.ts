@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
-import { effectivePrompts, type SolarisConfig, type WikiConfig } from "./config.js";
+import { effectivePrompts, type SinapsoConfig, type WikiConfig } from "./config.js";
 import type { ConvertedDocument } from "./ingest.js";
 import type { ChatMessage } from "./openrouter.js";
 import {
@@ -33,7 +33,7 @@ export type WikiIngestChat = (messages: ChatMessage[]) => Promise<string>;
 
 export function resolveWikiTarget(
   vaultRoot: string,
-  cfg: Pick<SolarisConfig, "vaults">,
+  cfg: Pick<SinapsoConfig, "vaults">,
   target: { wikiId?: unknown } = {},
 ): WikiConfig {
   const enabled = (cfg.vaults[vaultRoot]?.wikis ?? []).filter((w) => w.enabled);
@@ -51,7 +51,7 @@ export function resolveWikiTarget(
 
 export async function buildWikiIngestProposal(
   deps: { vaultRoot: string; now?: () => Date },
-  cfg: Pick<SolarisConfig, "prompts">,
+  cfg: Pick<SinapsoConfig, "prompts">,
   wiki: WikiConfig,
   converted: ConvertedDocument,
   chat: WikiIngestChat,
@@ -183,7 +183,7 @@ export function readWikiContracts(
 }
 
 function proposalPrompt(
-  cfg: Pick<SolarisConfig, "prompts">,
+  cfg: Pick<SinapsoConfig, "prompts">,
   wiki: WikiConfig,
   contracts: Array<{ path: string; content: string }>,
   converted: ConvertedDocument,

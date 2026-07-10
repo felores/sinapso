@@ -1,5 +1,5 @@
 /**
- * `solaris call <tool> [json]` (R16): the generic CLI invoker over the
+ * `sinapso call <tool> [json]` (R16): the generic CLI invoker over the
  * registry's `cli` surface. Thin by design — it resolves the tool, forwards
  * to the bound route through the same loopback bridge MCP uses (surface-
  * scoped token included), and returns the route's JSON. No per-tool flags.
@@ -28,7 +28,7 @@ export async function callTool(
   if (!name) {
     return {
       exitCode: 1,
-      error: `usage: solaris call <tool> ['{"arg":"value"}']\navailable tools: ${cliTools()}`,
+      error: `usage: sinapso call <tool> ['{"arg":"value"}']\navailable tools: ${cliTools()}`,
     };
   }
   const entry = entryFor(name);
@@ -62,7 +62,7 @@ export async function callTool(
   } catch (e) {
     return {
       exitCode: 1,
-      error: `could not reach Solaris at ${opts.base} — start it first (npx solaris "<vault>" or npm run dev). ${e instanceof Error ? e.message : String(e)}`,
+      error: `could not reach Sinapso at ${opts.base} — start it first (npx sinapso "<vault>" or npm run dev). ${e instanceof Error ? e.message : String(e)}`,
     };
   }
 }

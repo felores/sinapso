@@ -182,7 +182,7 @@ describe("exa article fetcher", () => {
 });
 
 describe("POST /api/research", () => {
-  const VAULT = mkdtempSync(join(tmpdir(), "solaris-exa-test-"));
+  const VAULT = mkdtempSync(join(tmpdir(), "sinapso-exa-test-"));
   afterAll(() => rmSync(VAULT, { recursive: true, force: true }));
   const graphPath = join(VAULT, "graph.json");
   writeFileSync(

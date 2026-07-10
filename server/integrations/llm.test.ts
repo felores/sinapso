@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { defaultConfig, type SolarisConfig } from "./config";
+import { defaultConfig, type SinapsoConfig } from "./config";
 import {
   DEEPSEEK_ENDPOINT,
   resolveTier,
@@ -8,7 +8,7 @@ import {
 } from "./llm";
 import { DEFAULT_MODEL } from "./openrouter";
 
-function cfg(patch: Partial<SolarisConfig>): SolarisConfig {
+function cfg(patch: Partial<SinapsoConfig>): SinapsoConfig {
   return { ...defaultConfig(), ...patch };
 }
 

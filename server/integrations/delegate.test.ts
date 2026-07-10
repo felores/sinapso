@@ -83,7 +83,7 @@ describe("delegate manager", () => {
     const write = loop.calls.find((c) => c.url.endsWith("/api/document"));
     expect(write).toBeDefined();
     const headers = write!.init?.headers as Record<string, string>;
-    expect(headers["x-solaris-token"]).toBe("tok");
+    expect(headers["x-sinapso-token"]).toBe("tok");
     expect(JSON.parse(String(write!.init?.body)).content).toContain(
       "Synthesis",
     );

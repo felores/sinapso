@@ -39,7 +39,7 @@ function fixture(opts: {
   llm?: string;
   prompt?: string;
 } = {}) {
-  const root = mkdtempSync(join(tmpdir(), "solaris-wiki-ingest-"));
+  const root = mkdtempSync(join(tmpdir(), "sinapso-wiki-ingest-"));
   ROOTS.push(root);
   const vault = join(root, "vault");
   const data = join(root, "data");

@@ -1,5 +1,5 @@
 /**
- * `solaris call` generic invoker (U9/R16): read tool prints the route's
+ * `sinapso call` generic invoker (U9/R16): read tool prints the route's
  * JSON, voice-only tools error naming the surface restriction, and a dead
  * server exits nonzero with a clear message.
  */
@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { createApp } from "../server/app";
 import { callTool } from "./call";
 
-const ROOT = mkdtempSync(join(tmpdir(), "solaris-cli-call-"));
+const ROOT = mkdtempSync(join(tmpdir(), "sinapso-cli-call-"));
 const VAULT = join(ROOT, "vault");
 mkdirSync(join(VAULT, "notes"), { recursive: true });
 writeFileSync(join(VAULT, "notes", "one.md"), "# One\n\nbody\n");
@@ -46,7 +46,7 @@ afterAll(async () => {
   rmSync(ROOT, { recursive: true, force: true });
 });
 
-describe("solaris call", () => {
+describe("sinapso call", () => {
   it("prints the route's JSON for a read tool", async () => {
     const r = await callTool("browse_folder", '{"path":"notes"}', { base });
     expect(r.exitCode).toBe(0);
@@ -80,6 +80,6 @@ describe("solaris call", () => {
       base: "http://127.0.0.1:1",
     });
     expect(r.exitCode).toBe(1);
-    expect(r.error).toContain("could not reach Solaris");
+    expect(r.error).toContain("could not reach Sinapso");
   });
 });

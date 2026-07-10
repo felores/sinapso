@@ -6,7 +6,7 @@ import { confineNoteId, noteFileOrFail, WriteError } from "./paths";
 
 // Throwaway vault with a few real notes covering the cases the seam sees:
 // nested path, uppercase extension, non-md file, and a missing-note path.
-const VAULT = mkdtempSync(join(tmpdir(), "solaris-paths-"));
+const VAULT = mkdtempSync(join(tmpdir(), "sinapso-paths-"));
 writeFileSync(join(VAULT, "a.md"), "# A\n");
 writeFileSync(join(VAULT, "UPPER.MD"), "# UPPER\n");
 writeFileSync(join(VAULT, "note.txt"), "not a note\n");

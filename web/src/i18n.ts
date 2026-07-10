@@ -1,5 +1,5 @@
-// Minimal interface i18n for Solaris. EN + ES dictionaries, a t() lookup, a
-// persisted language (localStorage 'akasha-lang', defaulting to the browser
+// Minimal interface i18n for Sinapso. EN + ES dictionaries, a t() lookup, a
+// persisted language (localStorage 'sinapso-lang', defaulting to the browser
 // language and falling back to EN), and hydrate() which translates the static
 // chrome tagged with data-i18n / data-i18n-ph / data-i18n-title / data-i18n-html.
 //
@@ -100,7 +100,7 @@ const EN: Dict = {
   "toggle.semLines": "semantic lines",
   // Help
   "help.shortcuts": "Keyboard & Mouse Controls",
-  "help.about": "About Solaris",
+  "help.about": "About Sinapso",
   // Tools
   "tools.filters": "Display Filters…",
   "tools.settings": "Display Settings…",
@@ -388,7 +388,7 @@ const ES: Dict = {
   "toggle.unwritten": "sin crear (U)",
   "toggle.semLines": "líneas semánticas",
   "help.shortcuts": "Controles de teclado y ratón",
-  "help.about": "Acerca de Solaris",
+  "help.about": "Acerca de Sinapso",
   "tools.filters": "Filtros de visualización…",
   "tools.settings": "Ajustes de visualización…",
   "integ.ingestion": "Ingesta",
@@ -590,7 +590,7 @@ const ES: Dict = {
 const DICTS: Record<Lang, Dict> = { en: EN, es: ES };
 
 function detect(): Lang {
-  const saved = localStorage.getItem("akasha-lang");
+  const saved = localStorage.getItem("sinapso-lang");
   if (saved === "en" || saved === "es") return saved;
   return (navigator.language || "en").toLowerCase().startsWith("es")
     ? "es"
@@ -605,7 +605,7 @@ export function getLang(): Lang {
 
 export function setLang(l: Lang): void {
   lang = l;
-  localStorage.setItem("akasha-lang", l);
+  localStorage.setItem("sinapso-lang", l);
   document.documentElement.lang = l;
   hydrate();
 }

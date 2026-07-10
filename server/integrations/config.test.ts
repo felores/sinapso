@@ -17,7 +17,7 @@ import {
   updateConfig,
 } from "./config";
 
-const DIR = mkdtempSync(join(tmpdir(), "solaris-config-"));
+const DIR = mkdtempSync(join(tmpdir(), "sinapso-config-"));
 afterAll(() => rmSync(DIR, { recursive: true, force: true }));
 
 describe("integrations config", () => {

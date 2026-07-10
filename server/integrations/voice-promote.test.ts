@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), "solaris-voice-promote-"));
+  const root = mkdtempSync(join(tmpdir(), "sinapso-voice-promote-"));
   roots.push(root);
   const vault = join(root, "vault");
   const data = join(root, "data");
@@ -47,7 +47,7 @@ describe("voice working document promotion", () => {
     const t = await token(f.server.app);
     await request(f.server.app)
       .post("/api/document")
-      .set("x-solaris-token", t)
+      .set("x-sinapso-token", t)
       .send({
         id: "doc-test",
         title: "Ada Lovelace",
@@ -57,7 +57,7 @@ describe("voice working document promotion", () => {
 
     const res = await request(f.server.app)
       .post("/api/document/doc-test/promote")
-      .set("x-solaris-token", t)
+      .set("x-sinapso-token", t)
       .send({
         kind: "wiki_note",
         wikiId: "area/wiki",
@@ -85,13 +85,13 @@ describe("voice working document promotion", () => {
     const t = await token(f.server.app);
     await request(f.server.app)
       .post("/api/document")
-      .set("x-solaris-token", t)
+      .set("x-sinapso-token", t)
       .send({ id: "doc-raw", title: "Raw Interview", content: "raw transcript" })
       .expect(200);
 
     const res = await request(f.server.app)
       .post("/api/document/doc-raw/promote")
-      .set("x-solaris-token", t)
+      .set("x-sinapso-token", t)
       .send({ kind: "raw_copy", wikiId: "area/wiki" });
 
     expect(res.status).toBe(200);

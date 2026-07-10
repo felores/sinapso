@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Solaris - Fly through everything you know. Then talk to it.</title>
-<meta name="description" content="Solaris turns your Obsidian vault or any folder of linked Markdown into a smooth 3D universe with a real-time voice assistant. Free, open source, local-first, no subscription.">
-<link rel="icon" href="assets/solaris-icon-v1-256px-white.png">
-<meta property="og:title" content="Solaris - your knowledge base as a 3D universe you can talk to">
+<title>Sinapso - Fly through everything you know. Then talk to it.</title>
+<meta name="description" content="Sinapso turns your Obsidian vault or any folder of linked Markdown into a smooth 3D universe with a real-time voice assistant. Free, open source, local-first, no subscription.">
+<link rel="icon" href="assets/sinapso-icon.svg">
+<meta property="og:title" content="Sinapso - your knowledge base as a 3D universe you can talk to">
 <meta property="og:description" content="Thousands of notes rendered as a navigable galaxy on your own machine. Real-time voice, web research, clean ingest. Free and open source.">
 <meta property="og:image" content="assets/hero.png">
 <style>
@@ -81,8 +81,8 @@ header.nav {
   -webkit-backdrop-filter: blur(8px);
 }
 .brand { display: flex; align-items: center; gap: 0.55rem; }
-.brand img.mark { height: 22px; width: auto; }
-.brand img.word { height: 16px; width: auto; }
+.brand img.mark { height: 24px; width: auto; }
+.brand .word { color: #fff; font-weight: 800; letter-spacing: 0.02em; font-size: 1.05rem; }
 .nav-spacer { flex: 1; }
 .nav a.gh {
   font-family: var(--mono); font-size: 0.72rem; color: var(--ink-soft);
@@ -317,16 +317,16 @@ html.js .fx.in { opacity: 1; transform: none; }
 <canvas id="stars" aria-hidden="true"></canvas>
 
 <header class="nav">
-  <a class="brand" href="#top" aria-label="Solaris">
-    <img class="mark" src="assets/solaris-icon-v1-256px-white.png" alt="">
-    <img class="word" src="assets/solaris-title-v1-256px-white.png" alt="Solaris">
+  <a class="brand" href="#top" aria-label="Sinapso">
+    <img class="mark" src="assets/sinapso-icon.svg" alt="">
+    <span class="word">Sinapso</span>
   </a>
   <div class="nav-spacer"></div>
   <nav class="lang" aria-label="Language">
     <button id="lang-en" aria-pressed="true" onclick="setLang('en')">EN</button>
     <button id="lang-es" aria-pressed="false" onclick="setLang('es')">ES</button>
   </nav>
-  <a class="gh" href="https://github.com/felores/solaris" rel="noopener">GitHub ↗</a>
+  <a class="gh" href="https://github.com/felores/sinapso" rel="noopener">GitHub ↗</a>
 </header>
 
 <main id="top">
@@ -336,13 +336,13 @@ html.js .fx.in { opacity: 1; transform: none; }
   <p class="counts">4,011 notes · 4,930 links · one machine</p>
   <div class="hero-inner">
     <h1 data-i18n="hero.h1">Fly through everything you know. <span class="talk" data-i18n="hero.h1b">Then talk to it.</span></h1>
-    <p class="sub" data-i18n="hero.sub">Solaris turns your Obsidian vault, or any folder of linked Markdown, into a smooth 3D universe: thousands of notes, tens of thousands of links, on your own machine. A real-time voice assistant explores it with you, researches the web, and files what you create back into your notes. Free, open source, no subscription.</p>
+    <p class="sub" data-i18n="hero.sub">Sinapso turns your Obsidian vault, or any folder of linked Markdown, into a smooth 3D universe: thousands of notes, tens of thousands of links, on your own machine. A real-time voice assistant explores it with you, researches the web, and files what you create back into your notes. Free, open source, no subscription.</p>
     <div class="cta-row">
       <div class="cmd">
-        <code id="cmd-text"><span class="p">npx</span> solaris <span class="v">"path/to/YourVault"</span></code>
+        <code id="cmd-text"><span class="p">npx</span> sinapso <span class="v">"path/to/YourVault"</span></code>
         <button onclick="copyCmd()" data-i18n="cta.copy">copy</button>
       </div>
-      <a class="gh-star" href="https://github.com/felores/solaris" rel="noopener" data-i18n="cta.star">★ Star on GitHub</a>
+      <a class="gh-star" href="https://github.com/felores/sinapso" rel="noopener" data-i18n="cta.star">★ Star on GitHub</a>
     </div>
     <p class="fine" data-i18n="hero.fine">MIT licensed · runs on localhost · uploads nothing</p>
   </div>
@@ -371,7 +371,7 @@ html.js .fx.in { opacity: 1; transform: none; }
 <!-- 3 · pains -->
 <section class="pains">
   <div class="wrap">
-    <h2 class="sec" data-i18n="pains.h2">Who is Solaris for?</h2>
+    <h2 class="sec" data-i18n="pains.h2">Who is Sinapso for?</h2>
     <p class="sec-lede" data-i18n="pains.lede">If any of these sounds like your vault, you are the person we built this for.</p>
     <div class="node-list">
       <div class="node-item fx"><span class="node-dot"></span><div>
@@ -406,7 +406,7 @@ html.js .fx.in { opacity: 1; transform: none; }
 <section class="values">
   <div class="wrap">
     <h2 class="sec" data-i18n="values.h2">Your vault, lit up.</h2>
-    <p class="sec-lede" data-i18n="values.lede">Same six problems. This is what they look like after Solaris.</p>
+    <p class="sec-lede" data-i18n="values.lede">Same six problems. This is what they look like after Sinapso.</p>
     <div class="node-list">
       <div class="node-item fx"><span class="node-dot" style="background:var(--green); --glow:rgba(81,207,102,.55)"></span><div>
         <h3 data-i18n="values.1h">A galaxy that stays smooth.</h3>
@@ -461,7 +461,7 @@ html.js .fx.in { opacity: 1; transform: none; }
 <section class="diff">
   <div class="wrap">
     <h2 class="sec" data-i18n="diff.h2">There was no tool that did all three.</h2>
-    <svg class="venn fx" viewBox="0 0 560 400" role="img" aria-label="Venn diagram: fast 3D map, real-time voice agent, and local-first files overlap only at Solaris">
+    <svg class="venn fx" viewBox="0 0 560 400" role="img" aria-label="Venn diagram: fast 3D map, real-time voice agent, and local-first files overlap only at Sinapso">
       <circle cx="225" cy="160" r="130" fill="rgba(81,207,102,0.07)" stroke="#51cf66" stroke-opacity="0.55"/>
       <circle cx="335" cy="160" r="130" fill="rgba(88,166,255,0.07)" stroke="#58a6ff" stroke-opacity="0.55"/>
       <circle cx="280" cy="252" r="130" fill="rgba(132,94,247,0.07)" stroke="#845ef7" stroke-opacity="0.55"/>
@@ -471,7 +471,7 @@ html.js .fx.in { opacity: 1; transform: none; }
       <text x="150" y="86" text-anchor="middle" data-i18n="diff.c1">Fast 3D map</text>
       <text x="415" y="86" text-anchor="middle" data-i18n="diff.c2">Real-time voice</text>
       <text x="280" y="386" text-anchor="middle" data-i18n="diff.c3">Local-first, your files</text>
-      <text x="280" y="172" text-anchor="middle" font-weight="700">Solaris</text>
+      <text x="280" y="172" text-anchor="middle" font-weight="700">Sinapso</text>
       <text x="118" y="222" text-anchor="middle" class="dim" data-i18n="diff.d1">3D plugins</text>
       <text x="447" y="222" text-anchor="middle" class="dim" data-i18n="diff.d2">voice apps</text>
       <text x="280" y="330" text-anchor="middle" class="dim" data-i18n="diff.d3">plain editors</text>
@@ -481,7 +481,7 @@ html.js .fx.in { opacity: 1; transform: none; }
         <thead>
           <tr>
             <th data-i18n="tbl.h0"></th>
-            <th>Solaris</th>
+            <th>Sinapso</th>
             <th data-i18n="tbl.h2">Obsidian graph</th>
             <th data-i18n="tbl.h3">3D graph plugins</th>
             <th data-i18n="tbl.h4">TheBrain / InfraNodus</th>
@@ -497,7 +497,7 @@ html.js .fx.in { opacity: 1; transform: none; }
         </tbody>
       </table>
     </div>
-    <p class="table-note" data-i18n="tbl.note">Solaris complements Obsidian: one click opens any note there for hand-editing. The contrast is with the graph view, not the editor.</p>
+    <p class="table-note" data-i18n="tbl.note">Sinapso complements Obsidian: one click opens any note there for hand-editing. The contrast is with the graph view, not the editor.</p>
   </div>
 </section>
 
@@ -518,7 +518,7 @@ html.js .fx.in { opacity: 1; transform: none; }
       <circle cx="34" cy="88" r="2.6" fill="#fd7e14"/><circle cx="284" cy="84" r="2.6" fill="#e64980"/>
     </svg>
     <h2 class="sec" data-i18n="origin.h2">Born from an AI. Raised by a human.</h2>
-    <p class="fx" data-i18n="origin.p">Solaris started as a repository with a single star, created by Fable, the most powerful AI in the world, and left open source. A human found it while hunting for a way to see a 5,000-note knowledge base that every other tool choked on. This one flew. He audited the code, adopted it, and has been evolving it since: voice, research, ingestion, versioning. Now it's yours too. MIT licensed, open to everyone.</p>
+    <p class="fx" data-i18n="origin.p">Sinapso started as a repository with a single star, created by Fable, the most powerful AI in the world, and left open source. A human found it while hunting for a way to see a 5,000-note knowledge base that every other tool choked on. This one flew. He audited the code, adopted it, and has been evolving it since: voice, research, ingestion, versioning. Now it's yours too. MIT licensed, open to everyone.</p>
   </div>
 </section>
 
@@ -557,7 +557,7 @@ html.js .fx.in { opacity: 1; transform: none; }
         </ul>
       </div>
     </div>
-    <p class="contrast-line" data-i18n="price.contrast">Comparable subscription tools run $10-20 per month, forever, whether you open them or not. Solaris charges you nothing and lets you pay providers only for what you actually use.</p>
+    <p class="contrast-line" data-i18n="price.contrast">Comparable subscription tools run $10-20 per month, forever, whether you open them or not. Sinapso charges you nothing and lets you pay providers only for what you actually use.</p>
   </div>
 </section>
 
@@ -581,12 +581,12 @@ html.js .fx.in { opacity: 1; transform: none; }
     <p data-i18n="final.p">One command. No signup, no migration, no config. If you have a folder of Markdown, you're 60 seconds from flying through it.</p>
     <div class="cta-row">
       <div class="cmd">
-        <code><span class="p">npx</span> solaris <span class="v">"path/to/YourVault"</span></code>
+        <code><span class="p">npx</span> sinapso <span class="v">"path/to/YourVault"</span></code>
         <button onclick="copyCmd()" data-i18n="cta.copy2">copy</button>
       </div>
-      <a class="gh-star" href="https://github.com/felores/solaris" rel="noopener" data-i18n="cta.star2">★ Star on GitHub</a>
+      <a class="gh-star" href="https://github.com/felores/sinapso" rel="noopener" data-i18n="cta.star2">★ Star on GitHub</a>
     </div>
-    <p class="alt"><a href="https://github.com/felores/solaris#desktop-app" rel="noopener" data-i18n="final.alt">Prefer a desktop app? There's one of those too →</a></p>
+    <p class="alt"><a href="https://github.com/felores/sinapso#desktop-app" rel="noopener" data-i18n="final.alt">Prefer a desktop app? There's one of those too →</a></p>
   </div>
 </section>
 
@@ -594,9 +594,9 @@ html.js .fx.in { opacity: 1; transform: none; }
 
 <footer>
   <span class="tag" data-i18n="foot.tag">Born from an AI. Raised by a human.</span>
-  <span data-i18n="foot.lic">MIT license · fork of akasha</span>
+  <span data-i18n="foot.lic">MIT license</span>
   <span class="spacer"></span>
-  <a href="https://github.com/felores/solaris" rel="noopener">github.com/felores/solaris</a>
+  <a href="https://github.com/felores/sinapso" rel="noopener">github.com/felores/sinapso</a>
 </footer>
 
 <div id="toast" role="status" data-i18n="toast">copied - now paste it in your terminal</div>
@@ -608,14 +608,14 @@ document.documentElement.classList.add("js");
 const ES = {
   "hero.h1": "Vuela por todo lo que sabes. ",
   "hero.h1b": "Y luego háblale.",
-  "hero.sub": "Solaris convierte tu vault de Obsidian, o cualquier carpeta de Markdown enlazado, en un universo 3D fluido: miles de notas, decenas de miles de enlaces, en tu propia máquina. Un asistente de voz en tiempo real lo explora contigo, investiga en la web y guarda lo que crean de vuelta en tus notas. Gratis, open source, sin suscripción.",
+  "hero.sub": "Sinapso convierte tu vault de Obsidian, o cualquier carpeta de Markdown enlazado, en un universo 3D fluido: miles de notas, decenas de miles de enlaces, en tu propia máquina. Un asistente de voz en tiempo real lo explora contigo, investiga en la web y guarda lo que crean de vuelta en tus notas. Gratis, open source, sin suscripción.",
   "cta.copy": "copiar", "cta.copy2": "copiar",
   "cta.star": "★ Dale una estrella en GitHub", "cta.star2": "★ Dale una estrella en GitHub",
   "hero.fine": "Licencia MIT · corre en localhost · no sube nada",
   "demo.caption": "un vault de 4,000 notas · cada nodo y enlace renderizado a la vez · sigue fluido",
   "demo.still1": "Haz clic en una nota y léela junto al mapa. Un clic más la abre en Obsidian.",
   "demo.still2": "Sumérgete en un clúster y las etiquetas aparecen a medida que te acercas.",
-  "pains.h2": "¿Para quién es Solaris?",
+  "pains.h2": "¿Para quién es Sinapso?",
   "pains.lede": "Si algo de esto te suena a tu vault, esto se construyó para ti.",
   "pains.1h": "Tu graph view se congeló hace años.",
   "pains.1p": "Pasadas unas miles de notas el grafo integrado se traba, clava un core del CPU mientras tu GPU descansa, y la respuesta oficial es \"es una limitación, no un bug\".",
@@ -630,7 +630,7 @@ const ES = {
   "pains.6h": "Las herramientas en la nube quieren tus notas en sus servidores.",
   "pains.6p": "Tu vault son años de tu pensamiento. Subirlo al silo de alguien más a cambio de \"funciones de IA\" es un mal negocio.",
   "values.h2": "Tu vault, encendido.",
-  "values.lede": "Los mismos seis problemas. Así se ven después de Solaris.",
+  "values.lede": "Los mismos seis problemas. Así se ven después de Sinapso.",
   "values.1h": "Una galaxia que se mantiene fluida.",
   "values.1p": "Miles de notas y decenas de miles de enlaces renderizados a la vez, en tu GPU. Orbita, sumérgete y lee sin un tirón. Los vaults grandes son el punto, no el caso extremo.",
   "values.2h": "Clústeres que sí se pueden leer.",
@@ -664,9 +664,9 @@ const ES = {
   "tbl.r4c4": "Propietario / nube", "tbl.r4c5": "Su nube",
   "tbl.r5": "Precio", "tbl.r5c1": "Gratis + tus propias claves", "tbl.r5c2": "Gratis", "tbl.r5c3": "Gratis",
   "tbl.r5c4": "$180/año+ o €12-66/mes", "tbl.r5c5": "Suscripciones mensuales",
-  "tbl.note": "Solaris complementa a Obsidian: un clic abre cualquier nota allá para editarla a mano. El contraste es con el graph view, no con el editor.",
+  "tbl.note": "Sinapso complementa a Obsidian: un clic abre cualquier nota allá para editarla a mano. El contraste es con el graph view, no con el editor.",
   "origin.h2": "Nacido de una IA. Criado por un humano.",
-  "origin.p": "Solaris empezó como un repositorio con una sola estrella, creado por Fable, la IA más poderosa del mundo, y dejado open source. Un humano lo encontró buscando cómo ver una base de conocimiento de 5,000 notas con la que todas las demás herramientas se ahogaban. Esta volaba. Auditó el código, lo adoptó y lo ha estado evolucionando desde entonces: voz, investigación, ingesta, versionado. Ahora también es tuyo. Licencia MIT, abierto para todos.",
+  "origin.p": "Sinapso empezó como un repositorio con una sola estrella, creado por Fable, la IA más poderosa del mundo, y dejado open source. Un humano lo encontró buscando cómo ver una base de conocimiento de 5,000 notas con la que todas las demás herramientas se ahogaban. Esta volaba. Auditó el código, lo adoptó y lo ha estado evolucionando desde entonces: voz, investigación, ingesta, versionado. Ahora también es tuyo. Licencia MIT, abierto para todos.",
   "price.h2": "Gratis. Y las partes inteligentes cuestan centavos, no suscripciones.",
   "price.t1tag": "$0 · para siempre", "price.t1h": "Siempre gratis",
   "price.t1a": "El universo 3D, búsqueda, filtros, temas",
@@ -682,7 +682,7 @@ const ES = {
   "price.t3b": "Modelos de lenguaje pay-as-you-go, defaults eficientes",
   "price.t3c": "La voz igual: tu clave, tu uso",
   "price.t3d": "Sin cuota mensual, nunca",
-  "price.contrast": "Las herramientas por suscripción comparables cuestan $10-20 al mes, para siempre, las abras o no. Solaris no te cobra nada y te deja pagarle a los proveedores solo por lo que de verdad usas.",
+  "price.contrast": "Las herramientas por suscripción comparables cuestan $10-20 al mes, para siempre, las abras o no. Sinapso no te cobra nada y te deja pagarle a los proveedores solo por lo que de verdad usas.",
   "trust.h2": "Tus notas nunca salen de casa.",
   "trust.1": "<b>Corre completamente en tu máquina.</b> El núcleo no sube nada, nunca.",
   "trust.2": "<b>Las funciones de web e IA son opt-in.</b> Solo se activan cuando las enciendes, con tus propias claves.",
@@ -692,10 +692,10 @@ const ES = {
   "final.p": "Un comando. Sin registro, sin migración, sin configuración. Si tienes una carpeta de Markdown, estás a 60 segundos de volar por ella.",
   "final.alt": "¿Prefieres una app de escritorio? También hay una →",
   "foot.tag": "Nacido de una IA. Criado por un humano.",
-  "foot.lic": "Licencia MIT · fork de akasha",
+  "foot.lic": "Licencia MIT",
   "toast": "copiado - pégalo en tu terminal",
-  "meta.title": "Solaris - Vuela por todo lo que sabes. Y luego háblale.",
-  "meta.desc": "Solaris convierte tu vault de Obsidian o cualquier carpeta de Markdown enlazado en un universo 3D fluido con un asistente de voz en tiempo real. Gratis, open source, local-first, sin suscripción."
+  "meta.title": "Sinapso - Vuela por todo lo que sabes. Y luego háblale.",
+  "meta.desc": "Sinapso convierte tu vault de Obsidian o cualquier carpeta de Markdown enlazado en un universo 3D fluido con un asistente de voz en tiempo real. Gratis, open source, local-first, sin suscripción."
 };
 const EN = { "meta.title": document.title, "meta.desc": document.querySelector('meta[name="description"]').content };
 const RICH = new Set(["trust.1","trust.2","trust.3","trust.4"]);
@@ -717,19 +717,19 @@ function setLang(lang) {
   document.querySelector('meta[name="description"]').content = dict["meta.desc"];
   document.getElementById("lang-en").setAttribute("aria-pressed", String(lang === "en"));
   document.getElementById("lang-es").setAttribute("aria-pressed", String(lang === "es"));
-  try { localStorage.setItem("solaris-landing-lang", lang); } catch {}
+  try { localStorage.setItem("sinapso-landing-lang", lang); } catch {}
   const url = new URL(location.href);
   if (lang === "es") url.searchParams.set("lang", "es"); else url.searchParams.delete("lang");
   history.replaceState(null, "", url);
 }
 const saved = new URLSearchParams(location.search).get("lang") ||
-  (() => { try { return localStorage.getItem("solaris-landing-lang"); } catch { return null; } })() ||
+  (() => { try { return localStorage.getItem("sinapso-landing-lang"); } catch { return null; } })() ||
   (navigator.language || "").slice(0, 2);
 if (saved === "es") setLang("es");
 
 /* ---------- copy command ---------- */
 function copyCmd() {
-  navigator.clipboard.writeText('npx solaris "path/to/YourVault"').then(() => {
+  navigator.clipboard.writeText('npx sinapso "path/to/YourVault"').then(() => {
     const t = document.getElementById("toast");
     t.classList.add("show");
     setTimeout(() => t.classList.remove("show"), 2200);

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { excerptFor, norm, stripSnippet, clip } from "./excerpt";
 
 // Throwaway vault for excerptFor's file reads.
-const VAULT = mkdtempSync(join(tmpdir(), "solaris-excerpt-"));
+const VAULT = mkdtempSync(join(tmpdir(), "sinapso-excerpt-"));
 const note = (rel: string, body: string) =>
   writeFileSync(join(VAULT, rel), body);
 

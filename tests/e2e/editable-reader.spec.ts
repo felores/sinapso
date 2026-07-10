@@ -7,7 +7,7 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { captureBrowserDiagnostics } from "./diagnostics";
 
-const NOTE_ID = "inbox/solaris-e2e-editable-reader.md";
+const NOTE_ID = "inbox/sinapso-e2e-editable-reader.md";
 const NOTE_CONTENT =
   "---\ntitle: E2E Editable Reader\ntype: test\n---\n\n# E2E Editable Reader\n\nfirst paragraph stays untouched\n\nsecond paragraph gets edited\n";
 const FRONTMATTER = "---\ntitle: E2E Editable Reader\ntype: test\n---\n";
@@ -38,7 +38,7 @@ async function createTestNote(page: Page): Promise<string> {
   // leftover file from an aborted run must not fork into -2.md.
   writeFileSync(file, NOTE_CONTENT);
   await page.request.post("/api/rescan", {
-    headers: { "x-solaris-token": token },
+    headers: { "x-sinapso-token": token },
   });
   return file;
 }
@@ -48,7 +48,7 @@ async function removeTestNote(page: Page, file: string): Promise<void> {
     if (existsSync(file)) unlinkSync(file);
     const token = await apiToken(page);
     await page.request.post("/api/rescan", {
-      headers: { "x-solaris-token": token },
+      headers: { "x-sinapso-token": token },
     });
   } catch {
     /* cleanup is best-effort */
@@ -59,7 +59,7 @@ async function openTestNote(page: Page): Promise<void> {
   // The fresh vault triggers the qmd onboarding prompt, which overlays the
   // reader and intercepts clicks; mark it as already answered.
   await page.addInitScript(() =>
-    localStorage.setItem("akasha-qmd-prompted", "1"),
+    localStorage.setItem("sinapso-qmd-prompted", "1"),
   );
   await page.goto(`/?node=${encodeURIComponent(NOTE_ID)}`);
   await expect(page.locator("#reader")).not.toHaveClass(/hidden/, {

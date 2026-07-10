@@ -24,7 +24,7 @@ const LOCAL_HOSTS = new Set([
     : []),
 ]);
 
-export const TOKEN_HEADER = "x-solaris-token";
+export const TOKEN_HEADER = "x-sinapso-token";
 
 function hostnameOf(hostHeader: string): string {
   if (hostHeader.startsWith("["))

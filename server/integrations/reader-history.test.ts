@@ -10,7 +10,7 @@ import {
 
 let DATA: string;
 beforeEach(() => {
-  DATA = mkdtempSync(join(tmpdir(), "solaris-rdh-"));
+  DATA = mkdtempSync(join(tmpdir(), "sinapso-rdh-"));
 });
 
 describe("reader history", () => {

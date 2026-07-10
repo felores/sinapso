@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openQmdVectors } from "./qmd-vectors.js";
 
-const tmp = mkdtempSync(join(tmpdir(), "solaris-qv-"));
+const tmp = mkdtempSync(join(tmpdir(), "sinapso-qv-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 interface FixtureDoc {

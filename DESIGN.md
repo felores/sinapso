@@ -1,4 +1,4 @@
-# DESIGN.md: Solaris
+# DESIGN.md: Sinapso
 
 Design system reference. Read this before restyling any panel, adding a theme, or touching z-index/layout: it should be enough on its own, without opening `style.css` first.
 
@@ -52,7 +52,7 @@ Both panels use the same pattern (reader: `web/src/main.ts:1617-1789`; research:
 - **Docked** (default): pinned to the right edge (or left, see "context-left" below), full viewport height, width adjustable via the west-edge resize grip (`#reader-resize-w`, `#research-resize-w`).
 - **Float**: drag the header (`#reader-head` / `#research-head`, `cursor: grab`) to undock in place; the panel becomes a positioned/sized window (`left`/`top`/`width`/`height`) with a corner resize grip (`#reader-resize-corner`, only visible when `.floating`, `style.css:576`).
 - **Re-dock**: double-click the header, or click the dock/undock icon button (`#reader-dock` / `#research-dock`).
-- Geometry (`{ floating, width, height, left, top }`) persists to `localStorage` under key **`akasha-reader`** (`web/src/main.ts:1630, 1640`) for the reader panel; the research panel uses the separate key **`akasha-research`** (`web/src/main.ts:2932, 2956`).
+- Geometry (`{ floating, width, height, left, top }`) persists to `localStorage` under key **`sinapso-reader`** (`web/src/main.ts:1630, 1640`) for the reader panel; the research panel uses the separate key **`sinapso-research`** (`web/src/main.ts:2932, 2956`).
 - Width is clamped to `280px .. window.innerWidth - 40` (`web/src/main.ts:1657`); floating height clamped to `220px .. window.innerHeight - 24` (`:1661`).
 
 ## 3. Z-index ladder
@@ -105,7 +105,7 @@ Used as a small inline SVG (10×10, `viewBox="0 0 24 24"`) directly after the te
 
 ### Mode exclusivity (Semantic / Web / Ingest)
 
-- Type `ModeName = "semantic" | "web" | "ingest"` (`web/src/main.ts:2195`). At most one is active, persisted to `localStorage["akasha-mode"]` (`:2221, 2284-2285`).
+- Type `ModeName = "semantic" | "web" | "ingest"` (`web/src/main.ts:2195`). At most one is active, persisted to `localStorage["sinapso-mode"]` (`:2221, 2284-2285`).
 - Each mode button (`#mode-semantic`, `#mode-web`, `#mode-ingest`) is `disabled` until its backing tool is detected (`modeReady()`, `:2242-2250`): qmd installed, Exa configured, or markitdown installed respectively.
 - `setMode()` (`:2277-2289`) closes the research column on switch ("column content belongs to the previous mode") and updates the search field via `updateSearchField()`.
 

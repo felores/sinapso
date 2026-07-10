@@ -1,12 +1,12 @@
-# Competitive Landscape Research: Solaris (3D Vault Visualizer + Voice Interface)
+# Competitive Landscape Research: Sinapso (3D Vault Visualizer + Voice Interface)
 
-> Research base for the Solaris landing page. Companion to root `PRODUCT.md`.
+> Research base for the Sinapso landing page. Companion to root `PRODUCT.md`.
 > Sourced 2026-07-09 via web research (Exa). Pricing figures are current as of
 > mid-2026; re-verify exact numbers before publishing them on the landing page.
 
 ## Executive summary
 
-Obsidian's built-in graph view is officially conceded to be unusable past ~25k notes and freezes vaults with heavy interlinking; the 3D-plugin ecosystem is small, buggy, and largely abandoned by solo maintainers. A real category of "talk to your notes" voice tools exists (2025-2026), but almost all are voice-*capture* (dictation) rather than realtime *agentic voice over the whole graph* — and the one direct competitor (Hermes for Obsidian) validates Solaris's exact Gemini-Live + BYO-key architecture. Document ingest to markdown is a widely documented pain with no clean native path. Subscription fatigue in PKM/AI is a loud, well-sourced sentiment that explicitly favors local-first, BYO-key, pay-per-use models.
+Obsidian's built-in graph view is officially conceded to be unusable past ~25k notes and freezes vaults with heavy interlinking; the 3D-plugin ecosystem is small, buggy, and largely abandoned by solo maintainers. A real category of "talk to your notes" voice tools exists (2025-2026), but almost all are voice-*capture* (dictation) rather than realtime *agentic voice over the whole graph* — and the one direct competitor (Hermes for Obsidian) validates Sinapso's exact Gemini-Live + BYO-key architecture. Document ingest to markdown is a widely documented pain with no clean native path. Subscription fatigue in PKM/AI is a loud, well-sourced sentiment that explicitly favors local-first, BYO-key, pay-per-use models.
 
 ---
 
@@ -52,7 +52,7 @@ Obsidian's built-in graph view is officially conceded to be unusable past ~25k n
 
 ## Q3 — Voice interfaces for personal knowledge bases (2025-2026)
 
-**Category exists but splits into (a) voice-*capture* apps and (b) a very small number of true realtime-voice-*agent-over-vault* tools — Solaris's exact design has one open-source analog, validating the approach while leaving the polished-product niche open.**
+**Category exists but splits into (a) voice-*capture* apps and (b) a very small number of true realtime-voice-*agent-over-vault* tools — Sinapso's exact design has one open-source analog, validating the approach while leaving the polished-product niche open.**
 
 1. **Direct architectural twin — Hermes for Obsidian (Jan 2026).** *"Interactive Voice interface with tool use for Obsidian. It's like ChatGPT's Live mode, with access to your vault. With bring your own API key... Powered by Google's Gemini Native Audio API."* Validates the Gemini-Live + BYO-key thesis precisely — but it's an unpolished BRAT beta plugin, not a standalone local-first product. — https://github.com/symunona/obsidian-hermes
 
@@ -62,7 +62,7 @@ Obsidian's built-in graph view is officially conceded to be unusable past ~25k n
 
 4. **Obsidian voice-plugin field is mostly Whisper transcription, not realtime bidirectional audio.** Auralite, Glyph, openbrain, vault-brain (local Gemma/Ollama), an ElevenLabs plugin — none combines 3D visual navigation + realtime voice agent + local-first. — https://github.com/chhoumann/auralite, https://github.com/jkrack/openbrain, https://github.com/savicprvoslav/vault-brain
 
-**Gap Solaris can own:** nobody pairs a **fast 3D spatial map of the vault** with a **realtime voice agent that can see and act on that same graph**, local-first + BYO-key. Hermes has no visualization; the visualizers have no voice; the voice apps don't touch your own files.
+**Gap Sinapso can own:** nobody pairs a **fast 3D spatial map of the vault** with a **realtime voice agent that can see and act on that same graph**, local-first + BYO-key. Hermes has no visualization; the visualizers have no voice; the voice apps don't touch your own files.
 
 ---
 
@@ -76,7 +76,7 @@ Obsidian's built-in graph view is officially conceded to be unusable past ~25k n
 
 4. **Images = base64 data URIs most destinations won't render.** Ingest-for-AI/RAG is an explicit motivation: *"Convert PDFs, websites, Word docs, and Notion pages into clean Markdown your vector database can actually parse."* — https://2markdown.io/
 
-5. **A whole cottage industry of converters** (2markdown, file2markdown, RawMark/Pandoc-online, doc-to-markdown, Minibase) confirms the pain is recurring and unsolved-in-workflow. Solaris already ships markitdown ingest, which these confirm is the right engine (*"Microsoft's MarkItDown engine produces better structured Markdown from PDFs"*). — https://rawmark.tech/pandoc-online
+5. **A whole cottage industry of converters** (2markdown, file2markdown, RawMark/Pandoc-online, doc-to-markdown, Minibase) confirms the pain is recurring and unsolved-in-workflow. Sinapso already ships markitdown ingest, which these confirm is the right engine (*"Microsoft's MarkItDown engine produces better structured Markdown from PDFs"*). — https://rawmark.tech/pandoc-online
 
 ---
 
@@ -113,12 +113,12 @@ Baseline: **Obsidian itself is free** (removed commercial license Feb 2025, ~1.5
 
 ---
 
-## Positioning opportunities (angles Solaris can own)
+## Positioning opportunities (angles Sinapso can own)
 
-1. **"The graph view Obsidian gives up on at 25k notes."** Obsidian's own team calls large-vault graph a "limitation, not a bug." Solaris is the answer to a problem the incumbent publicly won't solve.
+1. **"The graph view Obsidian gives up on at 25k notes."** Obsidian's own team calls large-vault graph a "limitation, not a bug." Sinapso is the answer to a problem the incumbent publicly won't solve.
 2. **"Uses your GPU. Obsidian's graph uses one CPU core."** The most-repeated technical complaint, and a demonstrable side-by-side.
-3. **"Talk to your vault, don't just stare at it."** The community's own phrasing ("Your vault has a graph. But you can only stare at it.") — Solaris adds voice agent + navigable map. Nobody combines both.
-4. **"Realtime voice over YOUR markdown files — not another cloud silo."** Resty/Voicie/SpoknLog lock notes in their clouds; Solaris speaks to files you already own, local-first.
+3. **"Talk to your vault, don't just stare at it."** The community's own phrasing ("Your vault has a graph. But you can only stare at it.") — Sinapso adds voice agent + navigable map. Nobody combines both.
+4. **"Realtime voice over YOUR markdown files — not another cloud silo."** Resty/Voicie/SpoknLog lock notes in their clouds; Sinapso speaks to files you already own, local-first.
 5. **"No subscription. Bring your own key. Pay cents, not $20/month."** Ride the documented subscription-fatigue wave; contrast with Notion AI/Mem/Reflect ($10-20/mo).
 6. **"Drag a Word/PDF/Google Doc in — it becomes a linked note."** Turns a universally-hated 20-minute cleanup into a drop.
 7. **"Your data never leaves your machine unless you say so."** Local-first + explicit-consent egress — a trust story cloud-by-default rivals can't tell.

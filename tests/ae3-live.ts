@@ -14,12 +14,12 @@ import { createApp } from "../server/app.js";
 import { updateConfig } from "../server/integrations/config.js";
 
 const SP = process.argv[2];
-const real = JSON.parse(readFileSync(join(homedir(), ".solaris", "config.json"), "utf-8"));
+const real = JSON.parse(readFileSync(join(homedir(), ".sinapso", "config.json"), "utf-8"));
 if (!real?.voice?.keys?.gemini || !real?.openrouterKey) {
   console.error("missing gemini/openrouter keys"); process.exit(2);
 }
 
-const ROOT = mkdtempSync(join(tmpdir(), "solaris-ae3-"));
+const ROOT = mkdtempSync(join(tmpdir(), "sinapso-ae3-"));
 const VAULT = join(ROOT, "vault");
 mkdirSync(VAULT, { recursive: true });
 writeFileSync(join(VAULT, "garden.md"), "# Garden\n\nA garden grows through tending, pruning, and patient cycles of seasons.\n");

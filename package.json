@@ -1,11 +1,11 @@
 {
-  "name": "solaris",
+  "name": "sinapso",
   "version": "1.0.1",
-  "description": "Solaris — your Obsidian vault or Open Knowledge Format bundle as a navigable 3D universe.",
+  "description": "Sinapso — your Obsidian vault or Open Knowledge Format bundle as a navigable 3D universe.",
   "type": "module",
   "main": "desktop/dist/main.cjs",
   "bin": {
-    "solaris": "dist/cli.cjs"
+    "sinapso": "dist/cli.cjs"
   },
   "files": [
     "dist/",
@@ -17,11 +17,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/felores/solaris.git"
+    "url": "git+https://github.com/felores/sinapso.git"
   },
-  "homepage": "https://github.com/felores/solaris#readme",
+  "homepage": "https://github.com/felores/sinapso#readme",
   "bugs": {
-    "url": "https://github.com/felores/solaris/issues"
+    "url": "https://github.com/felores/sinapso/issues"
   },
   "keywords": [
     "obsidian",
@@ -96,8 +96,8 @@
     "vitest": "^2.1.0"
   },
   "build": {
-    "appId": "com.felo.solaris",
-    "productName": "Solaris",
+    "appId": "com.felo.sinapso",
+    "productName": "Sinapso",
     "directories": {
       "output": "release"
     },

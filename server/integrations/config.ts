@@ -1,5 +1,5 @@
 /**
- * Integrations config: ~/.solaris/config.json (global to the user, unlike the
+ * Integrations config: ~/.sinapso/config.json (global to the user, unlike the
  * per-vault data dir). Holds the Exa and OpenRouter keys, web consent, default
  * model, and addons state. Secrets never leave this file: the status endpoint
  * reports booleans only.
@@ -60,7 +60,7 @@ export interface VaultConfig {
 
 export type LlmProviderId = "openrouter" | "deepseek";
 
-export interface SolarisConfig {
+export interface SinapsoConfig {
   exaKey: string | null;
   openrouterKey: string | null;
   deepseekKey: string | null;
@@ -93,7 +93,7 @@ export interface ConfigPatch {
   exaKey?: string | null;
   openrouterKey?: string | null;
   deepseekKey?: string | null;
-  consents?: Partial<SolarisConfig["consents"]>;
+  consents?: Partial<SinapsoConfig["consents"]>;
   defaultModel?: string | null;
   workerProvider?: LlmProviderId | null;
   workerModel?: string | null;
@@ -121,7 +121,7 @@ const PROMPT_DEFAULTS: Record<PromptKey, string> = {
   noteQuestions:
     "Generate concise web-research questions that close knowledge gaps around the current note. Reply as JSON strings only.",
   voiceAssistant:
-    "You are the Solaris voice assistant. Ground answers in the current view first, use vault tools for note questions, and ask before spending web credit.",
+    "You are the Sinapso voice assistant. Ground answers in the current view first, use vault tools for note questions, and ask before spending web credit.",
   webResearch:
     "Use web research only for user-requested external/current information. Return synthesized answers with sources and never auto-run spending searches while typing.",
 };
@@ -131,7 +131,7 @@ export function defaultPrompts(): Record<PromptKey, string> {
 }
 
 export function effectivePrompts(
-  cfg: Pick<SolarisConfig, "prompts">,
+  cfg: Pick<SinapsoConfig, "prompts">,
 ): Record<PromptKey, string> {
   const defaults = defaultPrompts();
   return {
@@ -142,7 +142,7 @@ export function effectivePrompts(
   };
 }
 
-export function defaultConfig(): SolarisConfig {
+export function defaultConfig(): SinapsoConfig {
   return {
     exaKey: null,
     openrouterKey: null,
@@ -176,12 +176,12 @@ export function defaultConfig(): SolarisConfig {
 }
 
 export function defaultConfigPath(): string {
-  return join(homedir(), ".solaris", "config.json");
+  return join(homedir(), ".sinapso", "config.json");
 }
 
 /** Field-by-field sanitizing merge: unknown/mistyped fields are ignored. */
-function merge(base: SolarisConfig, patch: unknown): SolarisConfig {
-  const out: SolarisConfig = {
+function merge(base: SinapsoConfig, patch: unknown): SinapsoConfig {
+  const out: SinapsoConfig = {
     ...base,
     consents: { ...base.consents },
     addons: { ...base.addons },
@@ -332,7 +332,7 @@ function sanitizeWiki(value: unknown): WikiConfig | null {
 }
 
 /** Read config; a corrupt file yields defaults plus a logged warning, never a crash. */
-export function loadConfig(path = defaultConfigPath()): SolarisConfig {
+export function loadConfig(path = defaultConfigPath()): SinapsoConfig {
   if (!existsSync(path)) return defaultConfig();
   let mtimeMs: number;
   try {
@@ -342,12 +342,12 @@ export function loadConfig(path = defaultConfigPath()): SolarisConfig {
   }
   const cached = configCache.get(path);
   if (cached && cached.mtimeMs === mtimeMs) return cached.value;
-  let value: SolarisConfig;
+  let value: SinapsoConfig;
   try {
     value = merge(defaultConfig(), JSON.parse(readFileSync(path, "utf-8")));
   } catch (e) {
     console.warn(
-      `Solaris config at ${path} is unreadable, using defaults: ${e instanceof Error ? e.message : String(e)}`,
+      `Sinapso config at ${path} is unreadable, using defaults: ${e instanceof Error ? e.message : String(e)}`,
     );
     return defaultConfig();
   }
@@ -359,7 +359,7 @@ export function loadConfig(path = defaultConfigPath()): SolarisConfig {
 export function updateConfig(
   patch: ConfigPatch,
   path = defaultConfigPath(),
-): SolarisConfig {
+): SinapsoConfig {
   const cfg = merge(loadConfig(path), patch);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n", { mode: 0o600 });
@@ -376,7 +376,7 @@ export function updateConfig(
 
 interface ConfigCacheEntry {
   mtimeMs: number;
-  value: SolarisConfig;
+  value: SinapsoConfig;
 }
 
 // ponytail: module-level memo keyed by path. stat per call, read+parse only

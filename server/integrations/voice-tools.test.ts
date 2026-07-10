@@ -249,7 +249,7 @@ describe("createVoiceToolSession — read-only tools", () => {
     const call = fake.url("/api/search?")[0];
     expect(call.url).toBe(`${BASE}/api/search?q=alpha&history=1&displayQuery=alpha`);
     expect(call.init?.method).toBeUndefined();
-    expect((call.init?.headers as Record<string, string>)["x-solaris-token"]).toBe(TEST_TOKEN);
+    expect((call.init?.headers as Record<string, string>)["x-sinapso-token"]).toBe(TEST_TOKEN);
   });
 
   it("search_notes scopes results to the requested path prefix and trims trailing slashes", async () => {
@@ -508,7 +508,7 @@ describe("createVoiceToolSession — read_wiki_contract gating (save_working_doc
     );
     expect(fake.calls[0].init?.method).toBe("POST");
     const headers = fake.calls[0].init?.headers as Record<string, string>;
-    expect(headers["x-solaris-token"]).toBe(TEST_TOKEN);
+    expect(headers["x-sinapso-token"]).toBe(TEST_TOKEN);
     const body = JSON.parse(fake.calls[0].init?.body as string);
     expect(body).toEqual({
       kind: "wiki_note",
@@ -575,7 +575,7 @@ describe("createVoiceToolSession — write_document", () => {
     const body = JSON.parse(fake.calls[0].init?.body as string);
     expect(body).toEqual({ id: out.id, title: "My Note!", content: "body" });
     const headers = fake.calls[0].init?.headers as Record<string, string>;
-    expect(headers["x-solaris-token"]).toBe(TEST_TOKEN);
+    expect(headers["x-sinapso-token"]).toBe(TEST_TOKEN);
   });
 
   it("keeps old-style write_document calls as active-document edits", async () => {
@@ -763,7 +763,7 @@ describe("createVoiceToolSession — promote and edit", () => {
       new RegExp(`^${BASE.replace(/\./g, "\\.")}/api/document/doc-[\\w-]+/promote$`),
     );
     const headers = fake.calls[0].init?.headers as Record<string, string>;
-    expect(headers["x-solaris-token"]).toBe(TEST_TOKEN);
+    expect(headers["x-sinapso-token"]).toBe(TEST_TOKEN);
     expect(headers["content-type"]).toBe("application/json");
     const body = JSON.parse(fake.calls[0].init?.body as string);
     expect(body).toEqual({
@@ -851,7 +851,7 @@ describe("createVoiceToolSession — promote and edit", () => {
     expect(fake.calls[0].url).toBe(`${BASE}/api/notes`);
     expect(fake.calls[0].init?.method).toBe("PUT");
     const headers = fake.calls[0].init?.headers as Record<string, string>;
-    expect(headers["x-solaris-token"]).toBe(TEST_TOKEN);
+    expect(headers["x-sinapso-token"]).toBe(TEST_TOKEN);
     const body = JSON.parse(fake.calls[0].init?.body as string);
     expect(body).toEqual({ id: "foo.md", content: "# new body" });
   });
@@ -880,7 +880,7 @@ describe("createVoiceToolSession — promote and edit", () => {
     expect(fake.calls[0].url).toBe(`${BASE}/api/archive`);
     expect(fake.calls[0].init?.method).toBe("POST");
     const headers = fake.calls[0].init?.headers as Record<string, string>;
-    expect(headers["x-solaris-token"]).toBe(TEST_TOKEN);
+    expect(headers["x-sinapso-token"]).toBe(TEST_TOKEN);
     const body = JSON.parse(fake.calls[0].init?.body as string);
     expect(body).toEqual({ id: "foo.md" });
     expect(sent).toContainEqual({
@@ -1067,7 +1067,7 @@ describe("createVoiceToolSession — web tools", () => {
     expect(fake.calls[0].url).toBe(`${BASE}/api/research`);
     expect(fake.calls[0].init?.method).toBe("POST");
     const headers = fake.calls[0].init?.headers as Record<string, string>;
-    expect(headers["x-solaris-token"]).toBe(TEST_TOKEN);
+    expect(headers["x-sinapso-token"]).toBe(TEST_TOKEN);
     const body = JSON.parse(fake.calls[0].init?.body as string);
     expect(body).toEqual({ query: "what is X", deep: true });
   });
@@ -1150,7 +1150,7 @@ describe("createVoiceToolSession — delegate_to_thinker (U7)", () => {
     const body = JSON.parse(String(call.init?.body));
     expect(body.sessionId).toBe("sess-abc");
     expect(body.notes).toEqual(["a/one.md"]);
-    expect((call.init?.headers as Record<string, string>)["x-solaris-token"]).toBe(
+    expect((call.init?.headers as Record<string, string>)["x-sinapso-token"]).toBe(
       TEST_TOKEN,
     );
     // adopted document: a follow-up write_document targets doc-77

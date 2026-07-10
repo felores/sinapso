@@ -1,5 +1,5 @@
 /**
- * Akasha HTTP app factory, shared by the CLI server (server/index.ts) and
+ * Sinapso HTTP app factory, shared by the CLI server (server/index.ts) and
  * the Electron desktop app (desktop/main.ts).
  *
  * Public API routes (all localhost-only):
@@ -33,7 +33,7 @@ import {
   loadConfig,
   updateConfig,
   defaultConfigPath,
-  type SolarisConfig,
+  type SinapsoConfig,
 } from "./integrations/config.js";
 import {
   detectAll,
@@ -182,7 +182,7 @@ interface GraphFile {
   links: Array<{ source: string; target: string; weight?: number }>;
 }
 
-export interface AkashaApp {
+export interface SinapsoApp {
   app: express.Express;
   /** Re-read graph.json (after a rescan / vault switch). */
   reload(): void;
@@ -206,7 +206,7 @@ type SemanticResult =
   | { available: false; reason: string };
 
 export interface IntegrationsOptions {
-  /** Override ~/.solaris/config.json (tests). */
+  /** Override ~/.sinapso/config.json (tests). */
   configPath?: string;
   /** Inject detection deps so tests never probe real binaries. */
   detectDeps?: Partial<DetectDeps>;
@@ -228,7 +228,7 @@ export function createApp(
   graphPath: string,
   staticDir?: string,
   integrations?: IntegrationsOptions,
-): AkashaApp {
+): SinapsoApp {
   let graph: GraphFile;
   try {
     graph = JSON.parse(readFileSync(graphPath, "utf-8"));
@@ -272,7 +272,7 @@ export function createApp(
   const detectDeps = integrations?.detectDeps;
   const dataDir = dirname(graphPath); // data/ — runtime store (history, journal)
 
-  const defaultAdminExcludes = (cfg: SolarisConfig) =>
+  const defaultAdminExcludes = (cfg: SinapsoConfig) =>
     [cfg.archiveDestination, cfg.imagesDestination]
       .map((p) =>
         p
@@ -1722,7 +1722,7 @@ export function createApp(
             {
               role: "system",
               content:
-                "You are the inline note assistant of Solaris, a local markdown vault app. " +
+                "You are the inline note assistant of Sinapso, a local markdown vault app. " +
                 "The user selected text inside a note and typed an instruction. " +
                 "Follow the instruction against the selection, using the note context for grounding. " +
                 "Reply with ONLY the resulting text, ready to be placed into the note: " +

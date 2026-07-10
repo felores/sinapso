@@ -182,7 +182,7 @@ function atomicWrite(full: string, content: string): void {
   const target = realpathSync(full);
   const tmp = join(
     dirname(target),
-    `.${basename(target)}.solaris-tmp-${process.pid}-${Date.now()}`,
+    `.${basename(target)}.sinapso-tmp-${process.pid}-${Date.now()}`,
   );
   writeFileSync(tmp, content);
   try {

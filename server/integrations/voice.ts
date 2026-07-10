@@ -26,7 +26,7 @@ import {
   GoogleGenAI,
   Modality,
 } from "@google/genai";
-import { effectivePrompts, loadConfig, type SolarisConfig } from "./config";
+import { effectivePrompts, loadConfig, type SinapsoConfig } from "./config";
 import { isLocalHost, isLocalOrigin } from "./security";
 import { createVoiceToolSession, VOICE_TOOLS } from "./voice-tools";
 import { toolsForSurface } from "./registry";
@@ -48,7 +48,7 @@ export const GEMINI_LIVE_MODELS = [
 /** Models with native async function calling (behavior: NON_BLOCKING). */
 const GEMINI_ASYNC_FC_MODELS = new Set<string>(GEMINI_LIVE_MODELS);
 
-export function geminiLiveModel(cfg: SolarisConfig): string {
+export function geminiLiveModel(cfg: SinapsoConfig): string {
   const m = cfg.voice.model;
   return m && (GEMINI_LIVE_MODELS as readonly string[]).includes(m)
     ? m
@@ -275,7 +275,7 @@ function parseToolArgs(args: unknown): Record<string, unknown> {
   return args && typeof args === "object" ? (args as Record<string, unknown>) : {};
 }
 
-const BASE_SYSTEM_PROMPT = `You are the voice assistant inside Solaris, a 3D visualizer of the user's personal Markdown knowledge vault. They are exploring their notes and talking to you hands-free.
+const BASE_SYSTEM_PROMPT = `You are the voice assistant inside Sinapso, a 3D visualizer of the user's personal Markdown knowledge vault. They are exploring their notes and talking to you hands-free.
 
 Speak briefly and conversationally, in the SAME language they speak. Refer to notes by their title; don't read raw file paths or line numbers aloud unless asked.
 
@@ -311,7 +311,7 @@ interface VoiceWikiSummary {
 }
 
 export function buildVoiceSystemPrompt(
-  cfg: Pick<SolarisConfig, "prompts" | "archiveDestination">,
+  cfg: Pick<SinapsoConfig, "prompts" | "archiveDestination">,
   wikis: VoiceWikiSummary[] = [],
 ): string {
   const enabled = wikis.filter((w) => w.enabled);
@@ -443,7 +443,7 @@ async function bridge(
 
 async function bridgeGemini(
   browser: WebSocket,
-  cfg: SolarisConfig,
+  cfg: SinapsoConfig,
   systemInstruction: string,
   toolSession: ReturnType<typeof createVoiceToolSession>,
   send: (obj: object) => void,
@@ -584,7 +584,7 @@ async function bridgeGemini(
 
 function bridgeRealtime(
   browser: WebSocket,
-  cfg: SolarisConfig,
+  cfg: SinapsoConfig,
   provider: Exclude<VoiceProvider, "gemini">,
   systemInstruction: string,
   toolSession: ReturnType<typeof createVoiceToolSession>,
@@ -609,7 +609,7 @@ function bridgeRealtime(
     headers: {
       Authorization: `Bearer ${key}`,
       ...(provider === "openai"
-        ? { "OpenAI-Safety-Identifier": "solaris-local-user" }
+        ? { "OpenAI-Safety-Identifier": "sinapso-local-user" }
         : {}),
     },
   });

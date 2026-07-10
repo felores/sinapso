@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * Solaris MCP server (R15/R17, KTD2): stdio transport for local clients
+ * Sinapso MCP server (R15/R17, KTD2): stdio transport for local clients
  * (Claude Code, the podcast agent). Tools come from the registry's `mcp`
- * surface and every call is proxied to the running Solaris server over
+ * surface and every call is proxied to the running Sinapso server over
  * loopback HTTP with a surface-scoped token — the routes' guards, gates,
  * and the sanctioned write path apply unchanged. No network listener is
  * opened here; stdout is JSON-RPC, all logging goes to stderr.
  *
  * Client config (Claude Code):
- *   claude mcp add solaris -- npx tsx /path/to/solaris/server/mcp.ts
+ *   claude mcp add sinapso -- npx tsx /path/to/sinapso/server/mcp.ts
  * or with a built dist: `node dist/mcp.js`. Point at a non-default port
- * with SOLARIS_URL or AKASHA_PORT.
+ * with SINAPSO_URL or SINAPSO_PORT.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -22,8 +22,8 @@ import {
 } from "./integrations/mcp-bridge.js";
 
 const base =
-  process.env.SOLARIS_URL ??
-  `http://127.0.0.1:${process.env.AKASHA_PORT ?? "5175"}`;
+  process.env.SINAPSO_URL ??
+  `http://127.0.0.1:${process.env.SINAPSO_PORT ?? "5175"}`;
 
 async function main(): Promise<void> {
   const bridge = createMcpBridge({ base });
@@ -32,13 +32,13 @@ async function main(): Promise<void> {
     ({ editEnabled } = await bridge.probe());
   } catch (e) {
     console.error(
-      `solaris-mcp: cannot reach Solaris at ${base} — start it first (npm run dev / npm start). ${e instanceof Error ? e.message : String(e)}`,
+      `sinapso-mcp: cannot reach Sinapso at ${base} — start it first (npm run dev / npm start). ${e instanceof Error ? e.message : String(e)}`,
     );
     process.exit(1);
   }
 
   const server = new McpServer({
-    name: "solaris-mcp-server",
+    name: "sinapso-mcp-server",
     version: "1.0.0",
   });
 
@@ -77,7 +77,7 @@ async function main(): Promise<void> {
 
   await server.connect(new StdioServerTransport());
   console.error(
-    `solaris-mcp: connected via stdio, proxying ${mcpEntries(editEnabled).length} tools to ${base} (edit ${editEnabled ? "enabled" : "disabled"})`,
+    `sinapso-mcp: connected via stdio, proxying ${mcpEntries(editEnabled).length} tools to ${base} (edit ${editEnabled ? "enabled" : "disabled"})`,
   );
 }
 

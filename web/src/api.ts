@@ -68,7 +68,7 @@ export async function api<T = unknown>(
   const request = async () => {
     const headers: Record<string, string> = { ...(opts.headers ?? {}) };
     if (opts.json !== undefined) headers["content-type"] = "application/json";
-    if (needsToken) headers["x-solaris-token"] = await getApiToken(fetchFn);
+    if (needsToken) headers["x-sinapso-token"] = await getApiToken(fetchFn);
     return fetchFn(path, { method, headers, body });
   };
   let res = await request();
@@ -86,7 +86,7 @@ export async function apiRaw(
   if (!init?.token) return fetch(path, init);
   const token = await getApiToken();
   const headers = new Headers(init.headers);
-  headers.set("x-solaris-token", token);
+  headers.set("x-sinapso-token", token);
   return fetch(path, { ...init, headers });
 }
 

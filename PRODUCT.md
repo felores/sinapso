@@ -1,14 +1,14 @@
-# Solaris
+# Sinapso
 
 > Your knowledge base as a 3D universe you can talk to.
 
 ## What This Is
 
-Solaris takes a folder of linked notes - an Obsidian vault, a wiki, any collection of Markdown files - and turns it into a living 3D galaxy. Every note is a glowing node, every link a strand between them, and the clusters that emerge are your actual areas of knowledge, discovered from the links alone. You fly through it, click a note to read it right there, and - this is the part that changes everything - you talk to it. A real-time voice assistant explores your notes with you, searches the web, pulls in new sources, drafts documents, and files them into your knowledge base, all by conversation.
+Sinapso takes a folder of linked notes - an Obsidian vault, a wiki, any collection of Markdown files - and turns it into a living 3D galaxy. Every note is a glowing node, every link a strand between them, and the clusters that emerge are your actual areas of knowledge, discovered from the links alone. You fly through it, click a note to read it right there, and - this is the part that changes everything - you talk to it. A real-time voice assistant explores your notes with you, searches the web, pulls in new sources, drafts documents, and files them into your knowledge base, all by conversation.
 
 ## The Origin Story
 
-Solaris began as a repository with a single star. It was created by Fable, the most powerful AI in the world, which built the original 3D visualizer and left it open source. A human found it while hunting for a way to see a 5,000-note knowledge base that every other tool choked on - and this one flew. Fast camera, fluid zoom into clusters, beautiful. He audited it, adopted it, and has been evolving it ever since: voice, research, ingestion, versioning. Born from an AI, raised by a human, open to everyone. MIT licensed.
+Sinapso began as a repository with a single star. It was created by Fable, the most powerful AI in the world, which built the original 3D visualizer and left it open source. A human found it while hunting for a way to see a 5,000-note knowledge base that every other tool choked on - and this one flew. Fast camera, fluid zoom into clusters, beautiful. He audited it, adopted it, and has been evolving it ever since: voice, research, ingestion, versioning. Born from an AI, raised by a human, open to everyone. MIT licensed.
 
 ## Who This Is For
 
@@ -22,7 +22,7 @@ Solaris began as a repository with a single star. It was created by Fable, the m
 
 You spent years building a knowledge base. Thousands of notes, carefully linked. And what do you get for it? A file tree. A search box. A 2D graph that turns into an unreadable hairball and drops frames the moment your vault gets serious. You can't see the shape of what you know, you can't spot the gaps, and getting *new* knowledge in means copy-pasting out of PDFs and Word files that pollute everything they touch.
 
-Solaris flips that. Your vault becomes a place you visit. Patterns you never noticed are suddenly obvious - that orange cluster you forgot about, the bright strands connecting two domains you didn't know were related. New material flows in clean: drop a URL, a Word file, and it comes out as a tidy note, previewed before it's saved, linked into what you already have. And when your hands are busy or your thoughts are faster than your typing, you just say what you want.
+Sinapso flips that. Your vault becomes a place you visit. Patterns you never noticed are suddenly obvious - that orange cluster you forgot about, the bright strands connecting two domains you didn't know were related. New material flows in clean: drop a URL, a Word file, and it comes out as a tidy note, previewed before it's saved, linked into what you already have. And when your hands are busy or your thoughts are faster than your typing, you just say what you want.
 
 ## What You Can Do With It
 
@@ -53,7 +53,7 @@ It answers in real time, accepts interruptions, corrects itself when you push ba
 
 ## No Subscriptions, Ever
 
-Solaris is free and open source. The optional smart features run on **your own keys, pay-per-use**:
+Sinapso is free and open source. The optional smart features run on **your own keys, pay-per-use**:
 
 - Web research costs cents - you load credits and they last.
 - The language models behind synthesis and document drafting are pay-as-you-go, with efficient, current models as the defaults.
@@ -66,16 +66,16 @@ Use it every day or once a month - you pay for what you use, and the core visual
 
 - **It stays fast where everything else breaks.** Big vaults are the point, not the edge case.
 - **Everything stays on your machine.** Notes are never uploaded, indexed, or phoned home. Web features only activate when you explicitly turn them on, with your own keys.
-- **Your notes stay yours** - plain Markdown files in your own folders. Solaris never locks them in, never rewrites them behind your back, asks before it saves anything, and keeps a journal of every change.
-- **It complements Obsidian instead of replacing it.** One click hands any note to Obsidian for human editing; Solaris is the exploration and agent layer on top.
-- **Your AI gains a capability.** Solaris isn't just a viewer - it's a surface agents can use: voice agents today, and a roadmap where your other AI assistants tap your knowledge base as grounded context for deep reasoning.
+- **Your notes stay yours** - plain Markdown files in your own folders. Sinapso never locks them in, never rewrites them behind your back, asks before it saves anything, and keeps a journal of every change.
+- **It complements Obsidian instead of replacing it.** One click hands any note to Obsidian for human editing; Sinapso is the exploration and agent layer on top.
+- **Your AI gains a capability.** Sinapso isn't just a viewer - it's a surface agents can use: voice agents today, and a roadmap where your other AI assistants tap your knowledge base as grounded context for deep reasoning.
 - **Open source, MIT, built on open source** - the converter, the semantic engine, the visualizer, all of it inspectable.
 
 ## A Day in the Life
 
 Mariana runs research for a small consultancy. Her vault is six years old and past five thousand notes; she stopped opening the graph view years ago because it froze her laptop.
 
-Monday morning she opens Solaris. The galaxy loads instantly - green cluster for clients, orange for methods, a faint archipelago of old project notes she'd forgotten. She spots a bright strand between "pricing experiments" and a client from 2023 and clicks it. The note opens beside the map. Useful. She says, "find everything related to this and open the strongest three." The panels arrange themselves.
+Monday morning she opens Sinapso. The galaxy loads instantly - green cluster for clients, orange for methods, a faint archipelago of old project notes she'd forgotten. She spots a bright strand between "pricing experiments" and a client from 2023 and clicks it. The note opens beside the map. Useful. She says, "find everything related to this and open the strongest three." The panels arrange themselves.
 
 A client sends her a 40-page PDF at noon. She drops it into the ingest bar, watches the clean preview appear, trims the target folder, saves. It's a note now - searchable, linked, ready for any model to read without choking on formatting garbage.
 

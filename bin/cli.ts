@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * Akasha CLI, the zero-install on-ramp:
+ * Sinapso CLI, the zero-install on-ramp:
  *
- *   npx solaris "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open] [--addons]
+ *   npx sinapso "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open] [--addons]
  *
  * Scans the vault (incrementally), serves the 3D map on localhost, and opens
  * the browser. Per-vault data (graph, scan cache, layout cache) lives under
- * ~/.solaris/<vault-hash>/ so repeat runs boot from cache.
+ * ~/.sinapso/<vault-hash>/ so repeat runs boot from cache.
  *
  * Two install flavors (R16): core (default, no external tools) and
  * --addons, which checks for qmd/markitdown and installs only what is
@@ -30,15 +30,15 @@ import { installAddons } from "../server/integrations/install";
 // Parse command-line arguments
 const argv = process.argv.slice(2);
 
-// Subcommands (R16): `solaris mcp` launches the stdio MCP server;
-// `solaris call <tool> [json]` invokes one registry tool over loopback.
-// Both talk to an ALREADY RUNNING Solaris (SOLARIS_URL / AKASHA_PORT).
+// Subcommands (R16): `sinapso mcp` launches the stdio MCP server;
+// `sinapso call <tool> [json]` invokes one registry tool over loopback.
+// Both talk to an ALREADY RUNNING Sinapso (SINAPSO_URL / SINAPSO_PORT).
 if (argv[0] === "mcp") {
   void import("../server/mcp");
 } else if (argv[0] === "call") {
   const base =
-    process.env.SOLARIS_URL ??
-    `http://127.0.0.1:${process.env.AKASHA_PORT ?? "5175"}`;
+    process.env.SINAPSO_URL ??
+    `http://127.0.0.1:${process.env.SINAPSO_PORT ?? "5175"}`;
   void import("./call").then(async ({ callTool }) => {
     const r = await callTool(argv[1], argv[2], { base });
     if (r.output) console.log(r.output);
@@ -71,7 +71,7 @@ function serve(): void {
   // Validate required vault argument
   if (!args.vault) {
     console.error(
-      'usage: solaris "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open] [--addons]',
+      'usage: sinapso "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open] [--addons]',
     );
     process.exit(1);
   }
@@ -94,14 +94,14 @@ function serve(): void {
   // This allows multiple vaults to maintain separate caches without conflicts
   const dataDir = join(
     homedir(),
-    ".solaris",
+    ".sinapso",
     createHash("sha1").update(vault).digest("hex").slice(0, 10),
   );
   mkdirSync(dataDir, { recursive: true });
   const graphPath = join(dataDir, "graph.json");
 
   // Scan vault (full or incremental based on --full flag)
-  console.log("Solaris — scanning " + vault);
+  console.log("Sinapso — scanning " + vault);
   const g = scanVault({
     vault,
     out: graphPath,
@@ -120,11 +120,11 @@ function serve(): void {
   // Start server on localhost (not exposed publicly)
   const listener = app.listen(
     args.port,
-    process.env.AKASHA_HOST ?? "127.0.0.1",
+    process.env.SINAPSO_HOST ?? "127.0.0.1",
     () => {
       const { port } = listener.address() as AddressInfo;
       const url = `http://localhost:${port}`;
-      console.log(`Solaris: ${url}   (Ctrl+C to stop)`);
+      console.log(`Sinapso: ${url}   (Ctrl+C to stop)`);
 
       // Open browser if requested (default: true unless --no-open)
       if (args.open) {

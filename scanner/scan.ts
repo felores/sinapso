@@ -1,5 +1,5 @@
 /**
- * Akasha scanner: walks an Obsidian vault and emits graph.json.
+ * Sinapso scanner: walks an Obsidian vault and emits graph.json.
  *
  * CLI:    npm run scan -- "<path-to-vault>" [--out data/graph.json] [--exclude "Private/Drafts" ...] [--full]
  * API:    scanVault({ vault, out, exclude, full })   - used by the desktop

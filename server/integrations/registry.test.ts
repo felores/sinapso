@@ -106,7 +106,7 @@ describe("token-required dispatch (mutating routes send the header)", () => {
     delegate_to_thinker: { task: "synthesize these notes" },
   };
 
-  it("every voice entry with a token-required route sends x-solaris-token", async () => {
+  it("every voice entry with a token-required route sends x-sinapso-token", async () => {
     const tokenTools = toolsForSurface("voice").filter(
       (e) => e.route?.tokenRequired,
     );
@@ -117,7 +117,7 @@ describe("token-required dispatch (mutating routes send the header)", () => {
         const url = String(input);
         const headers = (init?.headers ?? {}) as Record<string, string>;
         if (init?.method && init.method !== "GET")
-          seen.push({ url, token: headers["x-solaris-token"] });
+          seen.push({ url, token: headers["x-sinapso-token"] });
         if (url.includes("/api/delegate"))
           return new Response(
             JSON.stringify({ job: { id: "job-1", documentId: "doc-1" } }),

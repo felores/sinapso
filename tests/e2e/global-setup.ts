@@ -1,6 +1,6 @@
 // Hermetic E2E fixture (plan 018 U6): the suite runs against a throwaway
 // vault under tests/e2e/.tmp, never the developer's real vault. The dev
-// server is pointed here via AKASHA_GRAPH in playwright.config.ts.
+// server is pointed here via SINAPSO_GRAPH in playwright.config.ts.
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";

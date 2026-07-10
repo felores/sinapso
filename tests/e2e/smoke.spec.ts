@@ -5,11 +5,11 @@ type Graph = {
   nodes: Array<{ id: string; title: string; phantom?: boolean }>;
 };
 
-test("loads Solaris shell", async ({ page }) => {
+test("loads Sinapso shell", async ({ page }) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {
     await page.goto("/");
-    await expect(page).toHaveTitle(/Solaris/);
+    await expect(page).toHaveTitle(/Sinapso/);
     await expect(page.locator("#graph")).toBeAttached();
   } finally {
     await assertCleanBrowser();
@@ -75,7 +75,7 @@ test("writes selected node to the URL", async ({ page }) => {
     // A fresh vault triggers the qmd onboarding prompt, which overlays the
     // search results; mark it answered so the click isn't intercepted.
     await page.addInitScript(() =>
-      localStorage.setItem("akasha-qmd-prompted", "1"),
+      localStorage.setItem("sinapso-qmd-prompted", "1"),
     );
     await page.goto("/");
     await page.locator("#search").fill(node.title);
@@ -113,8 +113,8 @@ test("hash node changes do not reload the app", async ({ page }) => {
     });
     await page.evaluate(() => {
       (
-        window as unknown as { __solarisReloadProbe: string }
-      ).__solarisReloadProbe = "alive";
+        window as unknown as { __sinapsoReloadProbe: string }
+      ).__sinapsoReloadProbe = "alive";
     });
     const next = new URL(page.url());
     next.hash = `node=${encodeURIComponent(nodes[1].id)}`;
@@ -127,8 +127,8 @@ test("hash node changes do not reload the app", async ({ page }) => {
       .poll(() =>
         page.evaluate(
           () =>
-            (window as unknown as { __solarisReloadProbe?: string })
-              .__solarisReloadProbe,
+            (window as unknown as { __sinapsoReloadProbe?: string })
+              .__sinapsoReloadProbe,
         ),
       )
       .toBe("alive");

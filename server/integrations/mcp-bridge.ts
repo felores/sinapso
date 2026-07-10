@@ -6,7 +6,7 @@
  * same routes the browser uses.
  *
  * The surface-scoped token is fetched lazily from GET /api/session?surface=mcp
- * and re-fetched once on 403, so a Solaris restart (which rotates tokens)
+ * and re-fetched once on 403, so a Sinapso restart (which rotates tokens)
  * recovers transparently. The server-side guard — not this bridge — rejects
  * the MCP token on routes outside the registry's mcp surface.
  */
@@ -19,7 +19,7 @@ import {
 } from "./registry.js";
 
 export interface McpBridgeOptions {
-  /** Loopback base of the running Solaris server. */
+  /** Loopback base of the running Sinapso server. */
   base: string;
   fetchFn?: typeof fetch;
   /** Register the in-place edit tool (config opt-in, AE6). */
@@ -124,7 +124,7 @@ export function createMcpBridge(opts: McpBridgeOptions) {
         u.searchParams.set(param, String(v));
       }
       return fetchFn(u, {
-        headers: route.tokenRequired ? { "x-solaris-token": tok } : undefined,
+        headers: route.tokenRequired ? { "x-sinapso-token": tok } : undefined,
       });
     }
     const body: Record<string, unknown> = {};
@@ -141,7 +141,7 @@ export function createMcpBridge(opts: McpBridgeOptions) {
       method: route.method,
       headers: {
         "content-type": "application/json",
-        ...(route.tokenRequired ? { "x-solaris-token": tok } : {}),
+        ...(route.tokenRequired ? { "x-sinapso-token": tok } : {}),
       },
       body: JSON.stringify(body),
     });
@@ -165,7 +165,7 @@ export function createMcpBridge(opts: McpBridgeOptions) {
     /** Startup probe: server reachable + current edit opt-in state. */
     async probe(): Promise<{ editEnabled: boolean }> {
       const r = await fetchFn(`${opts.base}/api/integrations`);
-      if (!r.ok) throw new Error(`Solaris responded HTTP ${r.status}`);
+      if (!r.ok) throw new Error(`Sinapso responded HTTP ${r.status}`);
       const d = (await r.json()) as { mcp?: { editEnabled?: boolean } };
       return { editEnabled: d.mcp?.editEnabled === true };
     },

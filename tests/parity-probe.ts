@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const cfg = JSON.parse(readFileSync(join(homedir(), ".solaris", "config.json"), "utf-8"));
+const cfg = JSON.parse(readFileSync(join(homedir(), ".sinapso", "config.json"), "utf-8"));
 const key = cfg?.voice?.keys?.gemini;
 if (!key) { console.error("no gemini key"); process.exit(2); }
 const args = process.argv.slice(2);

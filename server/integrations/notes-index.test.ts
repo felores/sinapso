@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { grepNote, buildSearchIndex } from "./notes-index";
 
-const VAULT = mkdtempSync(join(tmpdir(), "solaris-notes-index-"));
+const VAULT = mkdtempSync(join(tmpdir(), "sinapso-notes-index-"));
 const note = (rel: string, body: string) =>
   writeFileSync(join(VAULT, rel), body);
 
@@ -315,7 +315,7 @@ describe("buildSearchIndex: byte-identical route output fixtures (R10)", () => {
     const { createApp } = await import("../app");
     const { scanVault } = await import("../../scanner/scan");
     const request = (await import("supertest")).default;
-    const root = mkdtempSync(join(tmpdir(), "solaris-u6-fixture-"));
+    const root = mkdtempSync(join(tmpdir(), "sinapso-u6-fixture-"));
     const vault = join(root, "vault");
     const data = join(root, "data");
     mkdirSync(vault);

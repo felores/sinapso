@@ -14,7 +14,7 @@
  * pair is used.
  */
 
-import type { SolarisConfig } from "./config.js";
+import type { SinapsoConfig } from "./config.js";
 import {
   chatCompletion,
   DEFAULT_MODEL,
@@ -43,7 +43,7 @@ export interface ResolvedTier {
   extraBody?: Record<string, unknown>;
 }
 
-function slot(tier: LlmTier, cfg: SolarisConfig): ResolvedTier | null {
+function slot(tier: LlmTier, cfg: SinapsoConfig): ResolvedTier | null {
   const provider = tier === "worker" ? cfg.workerProvider : cfg.thinkerProvider;
   if (provider === "deepseek" && cfg.deepseekKey) {
     return {
@@ -74,7 +74,7 @@ function slot(tier: LlmTier, cfg: SolarisConfig): ResolvedTier | null {
  */
 export function resolveTier(
   tier: LlmTier,
-  cfg: SolarisConfig,
+  cfg: SinapsoConfig,
 ): ResolvedTier | null {
   const own = slot(tier, cfg);
   if (own) return own;

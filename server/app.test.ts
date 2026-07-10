@@ -16,7 +16,7 @@ import { updateConfig } from "./integrations/config";
 
 // Throwaway vault with one real note. The graph.json points /api/note's
 // vaultRoot here so the path-traversal guard can be exercised end-to-end.
-const VAULT = mkdtempSync(join(tmpdir(), "solaris-test-"));
+const VAULT = mkdtempSync(join(tmpdir(), "sinapso-test-"));
 const NOTE_BODY = "# Real Note\n\nA real markdown note inside the vault.\n";
 writeFileSync(join(VAULT, "real.md"), NOTE_BODY);
 
@@ -102,7 +102,7 @@ describe("server: /api/note-lines slice + guard", () => {
 
 describe("server: rescan excludes", () => {
   it("reconciles stale graph files with default archive and images excludes on startup", async () => {
-    const root = mkdtempSync(join(tmpdir(), "solaris-startup-default-excludes-"));
+    const root = mkdtempSync(join(tmpdir(), "sinapso-startup-default-excludes-"));
     try {
       mkdirSync(join(root, "archivo"));
       mkdirSync(join(root, "images"));
@@ -131,7 +131,7 @@ describe("server: rescan excludes", () => {
   });
 
   it("uses initialized vault-scoped excludes exactly on rescan", async () => {
-    const root = mkdtempSync(join(tmpdir(), "solaris-rescan-excludes-"));
+    const root = mkdtempSync(join(tmpdir(), "sinapso-rescan-excludes-"));
     try {
       mkdirSync(join(root, "skip"));
       mkdirSync(join(root, "done"));
@@ -214,7 +214,7 @@ describe("server: /api/note-grep literal scan + guard", () => {
 });
 
 describe("server: /api/tree folder structure", () => {
-  const V = mkdtempSync(join(tmpdir(), "solaris-tree-"));
+  const V = mkdtempSync(join(tmpdir(), "sinapso-tree-"));
   const gp = join(V, "graph.json");
   writeFileSync(
     gp,
@@ -256,7 +256,7 @@ describe("server: /api/tree folder structure", () => {
 });
 
 function switchFixture(pickVault?: () => Promise<string | null>) {
-  const root = mkdtempSync(join(tmpdir(), "solaris-switch-"));
+  const root = mkdtempSync(join(tmpdir(), "sinapso-switch-"));
   const data = join(root, "data");
   const vaultA = join(root, "vault-a");
   const vaultB = join(root, "vault-b");
@@ -298,13 +298,13 @@ describe("server: /api/vault switch", () => {
       const token = await sessionToken(f.server.app);
       const missing = await request(f.server.app)
         .post("/api/vault")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({ path: join(f.root, "missing") });
       expect(missing.status).toBe(404);
 
       const file = await request(f.server.app)
         .post("/api/vault")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({ path: join(f.vaultA, "a.md") });
       expect(file.status).toBe(400);
       expect(f.server.meta().vaultPath).toBe(f.vaultA);
@@ -319,7 +319,7 @@ describe("server: /api/vault switch", () => {
       const token = await sessionToken(f.server.app);
       const res = await request(f.server.app)
         .post("/api/vault")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({ path: f.vaultB });
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
@@ -339,7 +339,7 @@ describe("server: /api/vault switch", () => {
       const token = await sessionToken(f.server.app);
       const res = await request(f.server.app)
         .post("/api/vault")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({ browse: true });
       expect(res.status).toBe(501);
       expect(f.server.meta().vaultPath).toBe(f.vaultA);
@@ -354,7 +354,7 @@ describe("server: /api/vault switch", () => {
       const token = await sessionToken(f.server.app);
       const res = await request(f.server.app)
         .post("/api/vault")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({ browse: true });
       expect(res.status).toBe(200);
       expect(res.body.cancelled).toBe(true);
@@ -375,7 +375,7 @@ describe("server: git note versions", () => {
   }
 
   function gitFixture() {
-    const root = mkdtempSync(join(tmpdir(), "solaris-git-"));
+    const root = mkdtempSync(join(tmpdir(), "sinapso-git-"));
     const vault = join(root, "vault");
     const data = join(root, "data");
     mkdirSync(vault);
@@ -409,7 +409,7 @@ describe("server: git note versions", () => {
   }
 
   function gitSyncFixture() {
-    const root = mkdtempSync(join(tmpdir(), "solaris-git-sync-"));
+    const root = mkdtempSync(join(tmpdir(), "sinapso-git-sync-"));
     const remote = join(root, "remote.git");
     const seed = join(root, "seed");
     const vault = join(root, "vault");
@@ -440,7 +440,7 @@ describe("server: git note versions", () => {
   }
 
   it("returns available:false when vault has no git", async () => {
-    const root = mkdtempSync(join(tmpdir(), "solaris-nogit-"));
+    const root = mkdtempSync(join(tmpdir(), "sinapso-nogit-"));
     try {
       writeFileSync(join(root, "real.md"), "# x\n");
       const graphPath = join(root, "graph.json");
@@ -524,7 +524,7 @@ describe("server: git note versions", () => {
 
       const res = await request(app)
         .post("/api/note-version/restore")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({ id: "real.md", commit: oldCommit });
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
@@ -568,7 +568,7 @@ describe("server: git note versions", () => {
 
       const res = await request(app)
         .post("/api/note-version/checkpoint")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({ id: "real.md" });
 
       expect(res.status).toBe(200);
@@ -603,7 +603,7 @@ describe("server: git note versions", () => {
 
       const res = await request(app)
         .post("/api/note-version/checkpoint")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({ id: "real.md" });
 
       expect(res.status).toBe(200);
@@ -638,7 +638,7 @@ describe("server: git note versions", () => {
   });
 
   it("returns available:false for vault git status outside a repo", async () => {
-    const root = mkdtempSync(join(tmpdir(), "solaris-git-status-nogit-"));
+    const root = mkdtempSync(join(tmpdir(), "sinapso-git-status-nogit-"));
     try {
       writeFileSync(join(root, "real.md"), "# x\n");
       const graphPath = join(root, "graph.json");
@@ -668,7 +668,7 @@ describe("server: git note versions", () => {
 
       const res = await request(app)
         .post("/api/git/commit")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({ message: "third" });
 
       expect(res.status).toBe(200);
@@ -708,11 +708,11 @@ describe("server: git note versions", () => {
       const token = (await request(app).get("/api/session")).body.token;
       const commit = await request(app)
         .post("/api/git/commit")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({});
       const sync = await request(app)
         .post("/api/git/sync")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({});
 
       expect(commit.status).toBe(200);
@@ -740,7 +740,7 @@ describe("server: git note versions", () => {
 
       const res = await request(app)
         .post("/api/git/sync")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({});
 
       expect(res.status).toBe(200);
@@ -765,7 +765,7 @@ describe("server: delegation routes trust negatives (U6, release-blocking)", () 
   });
 
   it("refuses to start without any LLM configured", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "solaris-delegate-"));
+    const dir = mkdtempSync(join(tmpdir(), "sinapso-delegate-"));
     try {
       const { app: app2 } = createApp(graphPath, undefined, {
         configPath: join(dir, "config.json"),
@@ -773,7 +773,7 @@ describe("server: delegation routes trust negatives (U6, release-blocking)", () 
       const token = (await request(app2).get("/api/session")).body.token;
       const res = await request(app2)
         .post("/api/delegate")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({ sessionId: "s", task: "t" });
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("no LLM configured");
@@ -783,7 +783,7 @@ describe("server: delegation routes trust negatives (U6, release-blocking)", () 
   });
 
   it("thinker-unconfigured start runs on the worker slot (R5)", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "solaris-delegate-worker-"));
+    const dir = mkdtempSync(join(tmpdir(), "sinapso-delegate-worker-"));
     try {
       const bodies: string[] = [];
       const configPath = join(dir, "config.json");
@@ -812,14 +812,14 @@ describe("server: delegation routes trust negatives (U6, release-blocking)", () 
       const token = (await request(app2).get("/api/session")).body.token;
       const started = await request(app2)
         .post("/api/delegate")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({ sessionId: "s-worker", task: "synthesize" });
       expect(started.status).toBe(200);
       expect(started.body.job.documentId).toMatch(/^doc-/);
       await new Promise((r) => setTimeout(r, 50));
       const status = await request(app2)
         .get("/api/delegate/status?sessionId=s-worker")
-        .set("x-solaris-token", token);
+        .set("x-sinapso-token", token);
       // The loopback document write hits the real ephemeral base (no live
       // listener in supertest), so the job may fail at the write step — the
       // tier resolution evidence is the model in the captured LLM body.
@@ -840,7 +840,7 @@ describe("POST /api/selection-assist (plan 018 U7)", () => {
   });
 
   it("400s when no LLM tier is configured", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "solaris-assist-nokey-"));
+    const dir = mkdtempSync(join(tmpdir(), "sinapso-assist-nokey-"));
     try {
       const { app: app2 } = createApp(graphPath, undefined, {
         configPath: join(dir, "config.json"),
@@ -848,7 +848,7 @@ describe("POST /api/selection-assist (plan 018 U7)", () => {
       const token = (await request(app2).get("/api/session")).body.token;
       const res = await request(app2)
         .post("/api/selection-assist")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({ instruction: "shorten", selection: "some text" });
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("no LLM configured");
@@ -858,7 +858,7 @@ describe("POST /api/selection-assist (plan 018 U7)", () => {
   });
 
   it("400s when instruction or selection is missing", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "solaris-assist-badreq-"));
+    const dir = mkdtempSync(join(tmpdir(), "sinapso-assist-badreq-"));
     try {
       const { app: app2 } = createApp(graphPath, undefined, {
         configPath: join(dir, "config.json"),
@@ -866,7 +866,7 @@ describe("POST /api/selection-assist (plan 018 U7)", () => {
       const token = (await request(app2).get("/api/session")).body.token;
       const res = await request(app2)
         .post("/api/selection-assist")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({ instruction: "  ", selection: "" });
       expect(res.status).toBe(400);
     } finally {
@@ -875,7 +875,7 @@ describe("POST /api/selection-assist (plan 018 U7)", () => {
   });
 
   it("sends the positional envelope to the thinker and returns its text", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "solaris-assist-ok-"));
+    const dir = mkdtempSync(join(tmpdir(), "sinapso-assist-ok-"));
     try {
       const bodies: string[] = [];
       const configPath = join(dir, "config.json");
@@ -904,7 +904,7 @@ describe("POST /api/selection-assist (plan 018 U7)", () => {
       const token = (await request(app2).get("/api/session")).body.token;
       const res = await request(app2)
         .post("/api/selection-assist")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({
           instruction: "make this tighter",
           selection: "a long rambling line",
@@ -925,7 +925,7 @@ describe("POST /api/selection-assist (plan 018 U7)", () => {
   });
 
   it("502s when the LLM call fails, without leaking details", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "solaris-assist-fail-"));
+    const dir = mkdtempSync(join(tmpdir(), "sinapso-assist-fail-"));
     try {
       const configPath = join(dir, "config.json");
       updateConfig({ openrouterKey: "or-k" }, configPath);
@@ -939,7 +939,7 @@ describe("POST /api/selection-assist (plan 018 U7)", () => {
       const token = (await request(app2).get("/api/session")).body.token;
       const res = await request(app2)
         .post("/api/selection-assist")
-        .set("x-solaris-token", token)
+        .set("x-sinapso-token", token)
         .send({ instruction: "x", selection: "y" });
       expect(res.status).toBe(502);
       expect(res.body.error).toBe("selection assist failed");

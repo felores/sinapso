@@ -12,7 +12,7 @@ import {
 
 let DATA: string;
 beforeEach(() => {
-  DATA = mkdtempSync(join(tmpdir(), "solaris-rh-"));
+  DATA = mkdtempSync(join(tmpdir(), "sinapso-rh-"));
 });
 
 const webEntry = (query: string) => ({

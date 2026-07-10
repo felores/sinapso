@@ -1,7 +1,7 @@
 /**
  * Warm qmd client (F015): a persistent `qmd mcp` child speaking JSON-RPC
  * over stdio (MCP protocol 2025-06-18, newline-delimited). The embedding
- * model and SQLite index load once per Solaris session, so vector queries
+ * model and SQLite index load once per Sinapso session, so vector queries
  * drop from 5-9s (per-spawn CLI) to ~0.2s warm.
  *
  * Grounded against qmd mcp 2.6.3: tools/call "query" with typed sub-queries
@@ -122,7 +122,7 @@ export function createQmdMcp(overrides: Partial<QmdMcpDeps> = {}) {
     return request("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "solaris", version: "1.0" },
+      clientInfo: { name: "sinapso", version: "1.0" },
     }).then(() => {
       send({ jsonrpc: "2.0", method: "notifications/initialized" });
     });

@@ -1,5 +1,5 @@
 /**
- * Akasha: interactive 3D map of an Obsidian vault.
+ * Sinapso: interactive 3D map of an Obsidian vault.
  *
  * Interaction model (Obsidian-style):
  *   Left drag    - rotate the graph
@@ -338,11 +338,11 @@ async function boot() {
   const degree = (n: GNode) => n.in + n.out;
 
   const initialSelectionParams = new URLSearchParams(window.location.search);
-  const pendingSelect = sessionStorage.getItem("solaris-pending-select");
+  const pendingSelect = sessionStorage.getItem("sinapso-pending-select");
   const pendingSelectNoLog =
-    sessionStorage.getItem("solaris-pending-select-nolog") === "1";
-  if (pendingSelect) sessionStorage.removeItem("solaris-pending-select");
-  sessionStorage.removeItem("solaris-pending-select-nolog");
+    sessionStorage.getItem("sinapso-pending-select-nolog") === "1";
+  if (pendingSelect) sessionStorage.removeItem("sinapso-pending-select");
+  sessionStorage.removeItem("sinapso-pending-select-nolog");
   function hashNodeId(): string | null {
     return new URLSearchParams(window.location.hash.slice(1)).get("node");
   }
@@ -971,7 +971,7 @@ async function boot() {
   // capture/debug hook: scripts/capture.ts frames the camera through this,
   // and waits on `settled` before shooting a freshly-simulated vault.
   const dbg = { graph, settled: false };
-  (window as unknown as { __akasha: typeof dbg }).__akasha = dbg;
+  (window as unknown as { __sinapso: typeof dbg }).__sinapso = dbg;
 
   graph.onEngineStop(() => {
     updateLinkPositions();
@@ -2094,7 +2094,7 @@ async function boot() {
         sourceLabel: n.id,
         title: n.title,
         markdown: stripped,
-        via: "solaris-vault-note",
+        via: "sinapso-vault-note",
       };
       topWikiAction.appendChild(renderReaderWikiAction(wikiPreview, "top"));
       topWikiAction.classList.remove("hidden");
@@ -2584,7 +2584,7 @@ async function boot() {
           keepalive: true,
           headers: {
             "content-type": "application/json",
-            "x-solaris-token": token,
+            "x-sinapso-token": token,
           },
           body: JSON.stringify({
             id: editorNoteId,
@@ -3778,7 +3778,7 @@ async function boot() {
 
   // ---- integrations: mode buttons (Vault / Web / Ingest) + settings ----
   // At most one mode active at a time; buttons light up only when their tool
-  // is detected (GET /api/integrations). Persisted as akasha-mode.
+  // is detected (GET /api/integrations). Persisted as sinapso-mode.
   type ModeName = "vault" | "web" | "ingest";
   type VaultScope = "semantic" | "keyword";
   type ResearchMode =
@@ -5031,7 +5031,7 @@ async function boot() {
     prefs.markQmdPrompted();
     showModal(
       "Enable semantic search?",
-      `<p>qmd is installed, but no collection covers this vault yet. Solaris can create one and index it in the background to power related notes and semantic search.</p>
+      `<p>qmd is installed, but no collection covers this vault yet. Sinapso can create one and index it in the background to power related notes and semantic search.</p>
        <p style="display:flex;gap:8px"><button id="qmd-setup-yes">Enable</button><button id="qmd-setup-no">Not now</button></p>
        <p class="muted">You can enable it later in Tools → Integrations.</p>`,
     );
@@ -5776,7 +5776,7 @@ async function boot() {
           `source: ${art.url}`,
           `saved: ${new Date().toISOString().slice(0, 10)}`,
           ...(art.author ? [`author: "${art.author.replace(/"/g, "'")}"`] : []),
-          "via: solaris-web-article",
+          "via: sinapso-web-article",
           "---",
           "",
           `# ${art.title}`,
@@ -5846,7 +5846,7 @@ async function boot() {
         const noteBody = [
           "---",
           `saved: ${new Date().toISOString().slice(0, 10)}`,
-          "via: solaris-agent-document",
+          "via: sinapso-agent-document",
           "---",
           "",
           doc.content,
@@ -6245,13 +6245,13 @@ async function boot() {
   // Create a note, then rescan-diff the vault (no reload) and fly to the new
   // note once it joins the live graph with its resolved links.
   async function openAfterIngest(id: string, logReader = false) {
-    sessionStorage.setItem("solaris-pending-select", id); // survives a fallback reload
-    if (!logReader) sessionStorage.setItem("solaris-pending-select-nolog", "1");
+    sessionStorage.setItem("sinapso-pending-select", id); // survives a fallback reload
+    if (!logReader) sessionStorage.setItem("sinapso-pending-select-nolog", "1");
     await rescan(false);
     const n = byId.get(id);
     if (n) {
-      sessionStorage.removeItem("solaris-pending-select");
-      sessionStorage.removeItem("solaris-pending-select-nolog");
+      sessionStorage.removeItem("sinapso-pending-select");
+      sessionStorage.removeItem("sinapso-pending-select-nolog");
       select(n, undefined, logReader);
     }
   }
@@ -6660,7 +6660,7 @@ async function boot() {
           `saved: ${new Date().toISOString().slice(0, 10)}`,
           `query: "${query.replace(/"/g, "'")}"`,
           ...(origin ? [`researched-from: "[[${origin}]]"`] : []),
-          "via: solaris-deep-research",
+          "via: sinapso-deep-research",
           "---",
           "",
           `# ${query}`,
@@ -7049,8 +7049,8 @@ async function boot() {
       '<p class="muted">Re-reading the vault and rebuilding the graph…</p>',
     );
     try {
-      // When enabled, refresh qmd alongside the Solaris graph rescan. This also
-      // covers notes created inside Solaris because those paths call rescan().
+      // When enabled, refresh qmd alongside the Sinapso graph rescan. This also
+      // covers notes created inside Sinapso because those paths call rescan().
       const autoUpdate = prefs.getAutoUpdate();
       const autoEmbed = prefs.getAutoEmbed();
       if (qmdStatus.state === "ready" && (autoUpdate || autoEmbed)) {
@@ -7090,7 +7090,7 @@ async function boot() {
   $("#mi-export").addEventListener("click", () => {
     closeMenus();
     const a = document.createElement("a");
-    a.download = `solaris-${data.meta.vaultName ?? "vault"}-${new Date().toISOString().slice(0, 10)}.png`;
+    a.download = `sinapso-${data.meta.vaultName ?? "vault"}-${new Date().toISOString().slice(0, 10)}.png`;
     a.href = graph.renderer().domElement.toDataURL("image/png");
     a.click();
   });
@@ -7666,8 +7666,8 @@ async function boot() {
     closeMenus();
     const m = data.meta;
     showModal(
-      "About Solaris",
-      `<p><b>Solaris</b> — your vault as a navigable 3D universe.</p>
+      "About Sinapso",
+      `<p><b>Sinapso</b> — your vault as a navigable 3D universe.</p>
        <table>
         <tr><td>Vault</td><td>${m.vaultName ?? "—"}</td></tr>
         <tr><td>Notes</td><td>${m.notes.toLocaleString()}</td></tr>

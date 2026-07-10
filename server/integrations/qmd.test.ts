@@ -57,7 +57,7 @@ function fakeQmd(state: FakeState) {
         : fail();
     }
     if (sub === "collection" && a1 === "add") {
-      state.collections["solaris"] = a2;
+      state.collections["sinapso"] = a2;
       return ok("created");
     }
     if (sub === "status")
@@ -615,7 +615,7 @@ describe("runQmdQuery <-> vsearch end-to-end (U4)", () => {
 
 // --- routes with a covered vault ---
 
-const VAULT = mkdtempSync(join(tmpdir(), "solaris-qmd-test-"));
+const VAULT = mkdtempSync(join(tmpdir(), "sinapso-qmd-test-"));
 mkdirSync(join(VAULT, "notas"), { recursive: true });
 mkdirSync(join(VAULT, "docs"), { recursive: true });
 writeFileSync(
@@ -887,7 +887,7 @@ describe("qmd setup and status", () => {
     await new Promise((r) => setTimeout(r, 20));
     const done = await request(fresh.app).get("/api/qmd/status");
     expect(done.body.state).toBe("ready");
-    expect(done.body.collections).toEqual(["solaris"]);
+    expect(done.body.collections).toEqual(["sinapso"]);
 
     // setup ran collection add with the explicit vault path, then update, then embed
     const subs = fresh.fake.calls
@@ -1059,7 +1059,7 @@ describe("qmd maintenance endpoints", () => {
 
   it("starts an update+embed job with the session token", async () => {
     const fresh = makeApp(
-      { collections: { solaris: VAULT }, vsearchOut: "[]" },
+      { collections: { sinapso: VAULT }, vsearchOut: "[]" },
       VAULT,
     );
     const token = (await request(fresh.app).get("/api/session")).body.token;
@@ -1077,11 +1077,11 @@ describe("qmd maintenance endpoints", () => {
 });
 
 describe("qmd force re-embed wiring", () => {
-  const freshVault = () => mkdtempSync(join(tmpdir(), "solaris-embed-"));
+  const freshVault = () => mkdtempSync(join(tmpdir(), "sinapso-embed-"));
 
   it("passes -f to the embed spawn when force=1", async () => {
     const v = freshVault();
-    const inst = makeApp({ collections: { solaris: v }, vsearchOut: "[]" }, v);
+    const inst = makeApp({ collections: { sinapso: v }, vsearchOut: "[]" }, v);
     const token = (await request(inst.app).get("/api/session")).body.token;
     await request(inst.app)
       .post("/api/qmd/maintenance?embed=1&force=1")

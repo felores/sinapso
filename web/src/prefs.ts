@@ -1,5 +1,5 @@
 /**
- * Typed `akasha-*` localStorage facade.
+ * Typed `sinapso-*` localStorage facade.
  *
  * One accessor per existing key. Per the plan: key names and stored
  * formats are byte-identical to the previous inline `localStorage`
@@ -44,7 +44,7 @@ export interface PrefsStorage {
   removeItem(key: string): void;
 }
 
-const PREFIX = "akasha-";
+const PREFIX = "sinapso-";
 
 const KEY = {
   theme: `${PREFIX}theme`,

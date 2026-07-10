@@ -327,7 +327,7 @@ export function createVoiceToolSession(
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-solaris-token": getSessionToken(),
+        "x-sinapso-token": getSessionToken(),
       },
       body: JSON.stringify({ url }),
     });
@@ -368,7 +368,7 @@ export function createVoiceToolSession(
     const d = (await (
       await fetchFn(
         u,
-        writeHistory ? { headers: { "x-solaris-token": getSessionToken() } } : undefined,
+        writeHistory ? { headers: { "x-sinapso-token": getSessionToken() } } : undefined,
       )
     ).json()) as { results?: unknown[]; historyId?: string } | unknown[];
     const hits = Array.isArray(d) ? d : (d.results ?? []);
@@ -595,7 +595,7 @@ export function createVoiceToolSession(
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-solaris-token": getSessionToken(),
+          "x-sinapso-token": getSessionToken(),
         },
         body: JSON.stringify({ id: documentId, title, content }),
       });
@@ -633,7 +633,7 @@ export function createVoiceToolSession(
           method: "POST",
           headers: {
             "content-type": "application/json",
-            "x-solaris-token": getSessionToken(),
+            "x-sinapso-token": getSessionToken(),
           },
           body: JSON.stringify({
             kind: args.kind === "raw_copy" ? "raw_copy" : "wiki_note",
@@ -670,7 +670,7 @@ export function createVoiceToolSession(
         method: "PUT",
         headers: {
           "content-type": "application/json",
-          "x-solaris-token": getSessionToken(),
+          "x-sinapso-token": getSessionToken(),
         },
         body: JSON.stringify({ id: note, content: markdown }),
       });
@@ -689,7 +689,7 @@ export function createVoiceToolSession(
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-solaris-token": getSessionToken(),
+          "x-sinapso-token": getSessionToken(),
         },
         body: JSON.stringify({ id: note }),
       });
@@ -711,7 +711,7 @@ export function createVoiceToolSession(
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-solaris-token": getSessionToken(),
+          "x-sinapso-token": getSessionToken(),
         },
         body: JSON.stringify({
           sessionId,
@@ -751,7 +751,7 @@ export function createVoiceToolSession(
           method: "POST",
           headers: {
             "content-type": "application/json",
-            "x-solaris-token": getSessionToken(),
+            "x-sinapso-token": getSessionToken(),
           },
           body: JSON.stringify({ query, deep: true }),
         },

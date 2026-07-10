@@ -1,5 +1,5 @@
 /**
- * MCP bridge integration tests (U8): a real Solaris app listening on an
+ * MCP bridge integration tests (U8): a real Sinapso app listening on an
  * ephemeral loopback port, the bridge proxying registry tools to it.
  * Covers AE4 (guarded, path-confined writes), AE6 (edit opt-in), R17
  * (surface-scoped token rejected outside the mcp surface — release-blocking),
@@ -25,7 +25,7 @@ import { createVoiceToolSession } from "./voice-tools";
 import { updateConfig } from "./config";
 import { readChangeLog } from "./write";
 
-const ROOT = mkdtempSync(join(tmpdir(), "solaris-mcp-bridge-"));
+const ROOT = mkdtempSync(join(tmpdir(), "sinapso-mcp-bridge-"));
 const VAULT = join(ROOT, "vault");
 const DATA = join(ROOT, "data");
 mkdirSync(join(VAULT, "notes"), { recursive: true });
@@ -138,7 +138,7 @@ describe("bridge proxying (AE4)", () => {
       .token as string;
     const viaBrowser = await request(`${base}`)
       .post("/api/research")
-      .set("x-solaris-token", token)
+      .set("x-sinapso-token", token)
       .send({ query: "anything" });
     expect(viaBridge.status).toBe(viaBrowser.status);
     expect(viaBridge.body).toEqual(viaBrowser.body);
@@ -157,7 +157,7 @@ describe("surface-scoped token (R17, release-blocking)", () => {
     ] as const) {
       const res = await request(`${base}`)
         [method](path)
-        .set("x-solaris-token", mcpToken)
+        .set("x-sinapso-token", mcpToken)
         .send(body);
       expect(res.status, `${method} ${path}`).toBe(403);
     }
@@ -168,7 +168,7 @@ describe("surface-scoped token (R17, release-blocking)", () => {
       .token as string;
     const res = await request(`${base}`)
       .post("/api/integrations/config")
-      .set("x-solaris-token", token)
+      .set("x-sinapso-token", token)
       .send({});
     expect(res.status).toBe(200);
   });
@@ -200,7 +200,7 @@ describe("token rotation recovery (restart)", () => {
         });
       }
       calls += 1;
-      const tok = (init?.headers as Record<string, string>)["x-solaris-token"];
+      const tok = (init?.headers as Record<string, string>)["x-sinapso-token"];
       tokensSeen.push(tok);
       if (tok === "tok-1")
         return new Response(JSON.stringify({ error: "invalid" }), { status: 403 });
@@ -237,7 +237,7 @@ describe("cross-surface parity (HTTP = voice = MCP)", () => {
 });
 
 describe("startup probe", () => {
-  it("fails with a clear error when Solaris is down", async () => {
+  it("fails with a clear error when Sinapso is down", async () => {
     const bridge = createMcpBridge({ base: "http://127.0.0.1:1" });
     await expect(bridge.probe()).rejects.toThrow();
   });

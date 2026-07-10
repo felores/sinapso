@@ -1,11 +1,6 @@
 <div align="center">
 <pre>
-███████╗ ██████╗ ██╗      █████╗ ██████╗ ██╗███████╗
-██╔════╝██╔═══██╗██║     ██╔══██╗██╔══██╗██║██╔════╝
-███████╗██║   ██║██║     ███████║██████╔╝██║███████╗
-╚════██║██║   ██║██║     ██╔══██║██╔══██╗██║╚════██║
-███████║╚██████╔╝███████╗██║  ██║██║  ██║██║███████║
-╚══════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚══════╝
+SINAPSO
 </pre>
 
 **knowledge vault hyper-visualizer**
@@ -33,7 +28,7 @@ camera approaches. [Watch in HD (mp4).](assets/flythrough.mp4)*
 
 ## What it is
 
-Solaris scans any
+Sinapso scans any
 **folder of Markdown files connected by links** and renders the link graph as an
 interactive force-directed map in WebGL: rotate it, fly through it, read any note
 without leaving the map. It reads both link styles: Obsidian `[[wiki links]]`
@@ -44,20 +39,20 @@ deep links into Obsidian are an optional convenience.
 
 ## Why I made it
 
-Obsidian renders vaults and notes in 2d. When visualizing large data sets, 3d visualizations are often needed for seeing patterns at scale or discovering intersections. Solaris seeks to solve that problem by providing the ability to traverse and visualize your second brain in a 3d navigatable space.  
+Obsidian renders vaults and notes in 2d. When visualizing large data sets, 3d visualizations are often needed for seeing patterns at scale or discovering intersections. Sinapso seeks to solve that problem by providing the ability to traverse and visualize your second brain in a 3d navigatable space.
 
 ## Reads Google's Open Knowledge Format
 
-Point Solaris at an [Open Knowledge Format](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing/)
+Point Sinapso at an [Open Knowledge Format](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing/)
 bundle — Google Cloud's open spec for markdown knowledge — and it renders like any
 vault: concepts become nodes, the `[name](path.md)` links become edges, and the whole
 bundle becomes a navigable 3D graph.
 
 ```bash
-npx solaris "C:/path/to/okf-bundle"
+npx sinapso "C:/path/to/okf-bundle"
 ```
 
-Solaris reads OKF frontmatter fully: each concept is labeled by its `title` (falling back
+Sinapso reads OKF frontmatter fully: each concept is labeled by its `title` (falling back
 to the filename), and its `type`, `tags`, and `description` are carried into the graph.
 Markdown links between concepts become the edges; the folder hierarchy becomes the
 pillars.
@@ -65,7 +60,7 @@ pillars.
 ## Quickstart
 
 ```bash
-npx solaris "C:/path/to/YourVault"     # scan, serve, open in one command
+npx sinapso "C:/path/to/YourVault"     # scan, serve, open in one command
 ```
 
 Or from a clone:
@@ -85,7 +80,7 @@ For development (hot reload): `npm run dev` and open http://localhost:5173.
 npm run desktop
 ```
 
-Builds the frontend, bundles the Electron main process, and opens Solaris as a
+Builds the frontend, bundles the Electron main process, and opens Sinapso as a
 native window with hardware acceleration unlocked (GPU rasterization,
 zero-copy uploads, no GPU blocklist, `powerPreference: high-performance`). The
 20k-link scene, bloom, and particles all render on the dedicated GPU.
@@ -150,7 +145,7 @@ colors, and clusters derive from your folder structure and your links.
 
 ### Built for massive vaults
 
-Solaris holds the entire graph in view and stays interactive as vaults grow into
+Sinapso holds the entire graph in view and stays interactive as vaults grow into
 the thousands of notes. Below, the same vault from another angle, ~20k links,
 every node and edge rendered at once:
 
@@ -158,7 +153,7 @@ every node and edge rendered at once:
   <img src="assets/big-vault.png" alt="A 1,800-note vault rendered dense, clusters and cross-links visible" width="100%">
 </p>
 
-Solaris keeps rescan and render cost proportional to what changed:
+Sinapso keeps rescan and render cost proportional to what changed:
 
 - **Incremental rescans**: the scanner caches per-file parse results by mtime+size
   (`scan-cache.json`) and re-reads only the files that changed.
@@ -259,7 +254,7 @@ the desktop build, `Ctrl/Cmd+Shift+O` opens a vault.
 ## Optional integrations
 
 Three mode buttons sit next to the search bar; each lights up only when its
-tool is detected, and Solaris stays fully functional with none of them.
+tool is detected, and Sinapso stays fully functional with none of them.
 **The search field is the single entry point**: the active mode changes what
 Enter does, and results open in a right-side research column (the reader
 docks left while it's open — the note you're reading is the working
@@ -273,7 +268,7 @@ that turns that note into 3-5 web queries.
 | **Ingest** ⇩ | markitdown (local) + optional OpenRouter key | Converts a path, URL, or browser upload. Capture-only saves immediately; wiki targets preview proposed writes before anything is applied. |
 
 Two install flavors: **core** (default, nothing extra) and **addons** —
-`npx solaris "<vault>" --addons` or *Settings → install missing addons* —
+`npx sinapso "<vault>" --addons` or *Settings → install missing addons* —
 which installs only what is missing and never touches an existing setup.
 
 ### Admin, wikis, and ingest
@@ -283,10 +278,10 @@ Open **File → Admin...** to manage the current vault and wiki settings.
 - **Vault switching**: browser/CLI mode accepts a typed local path; the Electron
   desktop app also offers a native folder picker. Switching rescans and hot-swaps
   the graph.
-- **Wiki discovery**: Solaris finds folders named exactly `wiki`. All detected
+- **Wiki discovery**: Sinapso finds folders named exactly `wiki`. All detected
   wikis start enabled; you can disable, rename, or add manual paths. Contract
   candidates are `AGENTS.md`, `CLAUDE.md`, `index.md`, and `README.md`.
-- **Raw destination**: Solaris picks the first existing source folder it finds:
+- **Raw destination**: Sinapso picks the first existing source folder it finds:
   `raw/`, `../raw/`, `research/`, `../research/`, `docs/`, then `../docs/`.
   If none exist, it proposes `../raw/` so the source folder sits beside the
   wiki. You can still override or blank it per wiki.
@@ -325,7 +320,7 @@ Open **File → Admin...** to manage the current vault and wiki settings.
   journals changes; Git sync is the separate repo-level exception and must stay
   clean-tree, token-guarded, fast-forward when possible, merge-commit on clean
   divergence, and abort-on-conflict.
-- Secrets (Exa, OpenRouter, and voice keys) live in `~/.solaris/config.json`
+- Secrets (Exa, OpenRouter, and voice keys) live in `~/.sinapso/config.json`
   (mode 600), outside the vault and outside version control, and never appear in
   API responses.
 

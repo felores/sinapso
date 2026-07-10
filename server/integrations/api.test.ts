@@ -7,7 +7,7 @@ import { createApp } from "../app";
 import { TOKEN_HEADER } from "./security";
 import type { RunResult } from "./detect";
 
-const VAULT = mkdtempSync(join(tmpdir(), "solaris-api-test-"));
+const VAULT = mkdtempSync(join(tmpdir(), "sinapso-api-test-"));
 writeFileSync(join(VAULT, "real.md"), "# Real\n");
 const graphPath = join(VAULT, "graph.json");
 writeFileSync(

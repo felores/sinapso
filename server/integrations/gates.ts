@@ -15,7 +15,7 @@ import { WriteError } from "./paths.js";
 import type { ToolName, ToolStatus } from "./detect.js";
 import type { ResolvedTier } from "./llm.js";
 
-/** Minimal cfg shape each gate reads. Avoids coupling to the full SolarisConfig. */
+/** Minimal cfg shape each gate reads. Avoids coupling to the full SinapsoConfig. */
 type WebCfg = { consents: { web: boolean } };
 type KeyCfg = { exaKey: string | null };
 type OpenRouterCfg = { openrouterKey: string | null };

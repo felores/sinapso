@@ -1,6 +1,6 @@
 /**
  * Voice mode (browser side): capture the mic as 16 kHz PCM16, stream it to the
- * Solaris voice relay over one WebSocket, and play back the 24 kHz PCM16 the
+ * Sinapso voice relay over one WebSocket, and play back the 24 kHz PCM16 the
  * provider returns. The relay holds the API key and does the provider + tool
  * work; this file is only audio plumbing. Native-audio models do their own
  * turn-taking, so there is no VAD here — we just stream mic in, play audio out,

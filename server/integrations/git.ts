@@ -293,7 +293,7 @@ export async function gitSync(
       const message = gitMessage(merge, "Merge failed");
       return {
         ok: false,
-        error: `${message}${message.endsWith(".") ? "" : "."} Solaris aborted the merge.`,
+        error: `${message}${message.endsWith(".") ? "" : "."} Sinapso aborted the merge.`,
         output: out.filter(Boolean).join("\n"),
       };
     }

@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 
 /**
- * Vite configuration for Akasha frontend.
+ * Vite configuration for Sinapso frontend.
  *
  * Development:
  *   - Serves on port 5173 (Vite default)

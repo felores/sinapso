@@ -173,7 +173,7 @@ export function createDelegateManager(
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-solaris-token": p.token,
+          "x-sinapso-token": p.token,
         },
         body: JSON.stringify({
           id: job.documentId,

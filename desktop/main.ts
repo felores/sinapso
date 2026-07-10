@@ -1,5 +1,5 @@
 /**
- * Akasha desktop: Electron shell around the local HTTP server.
+ * Sinapso desktop: Electron shell around the local HTTP server.
  *
  * Why a desktop build?
  *   - Browser tabs run with whatever GPU context is available
@@ -22,7 +22,7 @@ import { app, BrowserWindow, Menu, dialog, shell } from "electron";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import type { AddressInfo } from "node:net";
-import { createApp, type AkashaApp } from "../server/app";
+import { createApp, type SinapsoApp } from "../server/app";
 import { scanVault } from "../scanner/scan";
 
 // ===== GPU ACCELERATION: set before app.ready() =====
@@ -46,7 +46,7 @@ interface Settings {
 }
 
 const settingsPath = () =>
-  resolve(app.getPath("userData"), "akasha-settings.json");
+  resolve(app.getPath("userData"), "sinapso-settings.json");
 
 function loadSettings(): Settings {
   try {
@@ -62,7 +62,7 @@ function saveSettings(s: Settings) {
   writeFileSync(settingsPath(), JSON.stringify(s, null, 2));
 }
 
-let server: AkashaApp | null = null;
+let server: SinapsoApp | null = null;
 let baseUrl = "";
 let win: BrowserWindow | null = null;
 
@@ -117,7 +117,7 @@ function rescanCurrentVault() {
   });
   server.reload(); // Hot-swap graph
   win?.reload(); // Reload frontend
-  win?.setTitle(`Solaris — ${g.meta.vaultName} (${g.meta.notes} notes)`);
+  win?.setTitle(`Sinapso — ${g.meta.vaultName} (${g.meta.notes} notes)`);
 }
 
 function buildMenu() {
@@ -132,7 +132,7 @@ function buildMenu() {
             if (await pickAndScanVault()) {
               win?.reload();
               const m = server!.meta();
-              win?.setTitle(`Solaris — ${m.vaultName} (${m.notes} notes)`);
+              win?.setTitle(`Sinapso — ${m.vaultName} (${m.notes} notes)`);
             }
           },
         },
@@ -193,7 +193,7 @@ async function start() {
       width: 1680,
       height: 1000,
       backgroundColor: "#070a10",
-      title: `Solaris — ${m.vaultName} (${m.notes} notes)`,
+      title: `Sinapso — ${m.vaultName} (${m.notes} notes)`,
       autoHideMenuBar: false,
       webPreferences: {
         contextIsolation: true,

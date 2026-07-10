@@ -1,4 +1,4 @@
-# Solaris Landing Page: Wynter 4-Layer Structure
+# Sinapso Landing Page: Wynter 4-Layer Structure
 
 > Landing page architecture and copy, built on the Wynter framework (Clarity, Relevance,
 > Value, Differentiation), Ziglar's five objections, and Hormozi's Value Equation.
@@ -18,7 +18,7 @@
 | 3 | "Sound familiar?" pains | Relevance | No need |
 | 4 | What you get (6 counters) | Value | No desire |
 | 5 | Voice showcase | Value peak | No desire |
-| 6 | Why Solaris and not X | Differentiation | No trust, no money |
+| 6 | Why Sinapso and not X | Differentiation | No trust, no money |
 | 7 | Origin story | Differentiation / narrative | No trust |
 | 8 | Pricing truth (free + BYO keys) | Value | No money |
 | 9 | Trust model | Differentiation | No trust |
@@ -44,19 +44,19 @@ Checklist: imperative verb (Fly / Vuela), outcome (everything you know, navigabl
 attention hook (talk to it). The objection lives in the subtitle.
 
 **Subtitle (EN):**
-> Solaris turns your Obsidian vault, or any folder of linked Markdown, into a smooth
+> Sinapso turns your Obsidian vault, or any folder of linked Markdown, into a smooth
 > 3D universe: thousands of notes, tens of thousands of links, on your own machine.
 > A real-time voice assistant explores it with you, researches the web, and files
 > what you create back into your notes. Free, open source, no subscription.
 
 **Subtitle (ES):**
-> Solaris convierte tu vault de Obsidian, o cualquier carpeta de Markdown enlazado,
+> Sinapso convierte tu vault de Obsidian, o cualquier carpeta de Markdown enlazado,
 > en un universo 3D fluido: miles de notas, decenas de miles de enlaces, en tu propia
 > máquina. Un asistente de voz en tiempo real lo explora contigo, investiga en la web
 > y guarda lo que crean de vuelta en tus notas. Gratis, open source, sin suscripción.
 
 **CTA block:**
-- Primary: copyable command box: `npx solaris "path/to/YourVault"` with a copy button.
+- Primary: copyable command box: `npx sinapso "path/to/YourVault"` with a copy button.
   Label EN: "One command. Your vault, in orbit." / ES: "Un comando. Tu vault, en órbita."
 - Secondary: "Star on GitHub" + live star count.
 - Under-CTA microcopy (risk reversal): EN "MIT licensed. Runs on localhost. Uploads
@@ -82,8 +82,8 @@ Caption (ES): "Un vault de 4,000 notas. Cada nodo y enlace renderizado a la vez.
 
 ## 3. Sound familiar? (Layer 2: Relevance, 6 pains)
 
-**Section headline (EN):** Who is Solaris for?
-**Section headline (ES):** ¿Para quién es Solaris?
+**Section headline (EN):** Who is Sinapso for?
+**Section headline (ES):** ¿Para quién es Sinapso?
 
 Six pain cards. Each: pain title + 2-3 lines of why it hurts. All six are sourced
 from real community complaints (see research doc for quotes and URLs).
@@ -173,18 +173,18 @@ Supporting copy (EN):
 
 ---
 
-## 6. Why Solaris and not X (Layer 4: Differentiation)
+## 6. Why Sinapso and not X (Layer 4: Differentiation)
 
 **Section headline (EN):** There was no tool that did all three.
 **Section headline (ES):** No existía una herramienta que hiciera las tres cosas.
 
 Center piece: a three-circle diagram (image slot): "Fast 3D map" + "Real-time voice
-agent" + "Local-first, your files". Solaris sits in the intersection; every
+agent" + "Local-first, your files". Sinapso sits in the intersection; every
 alternative covers at most one circle.
 
 Comparison table (verify pricing before publish; sources in research doc):
 
-| | Solaris | Obsidian graph | 3D graph plugins | TheBrain / InfraNodus | Voice note apps |
+| | Sinapso | Obsidian graph | 3D graph plugins | TheBrain / InfraNodus | Voice note apps |
 |---|---|---|---|---|---|
 | Handles 5k+ notes smoothly | Yes, GPU | No (official limitation) | No (crash / disabled) | Sluggish, bloated | n/a |
 | 3D navigable map | Yes | No | Partial, unmaintained | 2D-ish / cluttered | No |
@@ -192,7 +192,7 @@ Comparison table (verify pricing before publish; sources in research doc):
 | Your own Markdown files | Yes | Yes | Yes | Proprietary / cloud | Their cloud |
 | Price | Free + BYO keys | Free | Free | $180/yr+ / €12-66/mo | $/mo subscriptions |
 
-Tone rule: respectful toward Obsidian everywhere. Solaris complements it (one click
+Tone rule: respectful toward Obsidian everywhere. Sinapso complements it (one click
 opens any note there); the contrast is with the graph view, not the editor.
 
 ---
@@ -203,7 +203,7 @@ opens any note there); the contrast is with the graph view, not the editor.
 **Section headline (ES):** Nacido de una IA. Criado por un humano.
 
 Copy (EN):
-> Solaris started as a repository with a single star, created by Fable, the most
+> Sinapso started as a repository with a single star, created by Fable, the most
 > powerful AI in the world, and left open source. A human found it while hunting for
 > a way to see a 5,000-note knowledge base that every other tool choked on. This one
 > flew. He audited the code, adopted it, and has been evolving it since: voice,
@@ -259,7 +259,7 @@ of trying is nearly zero and the payoff is immediate (Hormozi: dream outcome hig
 likelihood high because it works on the vault you already have, time delay one
 command, effort none).
 
-- Primary CTA: `npx solaris "path/to/YourVault"` copy box.
+- Primary CTA: `npx sinapso "path/to/YourVault"` copy box.
 - Secondary: GitHub link + star count.
 - Tertiary: "Prefer a desktop app?" link to the Electron build instructions.
 
@@ -267,7 +267,7 @@ command, effort none).
 
 ## Social proof strategy (current gap, be honest)
 
-Solaris has no user testimonials yet. Do not fabricate any. Until real quotes exist:
+Sinapso has no user testimonials yet. Do not fabricate any. Until real quotes exist:
 
 1. **Proof by demo:** real captures and loops of a 4,000+ note vault are the primary
    proof. Screens beat claims.

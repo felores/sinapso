@@ -17,7 +17,7 @@ import { ingestBytes, ingestDocument } from "./ingest";
 import { readChangeLog } from "./write";
 import type { RunResult, Runner } from "./detect";
 
-const ROOT = mkdtempSync(join(tmpdir(), "solaris-ingest-test-"));
+const ROOT = mkdtempSync(join(tmpdir(), "sinapso-ingest-test-"));
 const VAULT = join(ROOT, "vault");
 const DATA = join(ROOT, "data");
 mkdirSync(VAULT, { recursive: true });

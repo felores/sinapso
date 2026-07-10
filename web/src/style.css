@@ -94,7 +94,7 @@ body > :not(#graph) {
   z-index: 25; /* above docked panels (20), below dropdowns (50) and modal (100) */
 }
 
-/* brand + menu are one unit ("Solaris <menu>"): they travel together, at the
+/* brand + menu are one unit ("Sinapso <menu>"): they travel together, at the
    left normally and centered on screen when the left panel is docked. z-index
    keeps the whole group (and its open dropdowns) above the search field + mode
    buttons, which sit later in the DOM. */
@@ -103,39 +103,27 @@ body > :not(#graph) {
 #brand .brand-icon {
   width: 28px;
   height: 28px;
-  background-image: url("/solaris-icon-v1-256px-white.png");
+  background-image: url("/sinapso-icon.svg");
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
   filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
 }
 #brand .brand-title {
-  width: 92px;
-  height: 26px;
-  background-image: url("/solaris-title-v1-256px-white.png");
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: left center;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1;
   filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
 }
-/* Light themes (manuscript, notebook) get the black icon + title. */
-:root[data-theme="manuscript"] #brand .brand-icon,
-:root[data-theme="notebook"] #brand .brand-icon {
-  background-image: url("/solaris-icon-v1-256px.png");
-}
 :root[data-theme="manuscript"] #brand .brand-title,
-:root[data-theme="notebook"] #brand .brand-title {
-  background-image: url("/solaris-title-v1-256px.png");
-}
-:root[data-theme="manuscript"] #brand .brand-icon,
-:root[data-theme="manuscript"] #brand .brand-title,
-:root[data-theme="notebook"] #brand .brand-icon,
 :root[data-theme="notebook"] #brand .brand-title {
   filter: none;
 }
 
 /* ---------- menubar ---------- */
-/* nudged down a few px so the labels sit on the Solaris wordmark's baseline */
+/* nudged down a few px so the labels sit on the Sinapso wordmark's baseline */
 #menubar { display: flex; pointer-events: auto; position: relative; top: 3px; }
 
 .menu { position: relative; }
@@ -708,15 +696,10 @@ body > :not(#graph) {
   width: 28px;
   height: 28px;
   margin-bottom: 8px;
-  background-image: url("/solaris-icon-v1-256px-white.png");
+  background-image: url("/sinapso-icon.svg");
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
-}
-/* Light themes get the black logo; everything else uses the white one. */
-:root[data-theme="manuscript"] #topbar-rail .rail-logo,
-:root[data-theme="notebook"] #topbar-rail .rail-logo {
-  background-image: url("/solaris-icon-v1-256px.png");
 }
 #topbar-rail .rail-icon {
   position: relative;

@@ -9,9 +9,9 @@ import { gitStageAndCommit, gitStatus, gitSync } from "./git";
 
 const GIT_ENV = {
   ...process.env,
-  GIT_AUTHOR_NAME: "Solaris Test",
+  GIT_AUTHOR_NAME: "Sinapso Test",
   GIT_AUTHOR_EMAIL: "test@example.com",
-  GIT_COMMITTER_NAME: "Solaris Test",
+  GIT_COMMITTER_NAME: "Sinapso Test",
   GIT_COMMITTER_EMAIL: "test@example.com",
 };
 
@@ -57,7 +57,7 @@ function tempRoot(prefix: string): string {
 }
 
 function repoFixture() {
-  const root = tempRoot("solaris-git-adapter-");
+  const root = tempRoot("sinapso-git-adapter-");
   const repo = join(root, "repo");
   const vault = join(repo, "vault");
   mkdirSync(vault, { recursive: true });
@@ -69,7 +69,7 @@ function repoFixture() {
 }
 
 function remoteFixture() {
-  const root = tempRoot("solaris-git-remote-");
+  const root = tempRoot("sinapso-git-remote-");
   const remote = join(root, "remote.git");
   const seed = join(root, "seed");
   const local = join(root, "local");
@@ -229,7 +229,7 @@ describe("git adapter", () => {
     const result = await gitSync(run, f.local);
 
     if (result.ok) throw new Error("expected sync to fail");
-    expect(result.error).toContain("Solaris aborted the merge.");
+    expect(result.error).toContain("Sinapso aborted the merge.");
     expect(git(["status", "--porcelain=v1"], f.local)).toBe("");
     expect(readFileSync(join(f.local, "note.md"), "utf-8")).toBe("local\n");
   });

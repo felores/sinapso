@@ -24,7 +24,7 @@ export interface RouteBinding {
   method: "GET" | "POST" | "PUT";
   /** Route path; "{param}" segments are filled from same-named args. */
   path: string;
-  /** Mutating/spending route: callers must send x-solaris-token. */
+  /** Mutating/spending route: callers must send x-sinapso-token. */
   tokenRequired?: boolean;
   /** GET bindings: tool arg name → query parameter name. */
   query?: Record<string, string>;

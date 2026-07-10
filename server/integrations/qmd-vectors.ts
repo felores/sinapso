@@ -4,7 +4,7 @@
  * Quarantines ALL sqlite / sqlite-vec coupling behind a schema guard and a
  * graceful "unavailable" fallback: open() NEVER throws. On a missing file, a
  * missing sqlite-vec extension, or an unexpected schema it returns
- * { available: false, reason }, so the rest of Solaris keeps working without a
+ * { available: false, reason }, so the rest of Sinapso keeps working without a
  * semantic layer.
  *
  * The embedding dimension is READ from the vectors_vec `float[N]` declaration,

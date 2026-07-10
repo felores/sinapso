@@ -107,7 +107,7 @@ describe("installAddons", () => {
 });
 
 describe("POST /api/integrations/install", () => {
-  const VAULT = mkdtempSync(join(tmpdir(), "solaris-install-test-"));
+  const VAULT = mkdtempSync(join(tmpdir(), "sinapso-install-test-"));
   afterAll(() => rmSync(VAULT, { recursive: true, force: true }));
   const graphPath = join(VAULT, "graph.json");
   writeFileSync(

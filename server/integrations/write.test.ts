@@ -26,7 +26,7 @@ import {
 
 // Vault and data dir are separate so the vault can be destroyed in the
 // missing-vault scenario without losing the graph file.
-const ROOT = mkdtempSync(join(tmpdir(), "solaris-write-test-"));
+const ROOT = mkdtempSync(join(tmpdir(), "sinapso-write-test-"));
 const VAULT = join(ROOT, "vault");
 const DATA = join(ROOT, "data");
 const OUTSIDE = join(ROOT, "outside");
@@ -443,7 +443,7 @@ describe("PUT /api/notes staleness guard + write hardening (plan 018 U3)", () =>
       .put("/api/notes")
       .set(TOKEN_HEADER, await token())
       .send({ id: "cas-note.md", content: "tmp checked\n" });
-    const leftovers = readdirSync(VAULT).filter((f) => f.includes("solaris-tmp"));
+    const leftovers = readdirSync(VAULT).filter((f) => f.includes("sinapso-tmp"));
     expect(leftovers).toEqual([]);
   });
 });

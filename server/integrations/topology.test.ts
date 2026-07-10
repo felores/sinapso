@@ -176,7 +176,7 @@ describe("noteQuestions (F019)", () => {
 });
 
 describe("GET /api/gaps", () => {
-  const VAULT = mkdtempSync(join(tmpdir(), "solaris-topo-test-"));
+  const VAULT = mkdtempSync(join(tmpdir(), "sinapso-topo-test-"));
   afterAll(() => rmSync(VAULT, { recursive: true, force: true }));
   const graphPath = join(VAULT, "graph.json");
   writeFileSync(

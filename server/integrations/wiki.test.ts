@@ -19,8 +19,8 @@ import {
 } from "./wiki";
 import { updateConfig, type WikiConfig } from "./config";
 
-const VAULT = mkdtempSync(join(tmpdir(), "solaris-wiki-test-"));
-const OUTSIDE = mkdtempSync(join(tmpdir(), "solaris-wiki-outside-"));
+const VAULT = mkdtempSync(join(tmpdir(), "sinapso-wiki-test-"));
+const OUTSIDE = mkdtempSync(join(tmpdir(), "sinapso-wiki-outside-"));
 afterAll(() => rmSync(VAULT, { recursive: true, force: true }));
 afterAll(() => rmSync(OUTSIDE, { recursive: true, force: true }));
 

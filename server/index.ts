@@ -1,9 +1,9 @@
 /**
- * Akasha server CLI: serves the built frontend plus the local-only API.
+ * Sinapso server CLI: serves the built frontend plus the local-only API.
  *
  * Usage:
  *   npm start    (after npm run scan and npm run build)
- *   npx akasha-graph "<vault-path>"  (all-in-one: scan + serve + open browser)
+ *   npx sinapso "<vault-path>"  (all-in-one: scan + serve + open browser)
  *
  * The server binds to 127.0.0.1 only (localhost); vault data never leaves the machine.
  */
@@ -16,9 +16,9 @@ import { createApp } from "./app.js";
 // Resolve graph.json path from environment or defaults
 const ROOT = resolve(fileURLToPath(import.meta.url), "..", "..");
 const GRAPH_PATH =
-  process.env.AKASHA_GRAPH ?? resolve(ROOT, "data", "graph.json");
-const PORT = Number(process.env.AKASHA_PORT ?? 5175);
-const HOST = process.env.AKASHA_HOST ?? "127.0.0.1";
+  process.env.SINAPSO_GRAPH ?? resolve(ROOT, "data", "graph.json");
+const PORT = Number(process.env.SINAPSO_PORT ?? 5175);
+const HOST = process.env.SINAPSO_HOST ?? "127.0.0.1";
 
 // Verify graph.json exists before starting server
 if (!existsSync(GRAPH_PATH)) {
@@ -36,7 +36,7 @@ const { app, meta, attachVoice } = createApp(
 const server = app.listen(PORT, HOST, () => {
   const m = meta();
   console.log(
-    `Solaris: http://localhost:${PORT}  (vault: ${m.vaultName}, ${m.notes} notes)`,
+    `Sinapso: http://localhost:${PORT}  (vault: ${m.vaultName}, ${m.notes} notes)`,
   );
 });
 attachVoice(server); // voice-mode WebSocket relay (opt-in, key-gated)

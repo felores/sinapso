@@ -52,7 +52,7 @@ describe("api: defaults", () => {
     await api("/api/x");
     const [, init] = fetchMock.mock.calls[0];
     const headers = (init as RequestInit).headers as Record<string, string>;
-    expect(headers["x-solaris-token"]).toBeUndefined();
+    expect(headers["x-sinapso-token"]).toBeUndefined();
     expect(headers["content-type"]).toBeUndefined();
   });
 
@@ -161,14 +161,14 @@ describe("api: token memoization", () => {
 });
 
 describe("api: mutating call shape", () => {
-  it("carries content-type, x-solaris-token, and stringified body", async () => {
+  it("carries content-type, x-sinapso-token, and stringified body", async () => {
     fetchMock.mockResolvedValueOnce(makeResponse({ body: { token: "t1" } }));
     fetchMock.mockResolvedValueOnce(makeResponse({ body: {} }));
     await api("/api/foo", { json: { a: 1, b: "x" } });
     const [, init] = fetchMock.mock.calls[1];
     const headers = (init as RequestInit).headers as Record<string, string>;
     expect(headers["content-type"]).toBe("application/json");
-    expect(headers["x-solaris-token"]).toBe("t1");
+    expect(headers["x-sinapso-token"]).toBe("t1");
     expect((init as RequestInit).body).toBe(JSON.stringify({ a: 1, b: "x" }));
   });
 
@@ -189,7 +189,7 @@ describe("api: mutating call shape", () => {
     expect((init as RequestInit).method).toBe("PUT");
     const headers = (init as RequestInit).headers as Record<string, string>;
     expect(headers["content-type"]).toBe("application/json");
-    expect(headers["x-solaris-token"]).toBe("t1");
+    expect(headers["x-sinapso-token"]).toBe("t1");
     expect((init as RequestInit).body).toBe(JSON.stringify({ a: 1 }));
   });
 
@@ -200,7 +200,7 @@ describe("api: mutating call shape", () => {
     const [, init] = fetchMock.mock.calls[1];
     expect((init as RequestInit).method).toBe("DELETE");
     const headers = (init as RequestInit).headers as Record<string, string>;
-    expect(headers["x-solaris-token"]).toBe("t1");
+    expect(headers["x-sinapso-token"]).toBe("t1");
     expect(headers["content-type"]).toBeUndefined();
     expect((init as RequestInit).body).toBeUndefined();
   });
@@ -214,7 +214,7 @@ describe("api: token overrides", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [, init] = fetchMock.mock.calls[1];
     const headers = (init as RequestInit).headers as Record<string, string>;
-    expect(headers["x-solaris-token"]).toBe("t1");
+    expect(headers["x-sinapso-token"]).toBe("t1");
   });
 
   it("refreshes a stale token once after a 403", async () => {
@@ -229,8 +229,8 @@ describe("api: token overrides", () => {
 
     expect(fetchMock.mock.calls[0][0]).toBe("/api/session");
     expect(fetchMock.mock.calls[2][0]).toBe("/api/session");
-    expect(((fetchMock.mock.calls[1][1] as RequestInit).headers as Record<string, string>)["x-solaris-token"]).toBe("old");
-    expect(((fetchMock.mock.calls[3][1] as RequestInit).headers as Record<string, string>)["x-solaris-token"]).toBe("new");
+    expect(((fetchMock.mock.calls[1][1] as RequestInit).headers as Record<string, string>)["x-sinapso-token"]).toBe("old");
+    expect(((fetchMock.mock.calls[3][1] as RequestInit).headers as Record<string, string>)["x-sinapso-token"]).toBe("new");
   });
 
   it("explicit token: false skips the token for a mutating method", async () => {
@@ -238,7 +238,7 @@ describe("api: token overrides", () => {
     await api("/api/x", { json: {}, token: false });
     const [, init] = fetchMock.mock.calls[0];
     const headers = (init as RequestInit).headers as Record<string, string>;
-    expect(headers["x-solaris-token"]).toBeUndefined();
+    expect(headers["x-sinapso-token"]).toBeUndefined();
     expect(headers["content-type"]).toBe("application/json");
   });
 });
@@ -263,19 +263,19 @@ describe("apiRaw", () => {
     expect(got).toBe(expected);
   });
 
-  it("does NOT add x-solaris-token by default", async () => {
+  it("does NOT add x-sinapso-token by default", async () => {
     fetchMock.mockResolvedValueOnce(makeResponse({ body: {} }));
     await apiRaw("/api/x");
     expect(fetchMock).toHaveBeenCalledWith("/api/x", undefined);
   });
 
-  it("with token: true adds x-solaris-token to the headers", async () => {
+  it("with token: true adds x-sinapso-token to the headers", async () => {
     fetchMock.mockResolvedValueOnce(makeResponse({ body: { token: "t1" } }));
     fetchMock.mockResolvedValueOnce(makeResponse({ body: {} }));
     await apiRaw("/api/x", { token: true });
     const [, init] = fetchMock.mock.calls[1];
     const headers = (init as RequestInit).headers as Headers;
-    expect(headers.get("x-solaris-token")).toBe("t1");
+    expect(headers.get("x-sinapso-token")).toBe("t1");
   });
 
   it("preserves caller-supplied headers when adding the token", async () => {
@@ -290,7 +290,7 @@ describe("apiRaw", () => {
     const [, init] = fetchMock.mock.calls[1];
     const headers = (init as RequestInit).headers as Headers;
     expect(headers.get("content-type")).toBe("application/octet-stream");
-    expect(headers.get("x-solaris-token")).toBe("t1");
+    expect(headers.get("x-sinapso-token")).toBe("t1");
   });
 });
 
