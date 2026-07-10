@@ -1,7 +1,7 @@
 {
   "name": "solaris",
   "version": "1.0.1",
-  "description": "Solaris \u2014 your Obsidian vault or Open Knowledge Format bundle as a navigable 3D universe.",
+  "description": "Solaris — your Obsidian vault or Open Knowledge Format bundle as a navigable 3D universe.",
   "type": "module",
   "main": "desktop/dist/main.cjs",
   "bin": {
@@ -64,6 +64,12 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/search": "^6.7.1",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.6",
     "@playwright/test": "^1.61.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.0",
@@ -76,6 +82,7 @@
     "electron": "^42.4.0",
     "electron-builder": "^26.0.0",
     "esbuild": "^0.28.0",
+    "jsdom": "^29.1.1",
     "marked": "^15.0.0",
     "minisearch": "^7.2.0",
     "supertest": "^7.1.0",
