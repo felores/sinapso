@@ -1921,7 +1921,10 @@ async function boot() {
       noteEditor = createNoteEditor(editorHost, {
         content: markdown,
         onWikiLinkClick: navigateWikiTarget,
-        onChange: () => noteAutosave?.notifyChange(),
+        onChange: () => {
+          noteAutosave?.notifyChange();
+          onEditorDocChanged();
+        },
       });
       editorNoteId = n.id;
       noteAutosave = createAutosave({
@@ -1972,10 +1975,10 @@ async function boot() {
       openNoteWords = countWords(stripped);
       updateBrandStats();
       // F035: on a SEMANTIC hit, land on the matched passage instead of the
-      // top. TODO(U5): reimplement over CM6 decorations — the old Range-based
-      // highlight walked the rendered DOM, which the editor replaced.
-      if (highlightSnippet && !noteEditor)
-        highlightPassage(body, highlightSnippet);
+      // top. The Range walk works over the editor's text nodes too (CM6
+      // renders the full doc at note sizes); the highlight is dropped on the
+      // first edit since its Ranges die under DOM updates.
+      if (highlightSnippet) highlightPassage(body, highlightSnippet);
       // Fixed-order footer: related notes (async) above research questions.
       const showBottomWikiAction =
         openNoteWords >= 300 || stripped.length >= 2000;
@@ -2109,6 +2112,7 @@ async function boot() {
 
   async function viewCurrentVersion(n: GNode) {
     const body = $("#reader-body");
+    destroyNoteEditor(); // flushes pending edits before the preview takes over
     body.innerHTML = '<p class="muted">loading…</p>';
     try {
       const { markdown } = await api<{ markdown: string }>(
@@ -2124,6 +2128,7 @@ async function boot() {
 
   async function viewVersion(n: GNode, commit: string) {
     const body = $("#reader-body");
+    destroyNoteEditor(); // flushes pending edits before the preview takes over
     body.innerHTML = '<p class="muted">loading…</p>';
     try {
       const { markdown } = await api<{ markdown: string }>(
@@ -2323,6 +2328,21 @@ async function boot() {
     store.set("find", new Ctor(...ranges));
     findIdx = 0;
     focusFind();
+  }
+
+  // Editor doc changed (U5): passage-highlight Ranges die under CM6 DOM
+  // updates, so drop them; an active find re-runs debounced so its counts
+  // and ranges track the new text.
+  let findRerunTimer: ReturnType<typeof setTimeout> | null = null;
+  function onEditorDocChanged() {
+    hlStore()?.delete("passage");
+    const term = ($("#reader-find-input") as HTMLInputElement).value;
+    if (!term.trim()) return;
+    if (findRerunTimer) clearTimeout(findRerunTimer);
+    findRerunTimer = setTimeout(() => {
+      findRerunTimer = null;
+      runFind(term);
+    }, 250);
   }
 
   // Step through matches one at a time (IDE-style), wrapping around.
