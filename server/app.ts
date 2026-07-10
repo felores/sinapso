@@ -100,6 +100,7 @@ import {
   tierCompletion,
   validateDeepseekKey,
 } from "./integrations/llm.js";
+import { operationTier } from "./integrations/registry.js";
 import {
   listModels,
   OpenRouterError,
@@ -995,7 +996,7 @@ export function createApp(
         return;
       }
       const contextual = await buildContextualQuery(query, req.body?.contexts, {
-        llm: resolveTier("worker", cfg),
+        llm: resolveTier(operationTier("contextual_rewrite"), cfg),
         openrouter: integrations?.openrouter,
       });
       const displayQuery = String(req.body?.displayQuery ?? "").trim();
@@ -1181,7 +1182,7 @@ export function createApp(
   async function generatedCommitMessage(files: GitFile[]): Promise<string> {
     const fallback = fallbackCommitMessage(files);
     const cfg = loadConfig(configPath);
-    const llm = resolveTier("worker", cfg);
+    const llm = resolveTier(operationTier("commit_message"), cfg);
     if (!llm) return fallback;
     try {
       const text = await tierCompletion(
@@ -1327,7 +1328,7 @@ export function createApp(
   ) {
     const cfg = loadConfig(configPath);
     // Wiki-ingest synthesis is the thinker-tier operation (R8).
-    const llm = resolveTier("thinker", cfg);
+    const llm = resolveTier(operationTier("wiki_ingest_synthesis"), cfg);
     requireLlmTierOrThrow(llm, "Add an OpenRouter key before wiki ingest");
     const merged = ingestTargetConfig(cfg);
     const wiki = resolveWikiTarget(vaultRoot, merged, { wikiId });
@@ -1354,7 +1355,7 @@ export function createApp(
         const cfg = loadConfig(configPath);
         if (
           !requireLlmTier(
-            resolveTier("thinker", cfg),
+            resolveTier(operationTier("wiki_ingest_synthesis"), cfg),
             res,
             "Add an OpenRouter key before wiki ingest",
           )
@@ -1402,7 +1403,7 @@ export function createApp(
         const cfg = loadConfig(configPath);
         if (
           !requireLlmTier(
-            resolveTier("thinker", cfg),
+            resolveTier(operationTier("wiki_ingest_synthesis"), cfg),
             res,
             "Add an OpenRouter key before wiki ingest",
           )
@@ -1648,7 +1649,7 @@ export function createApp(
     const cfg = loadConfig(configPath);
     // Any configured LLM enables the path; note questions are worker-tier
     // (R8), degrading through the legacy defaultModel when no slot is set.
-    const llm = resolveTier("worker", cfg);
+    const llm = resolveTier(operationTier("note_questions"), cfg);
     if (!llm) {
       res.json({ questions: templates(), source: "templates" });
       return;
