@@ -130,16 +130,18 @@ describe("wireDelegation (faked session)", () => {
 });
 
 describe("per-model tool declarations (KTD5)", () => {
-  it("the default 3.1 model builds declarations with no behavior field", () => {
-    const tools = geminiToolDeclarations("gemini-3.1-flash-live-preview");
+  it("non-async models build declarations with no behavior field", () => {
+    // Empirically the 3.1 default DOES support async FC; an unknown/legacy
+    // model id exercises the plain-declaration path (KTD5 safety property).
+    const tools = geminiToolDeclarations("gemini-live-some-older-model");
     expect(tools).toBe(VOICE_TOOLS);
     for (const t of tools)
       expect((t as { behavior?: string }).behavior).toBeUndefined();
     expect(tools.map((t) => t.name)).toContain("delegate_to_thinker");
   });
 
-  it("gemini-2.5-flash-live marks only the delegate tool NON_BLOCKING", () => {
-    const tools = geminiToolDeclarations("gemini-2.5-flash-live");
+  it("async-capable models mark only the delegate tool NON_BLOCKING", () => {
+    const tools = geminiToolDeclarations("gemini-2.5-flash-native-audio-latest");
     for (const t of tools) {
       const behavior = (t as { behavior?: string }).behavior;
       if (t.name === "delegate_to_thinker") expect(behavior).toBe("NON_BLOCKING");
@@ -156,8 +158,8 @@ describe("per-model tool declarations (KTD5)", () => {
   it("the live model config value resolves with the 3.1 default", () => {
     const cfg = defaultConfig();
     expect(geminiLiveModel(cfg)).toBe("gemini-3.1-flash-live-preview");
-    cfg.voice.model = "gemini-2.5-flash-live";
-    expect(geminiLiveModel(cfg)).toBe("gemini-2.5-flash-live");
+    cfg.voice.model = "gemini-2.5-flash-native-audio-latest";
+    expect(geminiLiveModel(cfg)).toBe("gemini-2.5-flash-native-audio-latest");
     cfg.voice.model = "bogus-model";
     expect(geminiLiveModel(cfg)).toBe("gemini-3.1-flash-live-preview");
   });

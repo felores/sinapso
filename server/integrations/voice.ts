@@ -35,14 +35,18 @@ import type { FunctionDeclaration } from "@google/genai";
 import { Behavior, FunctionResponseScheduling } from "@google/genai";
 
 const GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview";
-/** Selectable Gemini live models (KTD5). The 3.1 preview stays the default
- *  until the U7 voice-parity gate passes for 2.5. */
+/** Selectable Gemini live models (KTD5). Empirically verified 2026-07-09
+ *  (docs/solutions/gemini-live-async-function-calling.md): the plan's
+ *  pinned "gemini-2.5-flash-live" does not exist on the API; the real 2.5
+ *  live line is the native-audio family, and BOTH models below accept
+ *  behavior: NON_BLOCKING and speak the scheduled INTERRUPT completion —
+ *  the 3.1 default consistently, the 2.5 model intermittently. */
 export const GEMINI_LIVE_MODELS = [
   GEMINI_LIVE_MODEL,
-  "gemini-2.5-flash-live",
+  "gemini-2.5-flash-native-audio-latest",
 ] as const;
 /** Models with native async function calling (behavior: NON_BLOCKING). */
-const GEMINI_ASYNC_FC_MODELS = new Set(["gemini-2.5-flash-live"]);
+const GEMINI_ASYNC_FC_MODELS = new Set<string>(GEMINI_LIVE_MODELS);
 
 export function geminiLiveModel(cfg: SolarisConfig): string {
   const m = cfg.voice.model;

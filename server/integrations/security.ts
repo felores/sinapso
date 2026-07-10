@@ -75,12 +75,27 @@ export function createSessionToken(): string {
   return randomBytes(32).toString("hex");
 }
 
-export function requireToken(token: string): RequestHandler {
+export interface ScopedTokenOptions {
+  /** Surface-scoped token (MCP/CLI): accepted only on routes the predicate
+   *  allows, so a leaked bridge token cannot reach browser/voice-only
+   *  routes (R17). Enforced here, server-side, not inside the bridge. */
+  scopedToken: string;
+  allows: (method: string, path: string) => boolean;
+}
+
+export function requireToken(
+  token: string,
+  scoped?: ScopedTokenOptions,
+): RequestHandler {
   return (req, res, next) => {
-    if (req.headers[TOKEN_HEADER] !== token) {
-      res.status(403).json({ error: "missing or invalid session token" });
-      return;
-    }
-    next();
+    const presented = req.headers[TOKEN_HEADER];
+    if (presented === token) return next();
+    if (
+      scoped &&
+      presented === scoped.scopedToken &&
+      scoped.allows(req.method, req.path)
+    )
+      return next();
+    res.status(403).json({ error: "missing or invalid session token" });
   };
 }

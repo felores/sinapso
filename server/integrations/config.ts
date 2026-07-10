@@ -72,6 +72,8 @@ export interface SolarisConfig {
   workerModel: string | null;
   thinkerProvider: LlmProviderId | null;
   thinkerModel: string | null;
+  /** Allow in-place note editing over MCP (off by default, R15/AE6). */
+  mcpEditEnabled: boolean;
   /** Vault-relative destination folder for created notes (R12). */
   writeDestination: string;
   /** Vault-relative destination folder for archived notes. */
@@ -97,6 +99,7 @@ export interface ConfigPatch {
   workerModel?: string | null;
   thinkerProvider?: LlmProviderId | null;
   thinkerModel?: string | null;
+  mcpEditEnabled?: boolean;
   writeDestination?: string;
   archiveDestination?: string;
   imagesDestination?: string;
@@ -150,6 +153,7 @@ export function defaultConfig(): SolarisConfig {
     workerModel: null,
     thinkerProvider: null,
     thinkerModel: null,
+    mcpEditEnabled: false,
     writeDestination: "inbox",
     archiveDestination: "archive",
     imagesDestination: "images",
@@ -207,6 +211,7 @@ function merge(base: SolarisConfig, patch: unknown): SolarisConfig {
     const v = p[k];
     if (typeof v === "string" || v === null) out[k] = v ? v : null;
   }
+  if (typeof p.mcpEditEnabled === "boolean") out.mcpEditEnabled = p.mcpEditEnabled;
   if (typeof p.writeDestination === "string" && p.writeDestination)
     out.writeDestination = p.writeDestination;
   if (typeof p.archiveDestination === "string" && p.archiveDestination)

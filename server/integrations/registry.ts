@@ -601,3 +601,31 @@ export function entryFor(name: string): RegistryEntry | undefined {
 export function operationTier(name: string): LlmTier {
   return entryFor(name)?.tier ?? "worker";
 }
+
+function pathMatches(pattern: string, actual: string): boolean {
+  if (!pattern.includes("{")) return pattern === actual;
+  const re = new RegExp(
+    "^" + pattern.replace(/[.*+?^$()[\]\\|]/g, "\\$&").replace(/\{[^}]+\}/g, "[^/]+") + "$",
+  );
+  return re.test(actual);
+}
+
+/**
+ * Server-side surface check for MCP-scoped tokens (R17): the route must be
+ * the binding of an entry that declares the `mcp` surface, and edit-gated
+ * entries additionally need the config opt-in (AE6).
+ */
+export function mcpRouteAllowed(
+  method: string,
+  path: string,
+  editEnabled: boolean,
+): boolean {
+  return REGISTRY.some(
+    (e) =>
+      e.surfaces.includes("mcp") &&
+      e.route !== undefined &&
+      e.route.method === method &&
+      pathMatches(e.route.path, path) &&
+      (!e.mcpEditOptIn || editEnabled),
+  );
+}

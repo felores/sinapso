@@ -100,7 +100,7 @@ import {
   tierCompletion,
   validateDeepseekKey,
 } from "./integrations/llm.js";
-import { operationTier } from "./integrations/registry.js";
+import { mcpRouteAllowed, operationTier } from "./integrations/registry.js";
 import {
   createDelegateManager,
   type DelegateManager,
@@ -246,15 +246,26 @@ export function createApp(
 
   // Per-session token for mutating/spending routes, fetched by the app page.
   const sessionToken = createSessionToken();
-  const guarded = requireToken(sessionToken);
+  // Surface-scoped MCP token (KTD2/R17): issued via GET /api/session?surface=mcp,
+  // accepted only on routes whose registry entry declares the mcp surface.
+  const mcpToken = createSessionToken();
+  const guarded = requireToken(sessionToken, {
+    scopedToken: mcpToken,
+    allows: (method, path) =>
+      mcpRouteAllowed(method, path, loadConfig(configPath).mcpEditEnabled),
+  });
   // Thinker delegation jobs (U6): session-scoped, one at a time. The voice
   // relay subscribes in-process for the spoken heads-up (U7).
   const delegate: DelegateManager = createDelegateManager({
     llmOpts: integrations?.openrouter,
     timeoutMs: integrations?.delegateTimeoutMs,
   });
-  app.get("/api/session", (_req, res) => {
-    res.json({ token: sessionToken });
+  app.get("/api/session", (req, res) => {
+    res.json(
+      req.query.surface === "mcp"
+        ? { token: mcpToken, surface: "mcp" }
+        : { token: sessionToken },
+    );
   });
 
   const configPath = integrations?.configPath ?? defaultConfigPath();
@@ -339,6 +350,7 @@ export function createApp(
           thinkerProvider: cfg.thinkerProvider,
           thinkerModel: cfg.thinkerModel,
         },
+        mcp: { editEnabled: cfg.mcpEditEnabled },
         writeDestination: cfg.writeDestination,
         archiveDestination: cfg.archiveDestination,
         imagesDestination: cfg.imagesDestination,

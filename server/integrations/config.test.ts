@@ -272,8 +272,8 @@ describe("voice model selector round-trip (U7)", () => {
       { voice: { provider: "gemini", voice: "Leda", keys: { gemini: "g-k" } } },
       p,
     );
-    let cfg = updateConfig({ voice: { model: "gemini-2.5-flash-live" } }, p);
-    expect(cfg.voice.model).toBe("gemini-2.5-flash-live");
+    let cfg = updateConfig({ voice: { model: "gemini-2.5-flash-native-audio-latest" } }, p);
+    expect(cfg.voice.model).toBe("gemini-2.5-flash-native-audio-latest");
     expect(cfg.voice.provider).toBe("gemini");
     expect(cfg.voice.voice).toBe("Leda");
     expect(cfg.voice.keys.gemini).toBe("g-k");
