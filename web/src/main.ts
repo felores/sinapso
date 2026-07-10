@@ -36,6 +36,7 @@ import DOMPurify from "dompurify";
 import * as THREE from "three";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import * as i18n from "./i18n";
+import { createNoteEditor, type NoteEditor } from "./editor";
 import { startVoice, type VoiceSession } from "./voice";
 import {
   THEMES,
@@ -1579,11 +1580,28 @@ async function boot() {
     selected = null;
     focusSet = null;
     repaint();
+    destroyNoteEditor();
     $("#reader").classList.add("hidden");
     readerLeftPinned = false; // closing the panel drops the left pin
     openNoteWords = null;
     clearSelectionContext("reader");
     updateBrandStats();
+  }
+
+  // The one live editor instance for the open note (plan 018 U2). Destroyed
+  // on note switch and reader close; serialization only ever reads from it,
+  // so footer widgets appended to #reader-body can never leak into a save.
+  let noteEditor: NoteEditor | null = null;
+  function destroyNoteEditor() {
+    noteEditor?.destroy();
+    noteEditor = null;
+  }
+
+  function navigateWikiTarget(target: string) {
+    const t = target.toLowerCase();
+    const node =
+      byBasename.get(t.split("/").pop()!) ?? byId.get(`phantom:${t}`);
+    if (node) select(node);
   }
 
   // --- reader panel ---
@@ -1703,6 +1721,7 @@ async function boot() {
     updateVersionControls();
     openNodeId = nextOpenNodeId;
     const body = $("#reader-body");
+    destroyNoteEditor();
     if (n.phantom) {
       $("#reader-find").classList.add("hidden");
       body.innerHTML = `<p class="muted">This note doesn't exist yet. ${
@@ -1723,20 +1742,27 @@ async function boot() {
       const { markdown } = await api<{ markdown: string }>(
         `/api/note?id=${encodeURIComponent(n.id)}${fromHistory ? "&nolog=1" : ""}`,
       );
-      // Strip a leading OKF/YAML frontmatter block so it isn't rendered raw
-      // (the node title/type already came from it via the scanner).
+      // The editor owns the note verbatim (frontmatter included, folded by
+      // the editor itself). `stripped` is kept only for word count and the
+      // wiki-ingest preview, which work over the body text.
       const stripped = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
-      // [[wiki links]] -> in-app navigation spans
-      const titled = ensureReaderTitle(stripped, n.title);
-      const prepped = titled.replace(
-        /\[\[([^\]|#\n]+)(?:#[^\]|\n]*)?(?:\|([^\]\n]*))?\]\]/g,
-        (_m: string, target: string, alias?: string) =>
-          `<a class="wiki" data-target="${target.trim().replace(/"/g, "&quot;")}">${alias ?? target}</a>`,
-      );
-      // KTD13: sanitize rendered note HTML. Notes saved from Exa results or
-      // ingested documents carry untrusted content; unsanitized script would
-      // run same-origin and could drive the token-authenticated endpoints.
-      body.innerHTML = sanitizeRenderedMarkdown(await marked.parse(prepped));
+      body.innerHTML = "";
+      // Display-only title when the note body doesn't start with a heading —
+      // never inserted into the document (KTD3).
+      const firstLine = stripped.split("\n").find((l) => l.trim());
+      if (!(firstLine && /^#\s+/.test(firstLine))) {
+        const titleEl = document.createElement("h1");
+        titleEl.className = "reader-note-title";
+        titleEl.textContent = n.title;
+        body.appendChild(titleEl);
+      }
+      const editorHost = document.createElement("div");
+      editorHost.id = "reader-editor";
+      body.appendChild(editorHost);
+      noteEditor = createNoteEditor(editorHost, {
+        content: markdown,
+        onWikiLinkClick: navigateWikiTarget,
+      });
       const wikiPreview: IngestPreview = {
         source: n.id,
         sourceLabel: n.id,
@@ -1748,16 +1774,11 @@ async function boot() {
       topWikiAction.classList.remove("hidden");
       openNoteWords = countWords(stripped);
       updateBrandStats();
-      // External URL links open in a new tab so they never replace the app.
-      // Wiki links carry no href (they use data-target + a click handler), so
-      // a[href] matches only real outbound links.
-      for (const a of body.querySelectorAll<HTMLAnchorElement>("a[href]")) {
-        a.target = "_blank";
-        a.rel = "noopener noreferrer";
-      }
-      // F035: on a SEMANTIC hit, land on the matched passage instead of the top.
-      // Runs on the sanitized DOM (no innerHTML), so DOMPurify stays intact.
-      if (highlightSnippet) highlightPassage(body, highlightSnippet);
+      // F035: on a SEMANTIC hit, land on the matched passage instead of the
+      // top. TODO(U5): reimplement over CM6 decorations — the old Range-based
+      // highlight walked the rendered DOM, which the editor replaced.
+      if (highlightSnippet && !noteEditor)
+        highlightPassage(body, highlightSnippet);
       // Fixed-order footer: related notes (async) above research questions.
       const showBottomWikiAction =
         openNoteWords >= 300 || stripped.length >= 2000;
@@ -2812,9 +2833,14 @@ async function boot() {
     const target = e.target as Node;
     const filtersPanel = $("#filters");
     const settingsPanel = $("#settings");
-    const insideFloatingPanel = filtersPanel.contains(target) || settingsPanel.contains(target);
-    const fromPanelButton = ["#filters-btn", "#settings-btn", "#mi-filters", "#mi-settings"]
-      .some((id) => $(id).contains(target));
+    const insideFloatingPanel =
+      filtersPanel.contains(target) || settingsPanel.contains(target);
+    const fromPanelButton = [
+      "#filters-btn",
+      "#settings-btn",
+      "#mi-filters",
+      "#mi-settings",
+    ].some((id) => $(id).contains(target));
     if (insideFloatingPanel || fromPanelButton) return;
     filtersPanel.classList.add("hidden");
     settingsPanel.classList.add("hidden");
@@ -3703,7 +3729,11 @@ async function boot() {
       keyStatus("OpenRouter", t?.openrouter),
       !!t?.openrouter.configured,
     );
-    st("deepseek", keyStatus("DeepSeek", t?.deepseek), !!t?.deepseek.configured);
+    st(
+      "deepseek",
+      keyStatus("DeepSeek", t?.deepseek),
+      !!t?.deepseek.configured,
+    );
     if (integrations) {
       // Keys are stored server-side and never echoed back, so the fields
       // are always empty — make the placeholders say a key IS configured.
@@ -3970,7 +4000,9 @@ async function boot() {
       if (e.key !== "Enter") return;
       const v = custom.value.trim();
       void save(
-        tier === "worker" ? { workerModel: v || null } : { thinkerModel: v || null },
+        tier === "worker"
+          ? { workerModel: v || null }
+          : { thinkerModel: v || null },
       );
     });
     return render;
@@ -7047,7 +7079,11 @@ async function boot() {
       !savedVault?.excludesInitialized &&
       !excludesChanged(excludes, currentGraphExcludes)
     ) {
-      excludes = replaceExcludes(excludes, previousArchiveFolder, archiveFolder);
+      excludes = replaceExcludes(
+        excludes,
+        previousArchiveFolder,
+        archiveFolder,
+      );
       excludes = replaceExcludes(excludes, previousImagesFolder, imagesFolder);
     }
     const prompts: Record<string, string | null> = {};
@@ -7140,12 +7176,7 @@ async function boot() {
       });
       await refreshIntegrations();
       await refreshEnabledWikiLayers();
-      if (
-        excludesChanged(
-          excludes,
-          data.meta.excludes ?? [],
-        )
-      ) {
+      if (excludesChanged(excludes, data.meta.excludes ?? [])) {
         adminDirty = false;
         await rescan(true);
         return true;
@@ -7195,7 +7226,10 @@ async function boot() {
       .trim();
     if (!oldKey || !cleanNew) return excludes;
     return excludes.map((e) =>
-      e.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "").toLowerCase() === oldKey
+      e
+        .replace(/\\/g, "/")
+        .replace(/^\/+|\/+$/g, "")
+        .toLowerCase() === oldKey
         ? cleanNew
         : e,
     );

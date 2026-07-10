@@ -1533,6 +1533,73 @@ body > :not(#graph) {
   color: var(--muted);
 }
 
+/* ---------- live-preview editor (plan 018 U2) ----------
+   The editor grows naturally; #reader-scroll stays the scroll container. */
+#reader-editor .cm-editor {
+  background: transparent;
+  height: auto;
+}
+#reader-editor .cm-editor.cm-focused { outline: none; }
+#reader-editor .cm-scroller {
+  font-family: inherit;
+  line-height: 1.65;
+  overflow: visible;
+}
+#reader-editor .cm-content {
+  padding: 0;
+  font-size: 14.5px;
+  caret-color: var(--fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#reader-editor .cm-line { padding: 0; }
+#reader-editor .cm-selectionBackground,
+#reader-editor .cm-content ::selection {
+  background: color-mix(in srgb, var(--accent) 30%, rgba(0, 0, 0, 0.56)) !important;
+}
+#reader-editor .cm-cursor { border-left-color: var(--fg); }
+.reader-note-title {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+  line-height: 1.15;
+}
+/* Heading spans mirror #reader-body h1-h6 (CM styles inline spans, not
+   block elements, so the border underlines the text run). */
+#reader-editor .cm-h1 { font-size: 2em; font-weight: 600; line-height: 1.15; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+#reader-editor .cm-h2 { font-size: 1.5em; font-weight: 600; line-height: 1.3; border-bottom: 1px solid var(--border); padding-bottom: 3px; }
+#reader-editor .cm-h3 { font-size: 1.25em; font-weight: 600; line-height: 1.3; border-bottom: 1px solid var(--border); padding-bottom: 2px; }
+#reader-editor .cm-h4 { font-size: 1.1em; font-weight: 600; }
+#reader-editor .cm-h5 { font-size: 1em; font-weight: 700; }
+#reader-editor .cm-h6 { font-size: 0.9em; font-weight: 700; color: var(--muted); }
+#reader-editor .cm-strong { font-weight: 700; }
+#reader-editor .cm-em { font-style: italic; }
+#reader-editor .cm-strike { text-decoration: line-through; }
+#reader-editor .cm-quote { color: var(--muted); }
+#reader-editor .cm-inline-code {
+  background: color-mix(in srgb, var(--fg) 9%, transparent);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+#reader-editor .cm-md-link { color: var(--accent); }
+#reader-editor .cm-md-url { color: var(--muted); }
+#reader-editor .cm-wikilink {
+  color: var(--accent);
+  cursor: pointer;
+  border-bottom: 1px dashed rgba(88, 166, 255, 0.4);
+}
+#reader-editor .cm-wikilink:hover { border-bottom-style: solid; }
+#reader-editor .cm-wikilink-raw { color: var(--accent); }
+#reader-editor .cm-frontmatter-fold {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 0;
+  user-select: none;
+}
+#reader-editor .cm-frontmatter-line { opacity: 0.55; }
+
 .muted { color: var(--muted); }
 
 .tip {
