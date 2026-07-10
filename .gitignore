@@ -22,3 +22,4 @@ scripts/dist/.playwright-cli/
 test-results/
 playwright-report/
 .stitch/
+tests/e2e/.tmp/

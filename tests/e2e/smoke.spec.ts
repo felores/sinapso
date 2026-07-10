@@ -19,7 +19,9 @@ test("loads Solaris shell", async ({ page }) => {
 test("opens a node from the URL", async ({ page }) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {
-    const graph = (await (await page.request.get("/api/graph")).json()) as Graph;
+    const graph = (await (
+      await page.request.get("/api/graph")
+    ).json()) as Graph;
     const node = graph.nodes.find((n) => !n.phantom);
     if (!node) {
       test.skip(true, "graph has no real nodes");
@@ -39,7 +41,9 @@ test("opens a node from the URL", async ({ page }) => {
 test("opens a node from the hash URL", async ({ page }) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {
-    const graph = (await (await page.request.get("/api/graph")).json()) as Graph;
+    const graph = (await (
+      await page.request.get("/api/graph")
+    ).json()) as Graph;
     const node = graph.nodes.find((n) => !n.phantom);
     if (!node) {
       test.skip(true, "graph has no real nodes");
@@ -59,13 +63,20 @@ test("opens a node from the hash URL", async ({ page }) => {
 test("writes selected node to the URL", async ({ page }) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {
-    const graph = (await (await page.request.get("/api/graph")).json()) as Graph;
+    const graph = (await (
+      await page.request.get("/api/graph")
+    ).json()) as Graph;
     const node = graph.nodes.find((n) => !n.phantom);
     if (!node) {
       test.skip(true, "graph has no real nodes");
       return;
     }
 
+    // A fresh vault triggers the qmd onboarding prompt, which overlays the
+    // search results; mark it answered so the click isn't intercepted.
+    await page.addInitScript(() =>
+      localStorage.setItem("akasha-qmd-prompted", "1"),
+    );
     await page.goto("/");
     await page.locator("#search").fill(node.title);
     await page.locator("#search-results .result").first().click();
@@ -73,7 +84,9 @@ test("writes selected node to the URL", async ({ page }) => {
     await expect(page.locator("#reader")).not.toHaveClass(/hidden/);
     const selectedId = await page.locator("#reader-path").textContent();
     await expect
-      .poll(() => new URLSearchParams(new URL(page.url()).hash.slice(1)).get("node"))
+      .poll(() =>
+        new URLSearchParams(new URL(page.url()).hash.slice(1)).get("node"),
+      )
       .toBe(selectedId);
     expect(new URL(page.url()).searchParams.has("node")).toBe(false);
     expect(new URL(page.url()).searchParams.has("focus")).toBe(false);
@@ -85,7 +98,9 @@ test("writes selected node to the URL", async ({ page }) => {
 test("hash node changes do not reload the app", async ({ page }) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {
-    const graph = (await (await page.request.get("/api/graph")).json()) as Graph;
+    const graph = (await (
+      await page.request.get("/api/graph")
+    ).json()) as Graph;
     const nodes = graph.nodes.filter((n) => !n.phantom).slice(0, 2);
     if (nodes.length < 2) {
       test.skip(true, "graph has fewer than two real nodes");
@@ -97,7 +112,9 @@ test("hash node changes do not reload the app", async ({ page }) => {
       timeout: 15_000,
     });
     await page.evaluate(() => {
-      (window as unknown as { __solarisReloadProbe: string }).__solarisReloadProbe = "alive";
+      (
+        window as unknown as { __solarisReloadProbe: string }
+      ).__solarisReloadProbe = "alive";
     });
     const next = new URL(page.url());
     next.hash = `node=${encodeURIComponent(nodes[1].id)}`;
@@ -109,7 +126,9 @@ test("hash node changes do not reload the app", async ({ page }) => {
     await expect
       .poll(() =>
         page.evaluate(
-          () => (window as unknown as { __solarisReloadProbe?: string }).__solarisReloadProbe,
+          () =>
+            (window as unknown as { __solarisReloadProbe?: string })
+              .__solarisReloadProbe,
         ),
       )
       .toBe("alive");

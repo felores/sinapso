@@ -1872,7 +1872,10 @@ export function createApp(
   app.get("/api/layout", (req, res) => {
     const p = layoutFile(req.query.arrangement);
     if (!existsSync(p)) {
-      res.status(404).json({ error: "no cached layout" });
+      // Expected-empty (fresh vault, new arrangement): 204 keeps the browser
+      // console clean — a 404 here would log a network error on every first
+      // boot and trip the release-blocking E2E diagnostics.
+      res.status(204).end();
       return;
     }
     res.sendFile(p, { dotfiles: "allow" });

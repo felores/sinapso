@@ -1,4 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -16,7 +20,11 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "npm run dev:server",
+      // Hermetic vault: build the throwaway vault + graph first, then serve
+      // it — never the developer's real data/graph.json. (Playwright starts
+      // webServer before globalSetup, so setup rides the command chain.)
+      command: "npx tsx tests/e2e/global-setup.ts && npm run dev:server",
+      env: { AKASHA_GRAPH: resolve(ROOT, "tests/e2e/.tmp/graph.json") },
       url: "http://127.0.0.1:5175/api/graph",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
