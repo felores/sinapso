@@ -51,6 +51,30 @@ describe("integrations config", () => {
     expect(cfg.exaKey).toBe("keep-me");
   });
 
+  it("merges tier slot fields independently and never clears the other key", () => {
+    const p = join(DIR, "tiers.json");
+    updateConfig({ openrouterKey: "or-k" }, p);
+    let cfg = updateConfig({ deepseekKey: "ds-k" }, p);
+    expect(cfg.openrouterKey).toBe("or-k"); // setting one key keeps the other
+    cfg = updateConfig({ workerProvider: "openrouter" }, p);
+    expect(cfg.workerProvider).toBe("openrouter");
+    cfg = updateConfig({ workerModel: "meta/fast" }, p);
+    expect(cfg.workerProvider).toBe("openrouter"); // untouched by model patch
+    expect(cfg.workerModel).toBe("meta/fast");
+    cfg = updateConfig({ thinkerProvider: "deepseek" }, p);
+    expect(cfg.thinkerProvider).toBe("deepseek");
+    expect(cfg.thinkerModel).toBeNull();
+    cfg = updateConfig({ thinkerModel: "meta/deep" }, p);
+    expect(cfg.thinkerModel).toBe("meta/deep");
+    expect(cfg.deepseekKey).toBe("ds-k");
+    // invalid provider values are ignored, null clears
+    cfg = updateConfig({ workerProvider: "bogus" as never }, p);
+    expect(cfg.workerProvider).toBe("openrouter");
+    cfg = updateConfig({ workerProvider: null, workerModel: null }, p);
+    expect(cfg.workerProvider).toBeNull();
+    expect(cfg.workerModel).toBeNull();
+  });
+
   it("persists inbox, archive, and images destination folders", () => {
     const p = join(DIR, "folders.json");
     const cfg = updateConfig(

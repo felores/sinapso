@@ -186,3 +186,52 @@ describe("GET /api/note-questions", () => {
     expect(bodies[0]).toContain("deepseek/deepseek-v4-flash"); // fell back to default
   });
 });
+
+describe("DeepSeek key status and test route (U1)", () => {
+  it("exposes deepseek.configured boolean only, never key material", async () => {
+    const { app: app2 } = createApp(graphPath, undefined, {
+      configPath: join(VAULT, "deepseek-config.json"),
+    });
+    const t = (await request(app2).get("/api/session")).body.token;
+    await request(app2)
+      .post("/api/integrations/config")
+      .set(TOKEN_HEADER, t)
+      .send({ deepseekKey: "ds-super-secret", thinkerProvider: "deepseek" });
+    const res = await request(app2).get("/api/integrations");
+    expect(res.status).toBe(200);
+    expect(res.body.tools.deepseek).toEqual({ configured: true });
+    expect(res.body.llm.thinkerProvider).toBe("deepseek");
+    expect(JSON.stringify(res.body)).not.toContain("ds-super-secret");
+  });
+
+  it("reports configured:false without a key", async () => {
+    const { app: app2 } = createApp(graphPath, undefined, {
+      configPath: join(VAULT, "deepseek-nokey-config.json"),
+    });
+    const res = await request(app2).get("/api/integrations/test/deepseek");
+    expect(res.body).toEqual({ configured: false });
+  });
+
+  it("returns ok / unreachable per the faked models-list fetch", async () => {
+    let status = 200;
+    const { app: app2 } = createApp(graphPath, undefined, {
+      configPath: join(VAULT, "deepseek-test-config.json"),
+      deepseek: {
+        fetch: (async () => new Response("{}", { status })) as never,
+      },
+    });
+    const t = (await request(app2).get("/api/session")).body.token;
+    await request(app2)
+      .post("/api/integrations/config")
+      .set(TOKEN_HEADER, t)
+      .send({ deepseekKey: "ds-k" });
+    let res = await request(app2).get("/api/integrations/test/deepseek");
+    expect(res.body).toEqual({ configured: true, ok: true });
+    status = 401;
+    res = await request(app2).get("/api/integrations/test/deepseek");
+    expect(res.body).toEqual({ configured: true, ok: false });
+    status = 500;
+    res = await request(app2).get("/api/integrations/test/deepseek");
+    expect(res.body).toEqual({ configured: true, ok: false, unreachable: true });
+  });
+});

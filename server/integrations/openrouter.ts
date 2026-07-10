@@ -12,8 +12,10 @@ export type FetchLike = typeof fetch;
 
 export interface OpenRouterOptions {
   fetch?: FetchLike;
-  /** Override the API base (tests). */
+  /** Override the API base (tests, or another OpenAI-compatible provider). */
   endpoint?: string;
+  /** Extra chat-completion body fields (e.g. DeepSeek thinking mode). */
+  extraBody?: Record<string, unknown>;
 }
 
 export interface ChatMessage {
@@ -52,7 +54,7 @@ export async function chatCompletion(
       authorization: `Bearer ${key}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ model, messages }),
+    body: JSON.stringify({ model, messages, ...opts.extraBody }),
   });
   if (!res.ok) {
     const t = await res.text().catch(() => "");

@@ -56,11 +56,20 @@ export interface VaultConfig {
   wikis: WikiConfig[];
 }
 
+export type LlmProviderId = "openrouter" | "deepseek";
+
 export interface SolarisConfig {
   exaKey: string | null;
   openrouterKey: string | null;
+  deepseekKey: string | null;
   consents: { web: boolean };
+  /** Legacy single-model fallback; the worker/thinker slots supersede it. */
   defaultModel: string | null;
+  /** Two-tier model slots (R1-R3). Model is ignored for DeepSeek (fixed pair). */
+  workerProvider: LlmProviderId | null;
+  workerModel: string | null;
+  thinkerProvider: LlmProviderId | null;
+  thinkerModel: string | null;
   /** Vault-relative destination folder for created notes (R12). */
   writeDestination: string;
   /** Vault-relative destination folder for archived notes. */
@@ -79,8 +88,13 @@ export interface SolarisConfig {
 export interface ConfigPatch {
   exaKey?: string | null;
   openrouterKey?: string | null;
+  deepseekKey?: string | null;
   consents?: Partial<SolarisConfig["consents"]>;
   defaultModel?: string | null;
+  workerProvider?: LlmProviderId | null;
+  workerModel?: string | null;
+  thinkerProvider?: LlmProviderId | null;
+  thinkerModel?: string | null;
   writeDestination?: string;
   archiveDestination?: string;
   imagesDestination?: string;
@@ -126,8 +140,13 @@ export function defaultConfig(): SolarisConfig {
   return {
     exaKey: null,
     openrouterKey: null,
+    deepseekKey: null,
     consents: { web: false },
     defaultModel: null,
+    workerProvider: null,
+    workerModel: null,
+    thinkerProvider: null,
+    thinkerModel: null,
     writeDestination: "inbox",
     archiveDestination: "archive",
     imagesDestination: "images",
@@ -171,8 +190,19 @@ function merge(base: SolarisConfig, patch: unknown): SolarisConfig {
     const c = p.consents as Record<string, unknown>;
     if (typeof c.web === "boolean") out.consents.web = c.web;
   }
+  if (typeof p.deepseekKey === "string" || p.deepseekKey === null)
+    out.deepseekKey = p.deepseekKey;
   if (typeof p.defaultModel === "string" || p.defaultModel === null)
     out.defaultModel = p.defaultModel;
+  // Slot fields merge individually: setting one never clears another.
+  for (const k of ["workerProvider", "thinkerProvider"] as const) {
+    const v = p[k];
+    if (v === "openrouter" || v === "deepseek" || v === null) out[k] = v;
+  }
+  for (const k of ["workerModel", "thinkerModel"] as const) {
+    const v = p[k];
+    if (typeof v === "string" || v === null) out[k] = v ? v : null;
+  }
   if (typeof p.writeDestination === "string" && p.writeDestination)
     out.writeDestination = p.writeDestination;
   if (typeof p.archiveDestination === "string" && p.archiveDestination)
@@ -232,9 +262,7 @@ function sanitizeVault(key: string, value: unknown): VaultConfig | null {
     excludes: sanitizeExcludes(v.excludes),
     excludesInitialized: v.excludesInitialized === true || hasSavedExcludes,
     wikis: Array.isArray(v.wikis)
-      ? v.wikis
-          .map(sanitizeWiki)
-          .filter((w): w is WikiConfig => w !== null)
+      ? v.wikis.map(sanitizeWiki).filter((w): w is WikiConfig => w !== null)
       : [],
   };
 }
@@ -249,7 +277,12 @@ function sanitizeExcludes(value: unknown): string[] {
       .replace(/\\/g, "/")
       .replace(/^\/+|\/+$/g, "")
       .trim();
-    if (!clean || clean === "." || clean.includes("..") || seen.has(clean.toLowerCase()))
+    if (
+      !clean ||
+      clean === "." ||
+      clean.includes("..") ||
+      seen.has(clean.toLowerCase())
+    )
       continue;
     seen.add(clean.toLowerCase());
     out.push(clean);
@@ -263,7 +296,9 @@ function sanitizeWiki(value: unknown): WikiConfig | null {
   if (typeof w.id !== "string" || !w.id) return null;
   if (typeof w.path !== "string" || !w.path) return null;
   const confidence =
-    w.confidence === "high" || w.confidence === "medium" || w.confidence === "low"
+    w.confidence === "high" ||
+    w.confidence === "medium" ||
+    w.confidence === "low"
       ? w.confidence
       : "low";
   return {

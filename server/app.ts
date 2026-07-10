@@ -18,7 +18,13 @@
 
 import express from "express";
 import type { Server } from "node:http";
-import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { scanVault } from "../scanner/scan.js";
 import {
@@ -89,6 +95,7 @@ import {
   logReaderOpen,
 } from "./integrations/reader-history.js";
 import { installAddons, type InstallableTool } from "./integrations/install.js";
+import { validateDeepseekKey } from "./integrations/llm.js";
 import {
   chatCompletion,
   DEFAULT_MODEL,
@@ -199,6 +206,8 @@ export interface IntegrationsOptions {
   exa?: ExaAdapterOptions;
   /** Inject a fake fetch for the OpenRouter adapter (tests). */
   openrouter?: OpenRouterOptions;
+  /** Inject a fake fetch/endpoint for the DeepSeek key test (tests). */
+  deepseek?: OpenRouterOptions;
   /** Inject a fake stdio child for the warm qmd client (tests). */
   qmdMcp?: Partial<QmdMcpDeps>;
   /** Electron-only native vault picker. Browser/CLI mode leaves this undefined. */
@@ -238,7 +247,12 @@ export function createApp(
 
   const defaultAdminExcludes = (cfg: SolarisConfig) =>
     [cfg.archiveDestination, cfg.imagesDestination]
-      .map((p) => p.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "").trim())
+      .map((p) =>
+        p
+          .replace(/\\/g, "/")
+          .replace(/^\/+|\/+$/g, "")
+          .trim(),
+      )
       .filter((p) => p && !p.includes(".."));
 
   const uniqueExcludes = (excludes: string[]) => {
@@ -256,7 +270,8 @@ export function createApp(
   const effectiveExcludes = (vault: string, cfg = loadConfig(configPath)) => {
     const saved = cfg.vaults[vault];
     if (saved?.excludesInitialized) return saved.excludes;
-    const scanned = graph.meta.vaultPath === vault ? graph.meta.excludes ?? [] : [];
+    const scanned =
+      graph.meta.vaultPath === vault ? (graph.meta.excludes ?? []) : [];
     return uniqueExcludes([
       ...(saved?.excludes ?? scanned),
       ...defaultAdminExcludes(cfg),
@@ -268,7 +283,8 @@ export function createApp(
     if (!("fingerprint" in graph.meta)) return;
     const cfg = loadConfig(configPath);
     const expected = effectiveExcludes(graph.meta.vaultPath, cfg);
-    if (JSON.stringify(graph.meta.excludes ?? []) === JSON.stringify(expected)) return;
+    if (JSON.stringify(graph.meta.excludes ?? []) === JSON.stringify(expected))
+      return;
     graph = scanVault({
       vault: graph.meta.vaultPath,
       out: graphPath,
@@ -297,9 +313,16 @@ export function createApp(
           markitdown: toolCache.current.markitdown,
           exa: { configured: !!cfg.exaKey },
           openrouter: { configured: !!cfg.openrouterKey },
+          deepseek: { configured: !!cfg.deepseekKey },
         },
         consents: cfg.consents,
         defaultModel: cfg.defaultModel,
+        llm: {
+          workerProvider: cfg.workerProvider,
+          workerModel: cfg.workerModel,
+          thinkerProvider: cfg.thinkerProvider,
+          thinkerModel: cfg.thinkerModel,
+        },
         writeDestination: cfg.writeDestination,
         archiveDestination: cfg.archiveDestination,
         imagesDestination: cfg.imagesDestination,
@@ -360,7 +383,9 @@ export function createApp(
     try {
       const vaultPath = graph.meta.vaultPath;
       if (!vaultPath || !existsSync(vaultPath)) {
-        res.status(503).json({ error: "vault root is missing or not reachable" });
+        res
+          .status(503)
+          .json({ error: "vault root is missing or not reachable" });
         return;
       }
       const cfg = loadConfig(configPath);
@@ -429,7 +454,10 @@ export function createApp(
     const title = typeof c.title === "string" ? c.title.trim() : "";
     const markdown = typeof c.markdown === "string" ? c.markdown.trim() : "";
     if (!source || !title || !markdown)
-      throw new WriteError(400, "converted source, title and markdown required");
+      throw new WriteError(
+        400,
+        "converted source, title and markdown required",
+      );
     return {
       source,
       sourceLabel:
@@ -449,13 +477,16 @@ export function createApp(
     res: express.Response,
   ): Promise<ConvertedDocument | null> {
     const trimmed = source.trim();
-    const bin = await requireMarkitdown(toolCache, () => detectAll(detectDeps), res);
-    if (!bin) return null;
-    return convertDocument(
-      integrations?.detectDeps?.run ?? realRunner,
-      bin,
-      { source: trimmed, title },
+    const bin = await requireMarkitdown(
+      toolCache,
+      () => detectAll(detectDeps),
+      res,
     );
+    if (!bin) return null;
+    return convertDocument(integrations?.detectDeps?.run ?? realRunner, bin, {
+      source: trimmed,
+      title,
+    });
   }
 
   app.post("/api/ingest/preview", guarded, express.json(), async (req, res) => {
@@ -487,15 +518,19 @@ export function createApp(
           res.status(400).json({ error: "file body required" });
           return;
         }
-        const bin = await requireMarkitdown(toolCache, () => detectAll(detectDeps), res);
+        const bin = await requireMarkitdown(
+          toolCache,
+          () => detectAll(detectDeps),
+          res,
+        );
         if (!bin) return;
-        const name = typeof req.query.name === "string" ? req.query.name : "upload";
+        const name =
+          typeof req.query.name === "string" ? req.query.name : "upload";
         res.json(
-          await convertBytes(
-            integrations?.detectDeps?.run ?? realRunner,
-            bin,
-            { name, bytes: req.body },
-          ),
+          await convertBytes(integrations?.detectDeps?.run ?? realRunner, bin, {
+            name,
+            bytes: req.body,
+          }),
         );
       } catch (e) {
         writeFail(res, e, "ingest upload preview");
@@ -510,7 +545,8 @@ export function createApp(
     async (req, res) => {
       try {
         const converted = convertedFromBody(req.body);
-        if (!converted) throw new WriteError(400, "converted document required");
+        if (!converted)
+          throw new WriteError(400, "converted document required");
         const cfg = loadConfig(configPath);
         const r = await ingestText(writeDeps(), {
           source: converted.sourceLabel,
@@ -537,10 +573,14 @@ export function createApp(
         return;
       }
       const cfg = loadConfig(configPath);
-      const destination = resolveIngestDestination(vaultRoot, ingestTargetConfig(cfg), {
-        wikiId: b.wikiId,
-        captureOnly: b.captureOnly,
-      });
+      const destination = resolveIngestDestination(
+        vaultRoot,
+        ingestTargetConfig(cfg),
+        {
+          wikiId: b.wikiId,
+          captureOnly: b.captureOnly,
+        },
+      );
       const bin = await requireMarkitdown(
         toolCache,
         () => detectAll(detectDeps),
@@ -585,11 +625,15 @@ export function createApp(
         const name =
           typeof req.query.name === "string" ? req.query.name : "upload";
         const cfg = loadConfig(configPath);
-        const destination = resolveIngestDestination(vaultRoot, ingestTargetConfig(cfg), {
-          wikiId: req.query.wikiId,
-          captureOnly:
-            req.query.captureOnly === "1" || req.query.captureOnly === "true",
-        });
+        const destination = resolveIngestDestination(
+          vaultRoot,
+          ingestTargetConfig(cfg),
+          {
+            wikiId: req.query.wikiId,
+            captureOnly:
+              req.query.captureOnly === "1" || req.query.captureOnly === "true",
+          },
+        );
         const r = await ingestBytes(
           integrations?.detectDeps?.run ?? realRunner,
           bin,
@@ -903,7 +947,11 @@ export function createApp(
       // history; note-scoped ones (the reader's find-in-note) do not.
       const historyId =
         !note && r.status === 200 && Array.isArray(results) && results.length
-          ? saveEntry(dataDir, { mode: "semantic", query: displayQuery || q, results }).id
+          ? saveEntry(dataDir, {
+              mode: "semantic",
+              query: displayQuery || q,
+              results,
+            }).id
           : undefined;
       res.status(r.status).json({ ...r.body, historyId });
     } catch (e) {
@@ -927,7 +975,11 @@ export function createApp(
           res,
           "Web mode needs your one-time consent first (activate Web mode to review it).",
         ) ||
-        !requireExaKey(cfg, res, "Add your Exa API key in Tools → Integrations.")
+        !requireExaKey(
+          cfg,
+          res,
+          "Add your Exa API key in Tools → Integrations.",
+        )
       ) {
         return;
       }
@@ -989,7 +1041,11 @@ export function createApp(
           res,
           "Web mode needs your one-time consent first (activate Web mode to review it).",
         ) ||
-        !requireExaKey(cfg, res, "Add your Exa API key in Tools → Integrations.")
+        !requireExaKey(
+          cfg,
+          res,
+          "Add your Exa API key in Tools → Integrations.",
+        )
       ) {
         return;
       }
@@ -1104,7 +1160,8 @@ export function createApp(
 
   type GitFile = { path: string; status: string };
   const gitChangeCounts = (files: GitFile[]) => ({
-    created: files.filter((f) => f.status === "??" || f.status.includes("A")).length,
+    created: files.filter((f) => f.status === "??" || f.status.includes("A"))
+      .length,
     modified: files.filter((f) => /[MR]/.test(f.status)).length,
     deleted: files.filter((f) => f.status.includes("D")).length,
   });
@@ -1135,18 +1192,31 @@ export function createApp(
           },
           {
             role: "user",
-            content: JSON.stringify({ counts: gitChangeCounts(files), files: files.slice(0, 50) }),
+            content: JSON.stringify({
+              counts: gitChangeCounts(files),
+              files: files.slice(0, 50),
+            }),
           },
         ],
         integrations?.openrouter,
       );
-      return text.split("\n")[0].replace(/^['\"`]+|['\"`]+$/g, "").trim().slice(0, 120) || fallback;
+      return (
+        text
+          .split("\n")[0]
+          .replace(/^['\"`]+|['\"`]+$/g, "")
+          .trim()
+          .slice(0, 120) || fallback
+      );
     } catch {
       return fallback;
     }
   }
 
-  type GitNoteContext = { available: true; repoRoot: string; repoRelativePath: string };
+  type GitNoteContext = {
+    available: true;
+    repoRoot: string;
+    repoRelativePath: string;
+  };
   async function noteVersionState(ctx: GitNoteContext) {
     const [versions, status] = await Promise.all([
       gitFileHistory(realRunner, ctx.repoRoot, ctx.repoRelativePath),
@@ -1176,7 +1246,9 @@ export function createApp(
   app.get("/api/wiki-contracts", (req, res) => {
     try {
       const cfg = ingestTargetConfig(loadConfig(configPath));
-      const wiki = resolveWikiTarget(vaultRoot, cfg, { wikiId: req.query.wikiId });
+      const wiki = resolveWikiTarget(vaultRoot, cfg, {
+        wikiId: req.query.wikiId,
+      });
       res.json({
         wiki: { id: wiki.id, label: wiki.label, path: wiki.path },
         contracts: readWikiContracts(vaultRoot, wiki),
@@ -1224,7 +1296,8 @@ export function createApp(
                 title,
                 content: converted.markdown,
               };
-        if (!op) throw new WriteError(400, "selected wiki has no raw destination");
+        if (!op)
+          throw new WriteError(400, "selected wiki has no raw destination");
         const ids = applyWikiIngestOperations(
           writeDeps(),
           vaultRoot,
@@ -1240,7 +1313,9 @@ export function createApp(
     },
   );
 
-  async function markitdownBinOrFail(res: express.Response): Promise<string | null> {
+  async function markitdownBinOrFail(
+    res: express.Response,
+  ): Promise<string | null> {
     return requireMarkitdown(toolCache, () => detectAll(detectDeps), res);
   }
 
@@ -1297,7 +1372,9 @@ export function createApp(
             const bin = await markitdownBinOrFail(res);
             if (!bin) return null;
             if (typeof b.source !== "string" || !b.source.trim()) {
-              res.status(400).json({ error: "source (file path or URL) required" });
+              res
+                .status(400)
+                .json({ error: "source (file path or URL) required" });
               return null;
             }
             return convertDocument(
@@ -1339,7 +1416,8 @@ export function createApp(
         }
         const bin = await markitdownBinOrFail(res);
         if (!bin) return;
-        const name = typeof req.query.name === "string" ? req.query.name : "upload";
+        const name =
+          typeof req.query.name === "string" ? req.query.name : "upload";
         const converted = await convertBytes(
           integrations?.detectDeps?.run ?? realRunner,
           bin,
@@ -1426,24 +1504,29 @@ export function createApp(
     }
   });
 
-  app.post("/api/archive", guarded, express.json({ limit: "1mb" }), (req, res) => {
-    try {
-      const { id } = (req.body ?? {}) as Record<string, unknown>;
-      if (typeof id !== "string") {
-        res.status(400).json({ error: "id required" });
-        return;
+  app.post(
+    "/api/archive",
+    guarded,
+    express.json({ limit: "1mb" }),
+    (req, res) => {
+      try {
+        const { id } = (req.body ?? {}) as Record<string, unknown>;
+        if (typeof id !== "string") {
+          res.status(400).json({ error: "id required" });
+          return;
+        }
+        const cfg = loadConfig(configPath);
+        const r = guardedMove(writeDeps(), {
+          id,
+          destination: cfg.archiveDestination,
+          actor: "user",
+        });
+        res.json({ ok: true, id: r.id });
+      } catch (e) {
+        writeFail(res, e, "archive");
       }
-      const cfg = loadConfig(configPath);
-      const r = guardedMove(writeDeps(), {
-        id,
-        destination: cfg.archiveDestination,
-        actor: "user",
-      });
-      res.json({ ok: true, id: r.id });
-    } catch (e) {
-      writeFail(res, e, "archive");
-    }
-  });
+    },
+  );
 
   // GET /api/gaps: topology-derived gap suggestions (U5) for Web-mode
   // queries (R10) and agent context (R15). Computed per request from the
@@ -1533,6 +1616,26 @@ export function createApp(
       const status = await validateKey(
         cfg.openrouterKey,
         integrations?.openrouter,
+      );
+      res.json({ configured: true, ...status });
+    } catch {
+      res.json({ configured: true, ok: false, unreachable: true });
+    }
+  });
+
+  // GET /api/integrations/test/deepseek: validate the stored DeepSeek key for
+  // FREE via the models-list endpoint (no completion charged). Mirrors the
+  // OpenRouter test route.
+  app.get("/api/integrations/test/deepseek", async (_req, res) => {
+    const cfg = loadConfig(configPath);
+    if (!cfg.deepseekKey) {
+      res.json({ configured: false });
+      return;
+    }
+    try {
+      const status = await validateDeepseekKey(
+        cfg.deepseekKey,
+        integrations?.deepseek,
       );
       res.json({ configured: true, ...status });
     } catch {
@@ -1850,11 +1953,18 @@ export function createApp(
         }
         const before = await noteVersionState(ctx);
         if (before.versioned) {
-          res.json({ ok: true, checkpointed: false, output: "Already checkpointed.", ...before });
+          res.json({
+            ok: true,
+            checkpointed: false,
+            output: "Already checkpointed.",
+            ...before,
+          });
           return;
         }
         if (!before.dirty) {
-          res.status(400).json({ ok: false, error: "Nothing to checkpoint.", ...before });
+          res
+            .status(400)
+            .json({ ok: false, error: "Nothing to checkpoint.", ...before });
           return;
         }
         const result = await gitStageAndCommit(
@@ -1899,10 +2009,16 @@ export function createApp(
       try {
         const ctx = await gitContextForVault();
         if (!ctx.available) {
-          res.status(404).json({ ok: false, error: "Git repository unavailable." });
+          res
+            .status(404)
+            .json({ ok: false, error: "Git repository unavailable." });
           return;
         }
-        const status = await gitStatus(realRunner, ctx.repoRoot, ctx.repoRelativeScope);
+        const status = await gitStatus(
+          realRunner,
+          ctx.repoRoot,
+          ctx.repoRelativeScope,
+        );
         const message =
           String(req.body?.message ?? "").trim() ||
           (await generatedCommitMessage(status.files));
@@ -1927,7 +2043,9 @@ export function createApp(
       try {
         const ctx = await gitContextForVault();
         if (!ctx.available) {
-          res.status(404).json({ ok: false, error: "Git repository unavailable." });
+          res
+            .status(404)
+            .json({ ok: false, error: "Git repository unavailable." });
           return;
         }
         const result = await gitSync(realRunner, ctx.repoRoot);
