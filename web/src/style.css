@@ -1600,6 +1600,46 @@ body > :not(#graph) {
 }
 #reader-editor .cm-frontmatter-line { opacity: 0.55; }
 
+/* Save-state indicator (R9) — subtle text chip in the reader header,
+   distinct from the git working-tree indicator. */
+#reader-save-state {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  padding: 0 6px;
+  align-self: center;
+}
+#reader-save-state.hidden { display: none; }
+#reader-save-state.save-clean { opacity: 0.7; }
+#reader-save-state.save-dirty { color: var(--muted); }
+#reader-save-state.save-saving { color: var(--accent); }
+#reader-save-state.save-error,
+#reader-save-state.save-conflict { color: #e5534b; }
+
+/* Non-blocking reader banner (R8 conflict / KTD4b mirror restore):
+   sits between the header and the scroll area; the editor stays live. */
+#reader-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  background: color-mix(in srgb, #e5534b 12%, var(--panel));
+  border-bottom: 1px solid var(--border);
+  color: var(--fg);
+}
+#reader-banner.hidden { display: none; }
+#reader-banner button {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 10px;
+}
+#reader-banner button:hover { border-color: var(--accent); }
+
 .muted { color: var(--muted); }
 
 .tip {

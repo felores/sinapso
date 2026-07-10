@@ -45,6 +45,13 @@ export function resetApiToken() {
   inflightToken = null;
 }
 
+/** Synchronous view of the memoized session token — for `beforeunload`
+ * keepalive sends where awaiting is not an option. Null until the first
+ * token-bearing call of the session. */
+export function peekApiToken(): string | null {
+  return memoizedToken;
+}
+
 export async function api<T = unknown>(
   path: string,
   opts: ApiOptions = {},

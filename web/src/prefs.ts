@@ -77,6 +77,7 @@ const KEY = {
   linkOpacity: `${PREFIX}link-opacity`,
   minWeight: `${PREFIX}min-weight`,
   intensity: `${PREFIX}intensity`,
+  editorMirror: `${PREFIX}editor-mirror`,
 } as const;
 
 const DEFAULT_SIZE_WEIGHTS: SizeWeights = {
@@ -89,9 +90,23 @@ const DEFAULT_SIZE_WEIGHTS: SizeWeights = {
 const onFlag = (v: string | null) => v === "1";
 const notOffFlag = (v: string | null) => v !== "0";
 
+/** Unload-safety dirty mirror (plan 018 KTD4b): the last dirty note's
+ * content, vault-scoped so a same-id note in another vault is never
+ * offered a foreign restore. */
+export type EditorMirror = {
+  vault: string;
+  noteId: string;
+  content: string;
+  at: number;
+};
+
 export interface Prefs {
   getTheme(): string;
   setTheme(v: string): void;
+
+  getEditorMirror(): EditorMirror | null;
+  setEditorMirror(v: EditorMirror): void;
+  clearEditorMirror(): void;
 
   getGroup(): GroupMode;
   setGroup(v: GroupMode): void;
@@ -226,6 +241,27 @@ export function createPrefs(storage: PrefsStorage = defaultStorage()): Prefs {
     },
     setTheme(v) {
       set(KEY.theme, v);
+    },
+
+    getEditorMirror() {
+      const raw = get(KEY.editorMirror);
+      if (raw === null) return null;
+      try {
+        const v = JSON.parse(raw) as EditorMirror;
+        return typeof v?.vault === "string" &&
+          typeof v?.noteId === "string" &&
+          typeof v?.content === "string"
+          ? v
+          : null;
+      } catch {
+        return null;
+      }
+    },
+    setEditorMirror(v) {
+      set(KEY.editorMirror, JSON.stringify(v));
+    },
+    clearEditorMirror() {
+      del(KEY.editorMirror);
     },
 
     getGroup() {

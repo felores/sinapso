@@ -1513,12 +1513,20 @@ export function createApp(
   // PUT /api/notes: full-content edit of an existing note.
   app.put("/api/notes", guarded, express.json({ limit: "5mb" }), (req, res) => {
     try {
-      const { id, content } = (req.body ?? {}) as Record<string, unknown>;
+      const { id, content, baseHash } = (req.body ?? {}) as Record<
+        string,
+        unknown
+      >;
       if (typeof id !== "string" || typeof content !== "string") {
         res.status(400).json({ error: "id and content required" });
         return;
       }
-      const r = guardedEdit(writeDeps(), { id, content, actor: "user" });
+      const r = guardedEdit(writeDeps(), {
+        id,
+        content,
+        actor: "user",
+        baseHash: typeof baseHash === "string" ? baseHash : undefined,
+      });
       res.json({ ok: true, id: r.id });
     } catch (e) {
       writeFail(res, e, "edit");
@@ -1656,7 +1664,9 @@ export function createApp(
       return;
     }
     const strings = (v: unknown): string[] =>
-      Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+      Array.isArray(v)
+        ? v.filter((x): x is string => typeof x === "string")
+        : [];
     const r = delegate.start({
       sessionId: String(b.sessionId ?? ""),
       task: String(b.task ?? ""),

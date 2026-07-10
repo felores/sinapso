@@ -37,6 +37,7 @@ import * as THREE from "three";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import * as i18n from "./i18n";
 import { createNoteEditor, type NoteEditor } from "./editor";
+import { createAutosave, type Autosave, type AutosaveState } from "./autosave";
 import { startVoice, type VoiceSession } from "./voice";
 import {
   THEMES,
@@ -50,7 +51,7 @@ import { spectrumComplement, spectrumHslToRgb } from "./spectrum";
 import type { GNode, GLink } from "./types";
 import { filterFields, compileMatcher } from "./filters";
 import { computeSemanticClusters as computeSemanticClustersPure } from "./clusters";
-import { api, apiRaw, ApiError, getApiToken } from "./api";
+import { api, apiRaw, ApiError, getApiToken, peekApiToken } from "./api";
 import { pickerState } from "./model-picker";
 import { createPrefs } from "./prefs";
 import {
@@ -1592,9 +1593,167 @@ async function boot() {
   // on note switch and reader close; serialization only ever reads from it,
   // so footer widgets appended to #reader-body can never leak into a save.
   let noteEditor: NoteEditor | null = null;
+  let noteAutosave: Autosave | null = null;
+  let editorNoteId: string | null = null;
+  // Hex hash of the current autosave base, kept warm so the beforeunload
+  // keepalive PUT can carry the staleness guard without an async hash.
+  let editorBaseHashHex: string | null = null;
+
+  async function sha256Hex(text: string): Promise<string> {
+    const buf = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(text),
+    );
+    return [...new Uint8Array(buf)]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  function activeVaultPath(): string {
+    return data.meta.vaultPath ?? "";
+  }
+
+  /** PUT through the guarded write path. `base` = the content whose hash the
+   * server must still see on disk (KTD5 CAS); null = forced overwrite. */
+  async function saveNote(
+    noteId: string,
+    content: string,
+    base: string | null,
+  ): Promise<"saved" | "conflict"> {
+    try {
+      const json: Record<string, string> = { id: noteId, content };
+      if (base !== null) json.baseHash = await sha256Hex(base);
+      await api("/api/notes", { method: "PUT", json });
+      void sha256Hex(content).then((h) => (editorBaseHashHex = h));
+      const m = prefs.getEditorMirror();
+      if (m && m.noteId === noteId && m.vault === activeVaultPath())
+        prefs.clearEditorMirror();
+      return "saved";
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) return "conflict";
+      throw e;
+    }
+  }
+
+  function renderSaveState(state: AutosaveState) {
+    const el = $("#reader-save-state");
+    el.classList.remove("hidden");
+    el.className = `save-${state}`;
+    if (state === "clean") {
+      el.textContent = i18n.t("editor.saveState.saved");
+      el.title = i18n.t("editor.saveState.saved");
+    } else if (state === "conflict") {
+      el.textContent = "";
+      showConflictBanner();
+    } else {
+      el.textContent = i18n.t(`editor.saveState.${state}`);
+      el.title = el.textContent;
+    }
+  }
+
+  function hideReaderBanner() {
+    $("#reader-banner").classList.add("hidden");
+  }
+
+  function readerBanner(
+    text: string,
+    primary: { label: string; run: () => void },
+    secondary: { label: string; run: () => void },
+  ) {
+    $("#reader-banner-text").textContent = text;
+    const p = $("#reader-banner-primary") as HTMLButtonElement;
+    const s = $("#reader-banner-secondary") as HTMLButtonElement;
+    p.textContent = primary.label;
+    s.textContent = secondary.label;
+    p.onclick = () => {
+      hideReaderBanner();
+      primary.run();
+    };
+    s.onclick = () => {
+      hideReaderBanner();
+      secondary.run();
+    };
+    $("#reader-banner").classList.remove("hidden");
+  }
+
+  // R8: non-blocking conflict banner — the editor stays live underneath.
+  function showConflictBanner() {
+    readerBanner(
+      i18n.t("editor.conflict.message"),
+      {
+        label: i18n.t("editor.conflict.reload"),
+        run: () => void reloadNoteFromDisk(),
+      },
+      {
+        label: i18n.t("editor.conflict.overwrite"),
+        run: () => void noteAutosave?.overwrite(),
+      },
+    );
+  }
+
+  async function reloadNoteFromDisk() {
+    if (!editorNoteId || !noteEditor || !noteAutosave) return;
+    try {
+      const { markdown } = await api<{ markdown: string }>(
+        `/api/note?id=${encodeURIComponent(editorNoteId)}&nolog=1`,
+      );
+      noteEditor.setContent(markdown);
+      noteAutosave.reset(markdown);
+      editorBaseHashHex = null;
+      void sha256Hex(markdown).then((h) => (editorBaseHashHex = h));
+    } catch {
+      /* note gone or unreachable; editor keeps local content, stays dirty */
+    }
+  }
+
+  /** Flush-then-teardown for note switch / reader close (KTD4/KTD4b): if a
+   * save is mid-flight the tail content goes to the vault-scoped mirror; a
+   * conflict left unresolved also lands in the mirror, never on disk. */
   function destroyNoteEditor() {
+    if (noteEditor && noteAutosave && editorNoteId) {
+      const content = noteEditor.getContent();
+      const state = noteAutosave.state();
+      if (content !== noteAutosave.base()) {
+        const noteId = editorNoteId;
+        if (state === "saving" || state === "conflict") {
+          prefs.setEditorMirror({
+            vault: activeVaultPath(),
+            noteId,
+            content,
+            at: Date.now(),
+          });
+        } else {
+          const base = noteAutosave.base();
+          void saveNote(noteId, content, base).then(
+            (r) => {
+              if (r === "conflict")
+                prefs.setEditorMirror({
+                  vault: activeVaultPath(),
+                  noteId,
+                  content,
+                  at: Date.now(),
+                });
+            },
+            () =>
+              prefs.setEditorMirror({
+                vault: activeVaultPath(),
+                noteId,
+                content,
+                at: Date.now(),
+              }),
+          );
+        }
+      }
+    }
+    noteAutosave?.dispose();
+    noteAutosave = null;
     noteEditor?.destroy();
     noteEditor = null;
+    editorNoteId = null;
+    hideReaderBanner();
+    const stateEl = $("#reader-save-state");
+    stateEl.className = "hidden";
+    stateEl.textContent = "";
   }
 
   function navigateWikiTarget(target: string) {
@@ -1762,7 +1921,45 @@ async function boot() {
       noteEditor = createNoteEditor(editorHost, {
         content: markdown,
         onWikiLinkClick: navigateWikiTarget,
+        onChange: () => noteAutosave?.notifyChange(),
       });
+      editorNoteId = n.id;
+      noteAutosave = createAutosave({
+        baseContent: markdown,
+        getContent: () => noteEditor?.getContent() ?? markdown,
+        save: (content, base) => saveNote(n.id, content, base),
+        onState: renderSaveState,
+      });
+      editorBaseHashHex = null;
+      void sha256Hex(markdown).then((h) => (editorBaseHashHex = h));
+      // KTD4b: offer a vault-scoped crash-recovery mirror for this note.
+      const mirror = prefs.getEditorMirror();
+      if (
+        mirror &&
+        mirror.noteId === n.id &&
+        mirror.vault === activeVaultPath() &&
+        mirror.content !== markdown
+      ) {
+        readerBanner(
+          i18n.t("editor.mirror.message"),
+          {
+            label: i18n.t("editor.mirror.restore"),
+            run: () => {
+              noteEditor?.setContent(mirror.content);
+              prefs.clearEditorMirror();
+              noteAutosave?.notifyChange();
+            },
+          },
+          {
+            label: i18n.t("editor.mirror.discard"),
+            run: () => prefs.clearEditorMirror(),
+          },
+        );
+      } else if (mirror && mirror.vault !== activeVaultPath()) {
+        // Foreign-vault mirror: never offer it here; drop it so it cannot
+        // shadow a same-id note in this vault (security-lens P1).
+        if (mirror.noteId === n.id) prefs.clearEditorMirror();
+      }
       const wikiPreview: IngestPreview = {
         source: n.id,
         sourceLabel: n.id,
@@ -2214,6 +2411,46 @@ async function boot() {
   });
 
   $("#reader-close").addEventListener("click", clearSelection);
+
+  // KTD4: flush pending edits when focus leaves the app; KTD4b: on unload,
+  // mirror the dirty buffer locally (the real recovery net) and attempt a
+  // keepalive PUT with the cached staleness hash (64KB body cap applies).
+  window.addEventListener("blur", () => void noteAutosave?.flush());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") void noteAutosave?.flush();
+  });
+  window.addEventListener("beforeunload", () => {
+    if (!noteEditor || !noteAutosave || !editorNoteId) return;
+    const content = noteEditor.getContent();
+    if (content === noteAutosave.base()) return;
+    prefs.setEditorMirror({
+      vault: activeVaultPath(),
+      noteId: editorNoteId,
+      content,
+      at: Date.now(),
+    });
+    if (noteAutosave.state() === "conflict") return; // never clobber on exit
+    const token = peekApiToken();
+    if (token && editorBaseHashHex && content.length < 60_000) {
+      try {
+        void fetch("/api/notes", {
+          method: "PUT",
+          keepalive: true,
+          headers: {
+            "content-type": "application/json",
+            "x-solaris-token": token,
+          },
+          body: JSON.stringify({
+            id: editorNoteId,
+            content,
+            baseHash: editorBaseHashHex,
+          }),
+        });
+      } catch {
+        /* the mirror covers recovery */
+      }
+    }
+  });
 
   // Click the path in the header to copy it to the clipboard.
   $("#reader-path").addEventListener("click", async () => {

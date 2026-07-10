@@ -2,8 +2,10 @@ import { describe, it, expect, afterAll } from "vitest";
 import request from "supertest";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -17,6 +19,7 @@ import {
   guardedAppendLink,
   guardedCreate,
   guardedMove,
+  noteHash,
   readChangeLog,
   WriteError,
 } from "./write";
@@ -346,5 +349,101 @@ describe("POST /api/gaps/link (F034)", () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.suggestions)).toBe(true);
     expect(readChangeLog(DATA).length).toBe(before); // read-only: no vault write
+  });
+});
+
+describe("PUT /api/notes staleness guard + write hardening (plan 018 U3)", () => {
+  const notePath = () => join(VAULT, "cas-note.md");
+
+  it("saves with a matching baseHash and journals the edit", async () => {
+    writeFileSync(notePath(), "v1\n");
+    const res = await request(app)
+      .put("/api/notes")
+      .set(TOKEN_HEADER, await token())
+      .send({ id: "cas-note.md", content: "v2\n", baseHash: noteHash("v1\n") });
+    expect(res.status).toBe(200);
+    expect(readFileSync(notePath(), "utf-8")).toBe("v2\n");
+    expect(readChangeLog(DATA).at(-1)).toMatchObject({
+      action: "edit",
+      path: "cas-note.md",
+    });
+  });
+
+  it("409s on a stale baseHash and leaves disk + journal untouched", async () => {
+    writeFileSync(notePath(), "disk-changed\n");
+    const before = readChangeLog(DATA).length;
+    const res = await request(app)
+      .put("/api/notes")
+      .set(TOKEN_HEADER, await token())
+      .send({
+        id: "cas-note.md",
+        content: "editor-content\n",
+        baseHash: noteHash("something-older\n"),
+      });
+    expect(res.status).toBe(409);
+    expect(readFileSync(notePath(), "utf-8")).toBe("disk-changed\n");
+    expect(readChangeLog(DATA).length).toBe(before);
+  });
+
+  it("overwrites without a baseHash (conflict-overwrite + legacy callers)", async () => {
+    writeFileSync(notePath(), "disk-changed\n");
+    const res = await request(app)
+      .put("/api/notes")
+      .set(TOKEN_HEADER, await token())
+      .send({ id: "cas-note.md", content: "forced\n" });
+    expect(res.status).toBe(200);
+    expect(readFileSync(notePath(), "utf-8")).toBe("forced\n");
+  });
+
+  it("two sequential saves succeed when the base is promoted (no self-conflict)", async () => {
+    writeFileSync(notePath(), "start\n");
+    const r1 = await request(app)
+      .put("/api/notes")
+      .set(TOKEN_HEADER, await token())
+      .send({ id: "cas-note.md", content: "step1\n", baseHash: noteHash("start\n") });
+    expect(r1.status).toBe(200);
+    const r2 = await request(app)
+      .put("/api/notes")
+      .set(TOKEN_HEADER, await token())
+      .send({ id: "cas-note.md", content: "step2\n", baseHash: noteHash("step1\n") });
+    expect(r2.status).toBe(200);
+    expect(readFileSync(notePath(), "utf-8")).toBe("step2\n");
+  });
+
+  it("skips the write and the journal when content equals disk", async () => {
+    writeFileSync(notePath(), "same\n");
+    const before = readChangeLog(DATA).length;
+    const res = await request(app)
+      .put("/api/notes")
+      .set(TOKEN_HEADER, await token())
+      .send({ id: "cas-note.md", content: "same\n", baseHash: noteHash("same\n") });
+    expect(res.status).toBe(200);
+    expect(readChangeLog(DATA).length).toBe(before); // audit-only journal not flooded
+  });
+
+  it("preserves a symlinked note: writes through to the real target", async () => {
+    writeFileSync(join(VAULT, "real-target.md"), "real v1\n");
+    symlinkSync(join(VAULT, "real-target.md"), join(VAULT, "linked-note.md"));
+    const res = await request(app)
+      .put("/api/notes")
+      .set(TOKEN_HEADER, await token())
+      .send({
+        id: "linked-note.md",
+        content: "via link\n",
+        baseHash: noteHash("real v1\n"),
+      });
+    expect(res.status).toBe(200);
+    expect(lstatSync(join(VAULT, "linked-note.md")).isSymbolicLink()).toBe(true);
+    expect(readFileSync(join(VAULT, "real-target.md"), "utf-8")).toBe("via link\n");
+  });
+
+  it("leaves no temp files behind after a save", async () => {
+    writeFileSync(notePath(), "tmp check\n");
+    await request(app)
+      .put("/api/notes")
+      .set(TOKEN_HEADER, await token())
+      .send({ id: "cas-note.md", content: "tmp checked\n" });
+    const leftovers = readdirSync(VAULT).filter((f) => f.includes("solaris-tmp"));
+    expect(leftovers).toEqual([]);
   });
 });

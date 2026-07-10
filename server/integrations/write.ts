@@ -21,6 +21,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { createHash } from "node:crypto";
 import { confineNoteId, WriteError } from "./paths.js";
 
 // Re-export WriteError from its new canonical home in paths.ts so every
@@ -161,9 +162,48 @@ export function guardedCreate(
   return { id };
 }
 
+/**
+ * The pinned staleness-guard hash contract (plan 018 KTD5): SHA-256 hex over
+ * the note's UTF-8 bytes. The autosave client computes the same digest via
+ * WebCrypto; any drift between the two sides makes every save 409.
+ */
+export function noteHash(content: string): string {
+  return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+/**
+ * Crash-safe replace (KTD5b): write a temp file in the same directory and
+ * rename over the target, so a reader (Obsidian's watcher, git) never sees a
+ * truncated note. Symlink-aware: the rename lands on the note's realpath so a
+ * symlinked note keeps being a symlink (writeFileSync used to follow it; a
+ * plain rename onto the link path would silently replace the link).
+ */
+function atomicWrite(full: string, content: string): void {
+  const target = realpathSync(full);
+  const tmp = join(
+    dirname(target),
+    `.${basename(target)}.solaris-tmp-${process.pid}-${Date.now()}`,
+  );
+  writeFileSync(tmp, content);
+  try {
+    renameSync(tmp, target);
+  } catch (e) {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      /* best-effort cleanup */
+    }
+    throw e;
+  }
+}
+
 export interface EditOptions {
   id: string;
   content: string;
+  /** When set, the edit applies only if the disk content still hashes to
+   * this value (compare-and-swap); mismatch throws 409. Omitted = current
+   * unconditional behavior for legacy callers. */
+  baseHash?: string;
   actor: ChangeLogEntry["actor"];
   mode?: ChangeLogEntry["mode"];
 }
@@ -171,12 +211,18 @@ export interface EditOptions {
 export function guardedEdit(
   deps: WriteDeps,
   opts: EditOptions,
-): { id: string } {
+): { id: string; unchanged?: boolean } {
   requireVault(deps.vaultRoot);
   const full = confine(deps.vaultRoot, opts.id);
   if (!existsSync(full)) throw new WriteError(404, "note not found");
-  writeFileSync(full, opts.content);
   const id = relative(resolve(deps.vaultRoot), full);
+  const current = readFileSync(full, "utf-8");
+  if (opts.baseHash !== undefined && noteHash(current) !== opts.baseHash)
+    throw new WriteError(409, "note changed on disk");
+  // Equal-content saves skip both the write and the journal: the journal is
+  // audit-only, and a no-op write would bump mtime under other clients.
+  if (current === opts.content) return { id, unchanged: true };
+  atomicWrite(full, opts.content);
   appendChangeLog(deps.dataDir, {
     at: new Date().toISOString(),
     actor: opts.actor,
@@ -202,7 +248,10 @@ export function guardedMove(
   const full = confine(deps.vaultRoot, opts.id);
   if (!existsSync(full)) throw new WriteError(404, "note not found");
 
-  let destFull = confine(deps.vaultRoot, join(opts.destination, basename(full)));
+  let destFull = confine(
+    deps.vaultRoot,
+    join(opts.destination, basename(full)),
+  );
   if (destFull !== full && existsSync(destFull)) {
     const stem = destFull.slice(0, -3);
     let n = 2;
