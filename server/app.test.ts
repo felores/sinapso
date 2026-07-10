@@ -753,3 +753,80 @@ describe("server: git note versions", () => {
     }
   });
 });
+
+describe("server: delegation routes trust negatives (U6, release-blocking)", () => {
+  it("rejects delegate start and status without the session token", async () => {
+    const start = await request(app)
+      .post("/api/delegate")
+      .send({ sessionId: "s", task: "t" });
+    expect(start.status).toBe(403);
+    const status = await request(app).get("/api/delegate/status?sessionId=s");
+    expect(status.status).toBe(403);
+  });
+
+  it("refuses to start without any LLM configured", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "solaris-delegate-"));
+    try {
+      const { app: app2 } = createApp(graphPath, undefined, {
+        configPath: join(dir, "config.json"),
+      });
+      const token = (await request(app2).get("/api/session")).body.token;
+      const res = await request(app2)
+        .post("/api/delegate")
+        .set("x-solaris-token", token)
+        .send({ sessionId: "s", task: "t" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("no LLM configured");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("thinker-unconfigured start runs on the worker slot (R5)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "solaris-delegate-worker-"));
+    try {
+      const bodies: string[] = [];
+      const configPath = join(dir, "config.json");
+      updateConfig(
+        {
+          openrouterKey: "or-k",
+          workerProvider: "openrouter",
+          workerModel: "meta/worker-model",
+        },
+        configPath,
+      );
+      const { app: app2 } = createApp(graphPath, undefined, {
+        configPath,
+        openrouter: {
+          fetch: (async (_url: string, init?: RequestInit) => {
+            bodies.push(String(init?.body ?? ""));
+            return new Response(
+              JSON.stringify({
+                choices: [{ message: { content: "# Doc\nbody" } }],
+              }),
+              { status: 200 },
+            );
+          }) as never,
+        },
+      });
+      const token = (await request(app2).get("/api/session")).body.token;
+      const started = await request(app2)
+        .post("/api/delegate")
+        .set("x-solaris-token", token)
+        .send({ sessionId: "s-worker", task: "synthesize" });
+      expect(started.status).toBe(200);
+      expect(started.body.job.documentId).toMatch(/^doc-/);
+      await new Promise((r) => setTimeout(r, 50));
+      const status = await request(app2)
+        .get("/api/delegate/status?sessionId=s-worker")
+        .set("x-solaris-token", token);
+      // The loopback document write hits the real ephemeral base (no live
+      // listener in supertest), so the job may fail at the write step — the
+      // tier resolution evidence is the model in the captured LLM body.
+      expect(["running", "succeeded", "failed"]).toContain(status.body.job.state);
+      expect(bodies[0]).toContain("meta/worker-model");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

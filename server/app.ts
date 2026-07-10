@@ -102,6 +102,10 @@ import {
 } from "./integrations/llm.js";
 import { operationTier } from "./integrations/registry.js";
 import {
+  createDelegateManager,
+  type DelegateManager,
+} from "./integrations/delegate.js";
+import {
   listModels,
   OpenRouterError,
   validateKey,
@@ -212,6 +216,8 @@ export interface IntegrationsOptions {
   openrouter?: OpenRouterOptions;
   /** Inject a fake fetch/endpoint for the DeepSeek key test (tests). */
   deepseek?: OpenRouterOptions;
+  /** Shorten the delegation timeout (tests). */
+  delegateTimeoutMs?: number;
   /** Inject a fake stdio child for the warm qmd client (tests). */
   qmdMcp?: Partial<QmdMcpDeps>;
   /** Electron-only native vault picker. Browser/CLI mode leaves this undefined. */
@@ -241,6 +247,12 @@ export function createApp(
   // Per-session token for mutating/spending routes, fetched by the app page.
   const sessionToken = createSessionToken();
   const guarded = requireToken(sessionToken);
+  // Thinker delegation jobs (U6): session-scoped, one at a time. The voice
+  // relay subscribes in-process for the spoken heads-up (U7).
+  const delegate: DelegateManager = createDelegateManager({
+    llmOpts: integrations?.openrouter,
+    timeoutMs: integrations?.delegateTimeoutMs,
+  });
   app.get("/api/session", (_req, res) => {
     res.json({ token: sessionToken });
   });
@@ -1617,6 +1629,42 @@ export function createApp(
     } catch {
       res.json({ configured: true, ok: false, unreachable: true });
     }
+  });
+
+  // POST /api/delegate: start a thinker delegation job for a voice session
+  // (R11-R14). Token-guarded; one job per session; the result is written
+  // into the session's working document by the job itself.
+  app.post("/api/delegate", guarded, express.json(), (req, res) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const cfg = loadConfig(configPath);
+    const llm = resolveTier("thinker", cfg);
+    if (!llm) {
+      res.status(400).json({ error: "no LLM configured for delegation" });
+      return;
+    }
+    const strings = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+    const r = delegate.start({
+      sessionId: String(b.sessionId ?? ""),
+      task: String(b.task ?? ""),
+      notes: strings(b.notes),
+      researchIds: strings(b.researchIds),
+      documentId: typeof b.documentId === "string" ? b.documentId : undefined,
+      title: typeof b.title === "string" ? b.title : undefined,
+      llm,
+      base: `http://${req.headers.host}`,
+      token: String(req.headers[TOKEN_HEADER] ?? ""),
+    });
+    if ("error" in r) {
+      res.status(r.status).json({ error: r.error });
+      return;
+    }
+    res.json({ job: r.job });
+  });
+
+  // GET /api/delegate/status?sessionId=: poll a session's latest job.
+  app.get("/api/delegate/status", guarded, (req, res) => {
+    res.json({ job: delegate.status(String(req.query.sessionId ?? "")) });
   });
 
   // GET /api/integrations/test/deepseek: validate the stored DeepSeek key for
