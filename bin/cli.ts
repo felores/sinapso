@@ -29,88 +29,114 @@ import { installAddons } from "../server/integrations/install";
 
 // Parse command-line arguments
 const argv = process.argv.slice(2);
-const args = {
-  vault: "",
-  exclude: [] as string[],
-  port: 5175,
-  full: false,
-  open: true,
-  addons: false,
-};
-for (let i = 0; i < argv.length; i++) {
-  const a = argv[i];
-  if (a === "--exclude") args.exclude.push(argv[++i]);
-  else if (a === "--port") args.port = Number(argv[++i]);
-  else if (a === "--full") args.full = true;
-  else if (a === "--no-open") args.open = false;
-  else if (a === "--addons") args.addons = true;
-  else if (!args.vault) args.vault = a;
-}
 
-// Validate required vault argument
-if (!args.vault) {
-  console.error(
-    'usage: solaris "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open] [--addons]',
-  );
-  process.exit(1);
-}
-
-// Addons flavor: install missing tools first (existing installs untouched).
-if (args.addons) {
-  void installAddons({}).then((results) => {
-    for (const r of results)
-      console.log(`addons: ${r.tool} — ${r.status}: ${r.detail}`);
+// Subcommands (R16): `solaris mcp` launches the stdio MCP server;
+// `solaris call <tool> [json]` invokes one registry tool over loopback.
+// Both talk to an ALREADY RUNNING Solaris (SOLARIS_URL / AKASHA_PORT).
+if (argv[0] === "mcp") {
+  void import("../server/mcp");
+} else if (argv[0] === "call") {
+  const base =
+    process.env.SOLARIS_URL ??
+    `http://127.0.0.1:${process.env.AKASHA_PORT ?? "5175"}`;
+  void import("./call").then(async ({ callTool }) => {
+    const r = await callTool(argv[1], argv[2], { base });
+    if (r.output) console.log(r.output);
+    if (r.error) console.error(r.error);
+    process.exit(r.exitCode);
   });
+} else {
+  serve();
 }
 
-// Normalize vault path and verify it exists
-const vault = resolve(args.vault);
-if (!existsSync(vault)) {
-  console.error("vault not found: " + vault);
-  process.exit(1);
-}
-// Create per-vault data directory using hashed vault path as key
-// This allows multiple vaults to maintain separate caches without conflicts
-const dataDir = join(
-  homedir(),
-  ".solaris",
-  createHash("sha1").update(vault).digest("hex").slice(0, 10),
-);
-mkdirSync(dataDir, { recursive: true });
-const graphPath = join(dataDir, "graph.json");
-
-// Scan vault (full or incremental based on --full flag)
-console.log("Solaris — scanning " + vault);
-const g = scanVault({
-  vault,
-  out: graphPath,
-  exclude: args.exclude,
-  full: args.full,
-});
-const s = g.meta.scanStats;
-console.log(
-  `${g.meta.notes} notes, ${g.meta.links} links — ${s.ms}ms (${s.parsed} parsed, ${s.reused} cached)`,
-);
-
-// Create Express server with graph API endpoints
-const webDist = resolve(__dirname, "..", "web", "dist");
-const { app, attachVoice } = createApp(graphPath, webDist);
-
-// Start server on localhost (not exposed publicly)
-  const listener = app.listen(args.port, process.env.AKASHA_HOST ?? "127.0.0.1", () => {
-  const { port } = listener.address() as AddressInfo;
-  const url = `http://localhost:${port}`;
-  console.log(`Solaris: ${url}   (Ctrl+C to stop)`);
-
-  // Open browser if requested (default: true unless --no-open)
-  if (args.open) {
-    const cmd =
-      process.platform === "win32"
-        ? `start "" ${url}`
-        : process.platform === "darwin"
-          ? `open ${url}`
-          : `xdg-open ${url}`;
-    exec(cmd);
+function serve(): void {
+  const args = {
+    vault: "",
+    exclude: [] as string[],
+    port: 5175,
+    full: false,
+    open: true,
+    addons: false,
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--exclude") args.exclude.push(argv[++i]);
+    else if (a === "--port") args.port = Number(argv[++i]);
+    else if (a === "--full") args.full = true;
+    else if (a === "--no-open") args.open = false;
+    else if (a === "--addons") args.addons = true;
+    else if (!args.vault) args.vault = a;
   }
-});
-attachVoice(listener); // voice-mode WebSocket relay (opt-in, key-gated)
+
+  // Validate required vault argument
+  if (!args.vault) {
+    console.error(
+      'usage: solaris "<vault-path>" [--exclude rel/path]... [--port 5175] [--full] [--no-open] [--addons]',
+    );
+    process.exit(1);
+  }
+
+  // Addons flavor: install missing tools first (existing installs untouched).
+  if (args.addons) {
+    void installAddons({}).then((results) => {
+      for (const r of results)
+        console.log(`addons: ${r.tool} — ${r.status}: ${r.detail}`);
+    });
+  }
+
+  // Normalize vault path and verify it exists
+  const vault = resolve(args.vault);
+  if (!existsSync(vault)) {
+    console.error("vault not found: " + vault);
+    process.exit(1);
+  }
+  // Create per-vault data directory using hashed vault path as key
+  // This allows multiple vaults to maintain separate caches without conflicts
+  const dataDir = join(
+    homedir(),
+    ".solaris",
+    createHash("sha1").update(vault).digest("hex").slice(0, 10),
+  );
+  mkdirSync(dataDir, { recursive: true });
+  const graphPath = join(dataDir, "graph.json");
+
+  // Scan vault (full or incremental based on --full flag)
+  console.log("Solaris — scanning " + vault);
+  const g = scanVault({
+    vault,
+    out: graphPath,
+    exclude: args.exclude,
+    full: args.full,
+  });
+  const s = g.meta.scanStats;
+  console.log(
+    `${g.meta.notes} notes, ${g.meta.links} links — ${s.ms}ms (${s.parsed} parsed, ${s.reused} cached)`,
+  );
+
+  // Create Express server with graph API endpoints
+  const webDist = resolve(__dirname, "..", "web", "dist");
+  const { app, attachVoice } = createApp(graphPath, webDist);
+
+  // Start server on localhost (not exposed publicly)
+  const listener = app.listen(
+    args.port,
+    process.env.AKASHA_HOST ?? "127.0.0.1",
+    () => {
+      const { port } = listener.address() as AddressInfo;
+      const url = `http://localhost:${port}`;
+      console.log(`Solaris: ${url}   (Ctrl+C to stop)`);
+
+      // Open browser if requested (default: true unless --no-open)
+      if (args.open) {
+        const cmd =
+          process.platform === "win32"
+            ? `start "" ${url}`
+            : process.platform === "darwin"
+              ? `open ${url}`
+              : `xdg-open ${url}`;
+        exec(cmd);
+      }
+    },
+  );
+  attachVoice(listener); // voice-mode WebSocket relay (opt-in, key-gated)
+}
