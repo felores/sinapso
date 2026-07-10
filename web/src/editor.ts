@@ -22,6 +22,7 @@ import {
   drawSelection,
 } from "@codemirror/view";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { selectionToolbar, type ToolbarExtras } from "./editor-toolbar.js";
 import {
   syntaxTree,
   syntaxHighlighting,
@@ -35,6 +36,8 @@ export interface NoteEditorOptions {
   onChange?: () => void;
   onWikiLinkClick?: (target: string) => void;
   readOnly?: boolean;
+  /** Trailing slot in the selection toolbar (U7 AI input). */
+  toolbarExtras?: ToolbarExtras;
 }
 
 export interface NoteEditor {
@@ -378,6 +381,7 @@ function buildExtensions(opts: NoteEditorOptions): Extension[] {
     syntaxHighlighting(mdHighlight),
     livePreviewPlugin,
     wikiLinkPlugin(opts.onWikiLinkClick),
+    selectionToolbar(opts.toolbarExtras),
     history(),
     drawSelection(),
     EditorView.lineWrapping,
