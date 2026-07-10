@@ -264,3 +264,20 @@ describe("integrations config", () => {
     expect(fromCache.consents).toEqual({ web: false });
   });
 });
+
+describe("voice model selector round-trip (U7)", () => {
+  it("persists voice.model without touching provider, voice, or keys", () => {
+    const p = join(DIR, "voice-model.json");
+    updateConfig(
+      { voice: { provider: "gemini", voice: "Leda", keys: { gemini: "g-k" } } },
+      p,
+    );
+    let cfg = updateConfig({ voice: { model: "gemini-2.5-flash-live" } }, p);
+    expect(cfg.voice.model).toBe("gemini-2.5-flash-live");
+    expect(cfg.voice.provider).toBe("gemini");
+    expect(cfg.voice.voice).toBe("Leda");
+    expect(cfg.voice.keys.gemini).toBe("g-k");
+    cfg = updateConfig({ voice: { model: null } }, p);
+    expect(cfg.voice.model).toBeNull();
+  });
+});

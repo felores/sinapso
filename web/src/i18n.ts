@@ -148,6 +148,7 @@ const EN: Dict = {
   "integ.voice": "Voice Assistant",
   "voice.provider": "Provider",
   "voice.voice": "Voice",
+  "voice.model": "Model",
   "voice.toggle": "Voice assistant",
   "voice.ready": "ready",
   "voice.needsKey": "needs key",
@@ -174,6 +175,8 @@ const EN: Dict = {
   "voice.status.savingDocument": "Saving document to vault…",
   "voice.status.editingNote": "Editing note: {note}",
   "voice.status.searchingWeb": "Searching web for: {query}",
+  "voice.status.delegating": "Delegating to the reasoner: {task}",
+  "voice.status.delegateDone": "Reasoner finished ({state})",
   "voice.status.fetchingUrl": "Fetching URL: {url}",
   // search + modes
   "ph.ingestBrowse": "browse…",
@@ -418,6 +421,7 @@ const ES: Dict = {
   // asistente de voz
   "integ.voice": "Asistente de voz",
   "voice.provider": "Proveedor",
+  "voice.model": "Modelo",
   "voice.voice": "Voz",
   "voice.toggle": "Asistente de voz",
   "voice.ready": "lista",
@@ -446,6 +450,8 @@ const ES: Dict = {
   "voice.status.savingDocument": "Guardando documento en el vault…",
   "voice.status.editingNote": "Editando nota: {note}",
   "voice.status.searchingWeb": "Buscando en la web: {query}",
+  "voice.status.delegating": "Delegando al razonador: {task}",
+  "voice.status.delegateDone": "El razonador terminó ({state})",
   "voice.status.fetchingUrl": "Obteniendo URL: {url}",
   "ph.ingestBrowse": "examinar…",
   "search.ph.none": "Buscar notas…",

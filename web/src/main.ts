@@ -3417,6 +3417,7 @@ async function boot() {
     voice?: {
       provider: string | null;
       voice: string | null;
+      model: string | null;
       keys: { gemini: boolean; openai: boolean; xai: boolean };
     };
   }
@@ -4049,6 +4050,7 @@ async function boot() {
   };
   const voiceProviderSel = $("#voice-provider") as HTMLSelectElement;
   const voiceNameSel = $("#voice-name") as HTMLSelectElement;
+  const voiceModelSel = $("#voice-model") as HTMLSelectElement;
   const voiceKeyInput = $("#voice-key") as HTMLInputElement;
   const voiceToggle = $("#voice-toggle") as HTMLButtonElement;
   let voiceSession: VoiceSession | null = null;
@@ -4069,6 +4071,12 @@ async function boot() {
     }
     voiceNameSel.value =
       v?.voice && spec.voices.includes(v.voice) ? v.voice : spec.voices[0];
+    // Gemini live model selector (KTD5): only Gemini sessions have one.
+    $("#voice-model-row").classList.toggle("hidden", provider !== "gemini");
+    voiceModelSel.value =
+      v?.model && [...voiceModelSel.options].some((o) => o.value === v.model)
+        ? v.model
+        : "";
     const keyed = !!v?.keys[provider as "gemini" | "openai" | "xai"];
     voiceKeyInput.placeholder = i18n.t(
       keyed ? "ph.voiceKeySaved" : "ph.voiceKey",
@@ -4346,6 +4354,15 @@ async function boot() {
       });
       await refreshIntegrations();
       restartLiveVoiceIfKeyed(provider);
+    } catch {
+      await refreshIntegrations();
+    }
+  });
+  voiceModelSel.addEventListener("change", async () => {
+    try {
+      await postConfig({ voice: { model: voiceModelSel.value || null } });
+      await refreshIntegrations();
+      restartLiveVoiceIfKeyed("gemini");
     } catch {
       await refreshIntegrations();
     }

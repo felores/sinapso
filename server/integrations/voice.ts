@@ -29,8 +29,41 @@ import {
 import { effectivePrompts, loadConfig, type SolarisConfig } from "./config";
 import { isLocalHost, isLocalOrigin } from "./security";
 import { createVoiceToolSession, VOICE_TOOLS } from "./voice-tools";
+import { toolsForSurface } from "./registry";
+import type { DelegateManager } from "./delegate";
+import type { FunctionDeclaration } from "@google/genai";
+import { Behavior, FunctionResponseScheduling } from "@google/genai";
 
 const GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview";
+/** Selectable Gemini live models (KTD5). The 3.1 preview stays the default
+ *  until the U7 voice-parity gate passes for 2.5. */
+export const GEMINI_LIVE_MODELS = [
+  GEMINI_LIVE_MODEL,
+  "gemini-2.5-flash-live",
+] as const;
+/** Models with native async function calling (behavior: NON_BLOCKING). */
+const GEMINI_ASYNC_FC_MODELS = new Set(["gemini-2.5-flash-live"]);
+
+export function geminiLiveModel(cfg: SolarisConfig): string {
+  const m = cfg.voice.model;
+  return m && (GEMINI_LIVE_MODELS as readonly string[]).includes(m)
+    ? m
+    : GEMINI_LIVE_MODEL;
+}
+
+/**
+ * Tool declarations for a Gemini live session. The delegate tool is marked
+ * NON_BLOCKING only on async-capable models; the default 3.1 preview gets a
+ * plain declaration so registering the tool can never break session setup.
+ */
+export function geminiToolDeclarations(model: string): FunctionDeclaration[] {
+  if (!GEMINI_ASYNC_FC_MODELS.has(model)) return VOICE_TOOLS;
+  return VOICE_TOOLS.map((t) =>
+    t.name === "delegate_to_thinker"
+      ? { ...t, behavior: Behavior.NON_BLOCKING }
+      : t,
+  );
+}
 const OPENAI_REALTIME_MODEL = "gpt-realtime-2.1";
 const XAI_REALTIME_MODEL = "grok-voice-latest";
 
@@ -109,14 +142,86 @@ function toJsonSchema(value: unknown): unknown {
 }
 
 export function realtimeVoiceTools(): Array<Record<string, unknown>> {
-  return VOICE_TOOLS.map((tool) => ({
-    type: "function",
-    name: tool.name,
-    description: tool.description,
-    parameters: toJsonSchema(
-      tool.parameters ?? { type: "object", properties: {} },
-    ),
-  }));
+  // Per-provider filter on the registry's voice surface (R11): tools marked
+  // geminiLiveOnly (the delegate) never reach OpenAI/xAI realtime sessions.
+  const excluded = new Set(
+    toolsForSurface("voice")
+      .filter((e) => e.geminiLiveOnly)
+      .map((e) => e.name),
+  );
+  return VOICE_TOOLS.filter((tool) => !excluded.has(tool.name ?? "")).map(
+    (tool) => ({
+      type: "function",
+      name: tool.name,
+      description: tool.description,
+      parameters: toJsonSchema(
+        tool.parameters ?? { type: "object", properties: {} },
+      ),
+    }),
+  );
+}
+
+/**
+ * Delegation completion wiring (KTD5): remembers the pending delegate
+ * function-call id and, when the session's job finishes, sends the function
+ * response scheduled to INTERRUPT so the assistant speaks the heads-up. On
+ * models without async function calling no scheduled response is attempted —
+ * the browser still gets the finished document opened, and the assistant
+ * announces it on the next turn (R13). Failures use the spoken-error variant
+ * (R14). Extracted so a faked session can drive it in tests.
+ */
+export interface DelegationRelay {
+  noteCall(fc: { id?: string; name?: string }): void;
+  dispose(): void;
+}
+
+export function wireDelegation(opts: {
+  delegate: DelegateManager | undefined;
+  sessionId: string;
+  asyncCapable: boolean;
+  send: (obj: object) => void;
+  sendToolResponse: (r: {
+    functionResponses: Array<Record<string, unknown>>;
+  }) => void;
+}): DelegationRelay {
+  let pending: { id?: string; name?: string } | null = null;
+  const unsubscribe = opts.delegate?.subscribe(opts.sessionId, (job) => {
+    if (job.state === "succeeded") {
+      // Surface the finished document in the research panel on every model.
+      opts.send({ type: "action", action: "open_research", id: job.documentId });
+    }
+    if (!opts.asyncCapable) {
+      opts.send({
+        type: "status",
+        key: "voice.status.delegateDone",
+        state: job.state,
+      });
+      return;
+    }
+    if (!pending) return;
+    const response =
+      job.state === "succeeded"
+        ? {
+            result: `The reasoner finished "${job.title}" and the document is open in the working panel. Tell the user it is ready and offer to read or summarize it.`,
+            scheduling: FunctionResponseScheduling.INTERRUPT,
+          }
+        : {
+            error: `The delegation failed: ${job.error ?? "unknown error"}. Tell the user briefly and offer to retry or do it live.`,
+            scheduling: FunctionResponseScheduling.INTERRUPT,
+          };
+    opts.sendToolResponse({
+      functionResponses: [{ id: pending.id, name: pending.name, response }],
+    });
+    pending = null;
+  });
+  return {
+    noteCall(fc) {
+      if (fc.name === "delegate_to_thinker") pending = { id: fc.id, name: fc.name };
+    },
+    dispose() {
+      unsubscribe?.();
+    },
+  };
 }
 
 function pcm16Base64ToInt16(data: string): Int16Array {
@@ -230,6 +335,8 @@ export function buildVoiceSystemPrompt(
 interface VoiceRelayOpts {
   sessionToken: string;
   configPath: string;
+  /** Thinker delegation manager (U6); absent in minimal test setups. */
+  delegate?: DelegateManager;
 }
 
 /** This server's own loopback base URL, read at connection time (when the
@@ -293,11 +400,15 @@ async function bridge(
   // Tool dispatch (working-document id, read_wiki_contract gating, the
   // loopback fetch bodies) lives in ./voice-tools and is testable without
   // a live socket. The session owns the per-conversation mutable state.
+  const sessionId = `voice-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
   const toolSession = createVoiceToolSession({
     base,
     fetchFn: globalThis.fetch.bind(globalThis),
     getSessionToken: () => opts.sessionToken,
     send,
+    sessionId,
   });
 
   const cfg = loadConfig(opts.configPath);
@@ -317,7 +428,10 @@ async function bridge(
 
   const provider = configuredProvider;
   if (provider === "gemini") {
-    await bridgeGemini(browser, cfg, systemInstruction, toolSession, send);
+    await bridgeGemini(browser, cfg, systemInstruction, toolSession, send, {
+      sessionId,
+      delegate: opts.delegate,
+    });
   } else {
     bridgeRealtime(browser, cfg, provider, systemInstruction, toolSession, send);
   }
@@ -329,6 +443,7 @@ async function bridgeGemini(
   systemInstruction: string,
   toolSession: ReturnType<typeof createVoiceToolSession>,
   send: (obj: object) => void,
+  delegation: { sessionId: string; delegate?: DelegateManager },
 ): Promise<void> {
   const key = cfg.voice.keys.gemini;
   if (!key) {
@@ -341,13 +456,22 @@ async function bridgeGemini(
   }
 
   const voice = voiceNameForProvider("gemini", cfg.voice.voice);
+  const model = geminiLiveModel(cfg);
   console.log(
-    `[voice] session start: provider=gemini voice=${voice}`,
+    `[voice] session start: provider=gemini voice=${voice} model=${model}`,
   );
   const ai = new GoogleGenAI({ apiKey: key });
 
   // Session is assigned in connect(); onmessage may fire tool calls that need it.
   let session: Awaited<ReturnType<typeof ai.live.connect>> | undefined;
+
+  const delegationRelay = wireDelegation({
+    delegate: delegation.delegate,
+    sessionId: delegation.sessionId,
+    asyncCapable: GEMINI_ASYNC_FC_MODELS.has(model),
+    send,
+    sendToolResponse: (r) => session?.sendToolResponse(r),
+  });
 
   const onServerMessage = async (msg: {
     setupComplete?: unknown;
@@ -376,6 +500,7 @@ async function bridgeGemini(
         console.log(
           `[voice] tool ${fc.name}(${JSON.stringify(fc.args ?? {})})`,
         );
+        delegationRelay.noteCall(fc);
         const response = await toolSession.run(fc.name ?? "", fc.args ?? {});
         functionResponses.push({ id: fc.id, name: fc.name, response });
       }
@@ -385,7 +510,7 @@ async function bridgeGemini(
 
   try {
     session = await ai.live.connect({
-      model: GEMINI_LIVE_MODEL,
+      model,
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
@@ -394,7 +519,7 @@ async function bridgeGemini(
           },
         },
         systemInstruction,
-        tools: [{ functionDeclarations: VOICE_TOOLS }],
+        tools: [{ functionDeclarations: geminiToolDeclarations(model) }],
       },
       callbacks: {
         onopen: () => {
@@ -444,6 +569,7 @@ async function bridgeGemini(
 
   browser.on("close", () => {
     console.log("[voice] session ended (mic off)");
+    delegationRelay.dispose();
     try {
       session?.close();
     } catch {

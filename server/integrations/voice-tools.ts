@@ -34,6 +34,8 @@ export interface VoiceToolContext {
   fetchFn?: typeof fetch;
   getSessionToken: () => string;
   send: (obj: object) => void;
+  /** Voice-session id used to scope delegation jobs (one job per session). */
+  sessionId?: string;
 }
 
 export interface VoiceToolSession {
@@ -184,6 +186,8 @@ export function createVoiceToolSession(
 ): VoiceToolSession {
   const fetchFn: typeof fetch = ctx.fetchFn ?? globalThis.fetch.bind(globalThis);
   const { base, getSessionToken, send } = ctx;
+  const sessionId =
+    ctx.sessionId ?? `voice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   // Mutable session state - one per conversation.
   let activeWorkingDocId: string | null = null;
@@ -697,7 +701,44 @@ export function createVoiceToolSession(
       send({ type: "action", action: "archived_note", note: d.id });
       return { ok: true, path: d.id };
     }
-    // Web tools (Exa): spend-bearing, so the guarded routes need the session
+    if (name === "delegate_to_thinker") {
+      const task = String(args.task ?? "").trim();
+      if (!task) return { error: "task required" };
+      send({ type: "status", key: "voice.status.delegating", task });
+      const strings = (v: unknown): string[] =>
+        Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+      const r = await fetchFn(`${base}/api/delegate`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-solaris-token": getSessionToken(),
+        },
+        body: JSON.stringify({
+          sessionId,
+          task,
+          notes: strings(args.notes),
+          researchIds: strings(args.researchIds),
+          title: typeof args.title === "string" ? args.title : undefined,
+        }),
+      });
+      const d = (await r.json().catch(() => ({}))) as {
+        job?: { id: string; documentId: string };
+        error?: string;
+      };
+      if (!r.ok || !d.job)
+        return { error: d.error ?? "could not start the delegation" };
+      // The job writes into this document; adopt it as the session's working
+      // document so save_working_document and revisions target it (R13).
+      knownDocumentIds.add(d.job.documentId);
+      activeWorkingDocId = d.job.documentId;
+      return {
+        started: true,
+        jobId: d.job.id,
+        documentId: d.job.documentId,
+        note: "The reasoner is working in the background. Announce the handoff aloud and keep conversing; the result will arrive in the working document.",
+      };
+    }
+        // Web tools (Exa): spend-bearing, so the guarded routes need the session
     // token; they cannot go through the token-less callTool path.
     if (name === "fetch_url") return fetchUrl(String(args.url ?? "").trim());
     if (name === "web_research") {

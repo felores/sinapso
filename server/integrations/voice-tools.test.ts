@@ -1131,3 +1131,50 @@ describe("createVoiceToolSession — default fetchFn", () => {
     }
   });
 });
+
+describe("createVoiceToolSession — delegate_to_thinker (U7)", () => {
+  it("starts the job with the session token and adopts the working document", async () => {
+    const { ctx, fake } = makeCtx();
+    fake.on("/api/delegate", () =>
+      jsonResponse({ job: { id: "job-1", documentId: "doc-77", state: "running" } }),
+    );
+    const session = createVoiceToolSession({ ...ctx, sessionId: "sess-abc" });
+    const out = (await session.run("delegate_to_thinker", {
+      task: "connect these notes",
+      notes: ["a/one.md"],
+      title: "Connections",
+    })) as { started?: boolean; documentId?: string; error?: string };
+    expect(out.started).toBe(true);
+    expect(out.documentId).toBe("doc-77");
+    const call = fake.url("/api/delegate")[0];
+    const body = JSON.parse(String(call.init?.body));
+    expect(body.sessionId).toBe("sess-abc");
+    expect(body.notes).toEqual(["a/one.md"]);
+    expect((call.init?.headers as Record<string, string>)["x-solaris-token"]).toBe(
+      TEST_TOKEN,
+    );
+    // adopted document: a follow-up write_document targets doc-77
+    fake.on("/api/document", () => jsonResponse({ ok: true }));
+    await session.run("write_document", { title: "Rev", markdown: "x" });
+    const write = fake.url("/api/document")[0];
+    expect(JSON.parse(String(write.init?.body)).id).toBe("doc-77");
+  });
+
+  it("passes the one-job-per-session rejection through as a tool error (R14)", async () => {
+    const { ctx, fake } = makeCtx();
+    fake.on("/api/delegate", () =>
+      jsonResponse({ error: "a delegation is already running for this session" }, 409),
+    );
+    const session = createVoiceToolSession(ctx);
+    const out = await session.run("delegate_to_thinker", { task: "t" });
+    expect(out.error).toContain("already running");
+  });
+
+  it("requires a task", async () => {
+    const { ctx } = makeCtx();
+    const session = createVoiceToolSession(ctx);
+    expect(await session.run("delegate_to_thinker", {})).toEqual({
+      error: "task required",
+    });
+  });
+});

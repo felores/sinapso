@@ -353,6 +353,7 @@ export function createApp(
         voice: {
           provider: cfg.voice.provider,
           voice: cfg.voice.voice,
+          model: cfg.voice.model,
           // key material never leaves the config file — booleans only
           keys: {
             gemini: !!cfg.voice.keys.gemini,
@@ -2370,6 +2371,6 @@ export function createApp(
   }
 
   const attachVoice = (server: Server) =>
-    attachVoiceRelay(server, { sessionToken, configPath });
+    attachVoiceRelay(server, { sessionToken, configPath, delegate });
   return { app, reload, meta: () => graph.meta, attachVoice };
 }

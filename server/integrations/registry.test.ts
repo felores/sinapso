@@ -30,7 +30,9 @@ describe("registry → voice derivation (characterization, U4)", () => {
       }
     };
     const tools = realtimeVoiceTools();
-    expect(tools.length).toBe(VOICE_TOOLS.length);
+    // realtime excludes gemini-live-only tools (the delegate, R11)
+    const geminiOnly = toolsForSurface("voice").filter((e) => e.geminiLiveOnly);
+    expect(tools.length).toBe(VOICE_TOOLS.length - geminiOnly.length);
     walk(tools);
   });
 });
@@ -101,6 +103,7 @@ describe("token-required dispatch (mutating routes send the header)", () => {
     archive_vault_note: { note: "a.md" },
     web_research: { query: "q" },
     fetch_url: { url: "https://example.com" },
+    delegate_to_thinker: { task: "synthesize these notes" },
   };
 
   it("every voice entry with a token-required route sends x-solaris-token", async () => {
@@ -115,6 +118,11 @@ describe("token-required dispatch (mutating routes send the header)", () => {
         const headers = (init?.headers ?? {}) as Record<string, string>;
         if (init?.method && init.method !== "GET")
           seen.push({ url, token: headers["x-solaris-token"] });
+        if (url.includes("/api/delegate"))
+          return new Response(
+            JSON.stringify({ job: { id: "job-1", documentId: "doc-1" } }),
+            { status: 200 },
+          );
         if (url.includes("/api/research/history"))
           return new Response(
             JSON.stringify({

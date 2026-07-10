@@ -24,6 +24,8 @@ import { dirname, join } from "node:path";
 export interface VoiceConfig {
   provider: string | null; // "gemini" | "openai" | "xai"
   voice: string | null; // provider-specific voice id
+  /** Gemini live model id; null = the built-in default (KTD5). */
+  model: string | null;
   keys: { gemini: string | null; openai: string | null; xai: string | null };
 }
 
@@ -102,6 +104,7 @@ export interface ConfigPatch {
   voice?: {
     provider?: string | null;
     voice?: string | null;
+    model?: string | null;
     keys?: Partial<VoiceConfig["keys"]>;
   };
   activeVaultPath?: string | null;
@@ -154,6 +157,7 @@ export function defaultConfig(): SolarisConfig {
     voice: {
       provider: null,
       voice: null,
+      model: null,
       keys: { gemini: null, openai: null, xai: null },
     },
     activeVaultPath: null,
@@ -219,6 +223,8 @@ function merge(base: SolarisConfig, patch: unknown): SolarisConfig {
       out.voice.provider = v.provider as string | null;
     if (typeof v.voice === "string" || v.voice === null)
       out.voice.voice = v.voice as string | null;
+    if (typeof v.model === "string" || v.model === null)
+      out.voice.model = v.model ? v.model : null;
     if (typeof v.keys === "object" && v.keys !== null) {
       // Per-provider keys merge individually: setting one never clears another.
       for (const k of ["gemini", "openai", "xai"] as const) {
