@@ -103,23 +103,32 @@ body > :not(#graph) {
 #brand .brand-icon {
   width: 28px;
   height: 28px;
-  background-image: url("/sinapso-icon.svg");
+  background-image: url("/sinapso-logo-v1.svg");
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
   filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
 }
 #brand .brand-title {
-  color: var(--text);
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  line-height: 1;
+  width: 92px;
+  height: 30px;
+  background-image: url("/sinapso-title-v1-blanco.png");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: left center;
   filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
 }
 :root[data-theme="manuscript"] #brand .brand-title,
 :root[data-theme="notebook"] #brand .brand-title {
+  background-image: url("/sinapso-title-v1.png");
+}
+:root[data-theme="manuscript"] #brand .brand-title,
+:root[data-theme="notebook"] #brand .brand-title {
   filter: none;
+}
+:root[data-theme="manuscript"] #brand .brand-icon,
+:root[data-theme="notebook"] #brand .brand-icon {
+  filter: invert(1);
 }
 
 /* ---------- menubar ---------- */
@@ -696,7 +705,7 @@ body > :not(#graph) {
   width: 28px;
   height: 28px;
   margin-bottom: 8px;
-  background-image: url("/sinapso-icon.svg");
+  background-image: url("/sinapso-logo-v1.svg");
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
@@ -715,6 +724,10 @@ body > :not(#graph) {
   border-radius: 9px;
 }
 #topbar-rail .rail-icon svg { width: 24px; height: 24px; }
+:root[data-theme="manuscript"] #topbar-rail .rail-logo,
+:root[data-theme="notebook"] #topbar-rail .rail-logo {
+  filter: invert(1);
+}
 #topbar-rail .rail-icon:hover {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text);
