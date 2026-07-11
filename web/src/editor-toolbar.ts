@@ -13,7 +13,12 @@ import {
   type Extension,
   type TransactionSpec,
 } from "@codemirror/state";
-import { EditorView, showTooltip, type Tooltip } from "@codemirror/view";
+import {
+  EditorView,
+  showTooltip,
+  type Rect,
+  type Tooltip,
+} from "@codemirror/view";
 
 export type ToolbarTransform = (state: EditorState) => TransactionSpec | null;
 
@@ -197,6 +202,69 @@ const TOOLS: ToolButton[] = [
 /** Static markup for the AI row's bot icon (consumed by main.ts). */
 export const BOT_ICON_SVG = ICONS.bot;
 
+const TOOLBAR_PANEL_INSET = 12;
+
+const clamp = (v: number, lo: number, hi: number) =>
+  Math.max(lo, Math.min(hi, v));
+
+function drawnSelectionRects(view: EditorView): DOMRect[] {
+  return Array.from(view.dom.querySelectorAll(".cm-selectionBackground"))
+    .map((el) => el.getBoundingClientRect())
+    .filter((r) => r.width > 0 && r.height > 0);
+}
+
+function rangeRects(view: EditorView, from: number, to: number): DOMRect[] {
+  try {
+    const start = view.domAtPos(from);
+    const end = view.domAtPos(to);
+    const range = document.createRange();
+    range.setStart(start.node, start.offset);
+    range.setEnd(end.node, end.offset);
+    return Array.from(range.getClientRects()).filter(
+      (r) => r.width > 0 && r.height > 0,
+    );
+  } catch {
+    return [];
+  }
+}
+
+function fallbackCoords(view: EditorView, pos: number): Rect {
+  const coords = view.coordsAtPos(pos);
+  if (coords) return coords;
+  const r = view.dom.getBoundingClientRect();
+  return { left: r.left, right: r.left, top: r.top, bottom: r.top };
+}
+
+function selectionToolbarCoords(view: EditorView, dom: HTMLElement): Rect {
+  const r = view.state.selection.main;
+  if (r.empty) return fallbackCoords(view, r.from);
+  const rects = drawnSelectionRects(view);
+  if (!rects.length) rects.push(...rangeRects(view, r.from, r.to));
+  if (!rects.length) return fallbackCoords(view, r.from);
+
+  const selected = {
+    left: Math.min(...rects.map((rect) => rect.left)),
+    right: Math.max(...rects.map((rect) => rect.right)),
+    top: Math.min(...rects.map((rect) => rect.top)),
+    bottom: Math.max(...rects.map((rect) => rect.bottom)),
+  };
+  const panel = view.dom.closest("#reader")?.getBoundingClientRect();
+  const bounds = panel ?? {
+    left: 0,
+    right: document.documentElement.clientWidth,
+  };
+  const width = dom.getBoundingClientRect().width || dom.offsetWidth || 0;
+  const minLeft = bounds.left + TOOLBAR_PANEL_INSET;
+  const maxLeft = Math.max(minLeft, bounds.right - TOOLBAR_PANEL_INSET - width);
+  const centeredLeft =
+    selected.left + (selected.right - selected.left - width) / 2;
+  const left = clamp(centeredLeft, minLeft, maxLeft);
+
+  // CSS translates the tooltip above this anchor using the final rendered
+  // height, so the AI row can't make a stale JS height overlap the selection.
+  return { left, right: left, top: selected.top, bottom: selected.top };
+}
+
 function buildToolbarDom(
   view: EditorView,
   extras?: ToolbarExtras,
@@ -239,13 +307,16 @@ function toolbarTooltip(
   if (r.empty) return null;
   return {
     pos: Math.min(r.anchor, r.head),
-    above: true,
-    strictSide: false,
-    create: (view) => ({
-      dom: buildToolbarDom(view, extras),
-      // Breathing room between the selection and the bubble.
-      offset: { x: 0, y: 6 },
-    }),
+    above: false,
+    strictSide: true,
+    create: (view) => {
+      const dom = buildToolbarDom(view, extras);
+      return {
+        dom,
+        getCoords: () => selectionToolbarCoords(view, dom),
+        offset: { x: 0, y: 0 },
+      };
+    },
   };
 }
 

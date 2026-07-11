@@ -25,6 +25,19 @@ const zeroRect = {
 Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
 Range.prototype.getBoundingClientRect = () => zeroRect as DOMRect;
 
+const rect = (left: number, right: number, top = 200, bottom = 240) =>
+  ({
+    x: left,
+    y: top,
+    left,
+    right,
+    top,
+    bottom,
+    width: right - left,
+    height: bottom - top,
+    toJSON: () => ({}),
+  }) as DOMRect;
+
 function state(doc: string, anchor: number, head?: number): EditorState {
   return EditorState.create({
     doc,
@@ -152,6 +165,51 @@ describe("toolbar tooltip lifecycle", () => {
     expect(rows[0].querySelectorAll(".cm-tb-btn").length).toBeGreaterThan(0);
     expect(rows[1].querySelector(".ai-slot-marker")).toBeTruthy();
     ed.destroy();
+  });
+
+  it("anchors the toolbar to the selected block top, centered when there is room", () => {
+    const reader = document.createElement("div");
+    reader.id = "reader";
+    reader.getBoundingClientRect = () => rect(100, 500, 0, 600);
+    const host = document.createElement("div");
+    reader.appendChild(host);
+    document.body.appendChild(reader);
+    Range.prototype.getClientRects = () =>
+      [rect(150, 450, 220, 280)] as unknown as DOMRectList;
+
+    const ed = createNoteEditor(host, { content: "first\nsecond\nthird\n" });
+    ed.view.dispatch({ selection: { anchor: 0, head: 17 } });
+    const tip = ed.view.state.facet(showTooltip).filter(Boolean)[0]!;
+    const view = tip.create(ed.view);
+    view.dom.getBoundingClientRect = () => rect(0, 180, 0, 40);
+
+    const coords = view.getCoords?.(0);
+    expect(coords).toMatchObject({ left: 210, top: 220, bottom: 220 });
+    ed.destroy();
+    Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+    reader.remove();
+  });
+
+  it("clamps the toolbar inside the reader panel inset", () => {
+    const reader = document.createElement("div");
+    reader.id = "reader";
+    reader.getBoundingClientRect = () => rect(100, 500, 0, 600);
+    const host = document.createElement("div");
+    reader.appendChild(host);
+    document.body.appendChild(reader);
+    Range.prototype.getClientRects = () =>
+      [rect(420, 700, 220, 280)] as unknown as DOMRectList;
+
+    const ed = createNoteEditor(host, { content: "first\nsecond\nthird\n" });
+    ed.view.dispatch({ selection: { anchor: 0, head: 17 } });
+    const tip = ed.view.state.facet(showTooltip).filter(Boolean)[0]!;
+    const view = tip.create(ed.view);
+    view.dom.getBoundingClientRect = () => rect(0, 180, 0, 40);
+
+    expect(view.getCoords?.(0)).toMatchObject({ left: 308, top: 220 });
+    ed.destroy();
+    Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+    reader.remove();
   });
 
   it("omits the second row when extras add nothing", () => {

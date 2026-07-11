@@ -141,6 +141,60 @@ describe("prefs: namespace guard", () => {
       expect(k.startsWith("sinapso-")).toBe(true);
     }
   });
+
+  it("migrates legacy akasha prefs on first read", () => {
+    const reader: ReaderGeom = {
+      floating: false,
+      width: 520,
+      height: 400,
+      left: 0,
+      top: 0,
+    };
+    const research: ResearchGeom = {
+      floating: false,
+      left: 0,
+      top: 0,
+      width: 520,
+      height: 400,
+      dockW: 520,
+    };
+    storage.setItem("akasha-mode", "web");
+    storage.setItem("akasha-web-scope", "web");
+    storage.setItem("akasha-reader", JSON.stringify(reader));
+    storage.setItem("akasha-research", JSON.stringify(research));
+    storage.written.clear();
+
+    expect(prefs.getMode()).toBe("web");
+    expect(prefs.getWebScope()).toBe("web");
+    expect(prefs.getReader()).toEqual(reader);
+    expect(prefs.getResearch()).toEqual(research);
+    expect(storage.entries()["sinapso-mode"]).toBe("web");
+    expect(storage.entries()["sinapso-web-scope"]).toBe("web");
+    expect(storage.entries()["sinapso-reader"]).toBe(JSON.stringify(reader));
+    expect(storage.entries()["sinapso-research"]).toBe(
+      JSON.stringify(research),
+    );
+  });
+
+  it("keeps existing sinapso prefs ahead of legacy values", () => {
+    storage.setItem("sinapso-mode", "vault");
+    storage.setItem("akasha-mode", "web");
+    storage.written.clear();
+
+    expect(prefs.getMode()).toBe("vault");
+    expect(storage.entries()["sinapso-mode"]).toBe("vault");
+    expect(storage.written.size).toBe(0);
+  });
+
+  it("clears legacy aliases when removing migrated prefs", () => {
+    storage.setItem("akasha-mode", "web");
+    storage.written.clear();
+
+    prefs.removeMode();
+
+    expect(storage.entries()["akasha-mode"]).toBeUndefined();
+    expect(prefs.getMode()).toBeNull();
+  });
 });
 
 describe("prefs: raw string keys (theme / group / quality / nodes / arrangement)", () => {

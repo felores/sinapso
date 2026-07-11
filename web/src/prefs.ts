@@ -45,6 +45,7 @@ export interface PrefsStorage {
 }
 
 const PREFIX = "sinapso-";
+const LEGACY_PREFIXES = ["akasha-", "solaris-"] as const;
 
 const KEY = {
   theme: `${PREFIX}theme`,
@@ -214,9 +215,30 @@ function defaultStorage(): PrefsStorage {
 }
 
 export function createPrefs(storage: PrefsStorage = defaultStorage()): Prefs {
-  const get = (k: string) => storage.getItem(k);
+  const legacyKeys = (k: string) => {
+    if (!k.startsWith(PREFIX)) return [];
+    const suffix = k.slice(PREFIX.length);
+    return LEGACY_PREFIXES.map((p) => `${p}${suffix}`);
+  };
+  const get = (k: string) => {
+    const current = storage.getItem(k);
+    if (current !== null) return current;
+    for (const oldKey of legacyKeys(k)) {
+      const legacy = storage.getItem(oldKey);
+      if (legacy !== null) {
+        storage.setItem(k, legacy);
+        return legacy;
+      }
+    }
+    return null;
+  };
   const set = (k: string, v: string) => storage.setItem(k, v);
-  const del = (k: string) => storage.removeItem(k);
+  const del = (k: string) => {
+    storage.removeItem(k);
+    for (const oldKey of legacyKeys(k)) {
+      if (storage.getItem(oldKey) !== null) storage.removeItem(oldKey);
+    }
+  };
 
   // raw number slider helper (6 keys share this shape)
   const numPref = (k: string) => {

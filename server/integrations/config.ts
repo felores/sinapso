@@ -61,6 +61,8 @@ export interface VaultConfig {
 export type LlmProviderId = "openrouter" | "deepseek";
 
 export interface SinapsoConfig {
+  /** Internal one-time guard after importing ~/.solaris/config.json. */
+  legacyConfigMigrated: boolean;
   exaKey: string | null;
   openrouterKey: string | null;
   deepseekKey: string | null;
@@ -144,6 +146,7 @@ export function effectivePrompts(
 
 export function defaultConfig(): SinapsoConfig {
   return {
+    legacyConfigMigrated: false,
     exaKey: null,
     openrouterKey: null,
     deepseekKey: null,
@@ -179,6 +182,10 @@ export function defaultConfigPath(): string {
   return join(homedir(), ".sinapso", "config.json");
 }
 
+function legacyConfigPath(): string {
+  return join(homedir(), ".solaris", "config.json");
+}
+
 /** Field-by-field sanitizing merge: unknown/mistyped fields are ignored. */
 function merge(base: SinapsoConfig, patch: unknown): SinapsoConfig {
   const out: SinapsoConfig = {
@@ -191,6 +198,8 @@ function merge(base: SinapsoConfig, patch: unknown): SinapsoConfig {
   };
   if (typeof patch !== "object" || patch === null) return out;
   const p = patch as Record<string, unknown>;
+  if (typeof p.legacyConfigMigrated === "boolean")
+    out.legacyConfigMigrated = p.legacyConfigMigrated;
   if (typeof p.exaKey === "string" || p.exaKey === null) out.exaKey = p.exaKey;
   if (typeof p.openrouterKey === "string" || p.openrouterKey === null)
     out.openrouterKey = p.openrouterKey;
@@ -331,9 +340,85 @@ function sanitizeWiki(value: unknown): WikiConfig | null {
   };
 }
 
+function writeConfigFile(path: string, cfg: SinapsoConfig) {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n", { mode: 0o600 });
+  chmodSync(path, 0o600);
+}
+
+function readConfigFile(path: string): SinapsoConfig | null {
+  if (!existsSync(path)) return null;
+  try {
+    return merge(defaultConfig(), JSON.parse(readFileSync(path, "utf-8")));
+  } catch {
+    return null;
+  }
+}
+
+function withLegacyFallback(current: SinapsoConfig, legacy: SinapsoConfig) {
+  const defaults = defaultConfig();
+  const out: SinapsoConfig = {
+    ...current,
+    consents: { ...current.consents },
+    addons: { ...legacy.addons, ...current.addons },
+    voice: { ...current.voice, keys: { ...current.voice.keys } },
+    vaults: { ...current.vaults },
+    prompts: { ...current.prompts },
+    legacyConfigMigrated: true,
+  };
+
+  out.exaKey ??= legacy.exaKey;
+  out.openrouterKey ??= legacy.openrouterKey;
+  out.deepseekKey ??= legacy.deepseekKey;
+  out.defaultModel ??= legacy.defaultModel;
+  out.workerProvider ??= legacy.workerProvider;
+  out.workerModel ??= legacy.workerModel;
+  out.thinkerProvider ??= legacy.thinkerProvider;
+  out.thinkerModel ??= legacy.thinkerModel;
+  out.consents.web = current.consents.web || legacy.consents.web;
+  out.mcpEditEnabled = current.mcpEditEnabled || legacy.mcpEditEnabled;
+  if (current.writeDestination === defaults.writeDestination)
+    out.writeDestination = legacy.writeDestination;
+  if (current.archiveDestination === defaults.archiveDestination)
+    out.archiveDestination = legacy.archiveDestination;
+  if (current.imagesDestination === defaults.imagesDestination)
+    out.imagesDestination = legacy.imagesDestination;
+  for (const k of ["gemini", "openai", "xai"] as const)
+    out.voice.keys[k] ??= legacy.voice.keys[k];
+  out.voice.provider ??= legacy.voice.provider;
+  out.voice.voice ??= legacy.voice.voice;
+  out.voice.model ??= legacy.voice.model;
+  out.activeVaultPath ??= legacy.activeVaultPath;
+  if (!Object.keys(out.vaults).length) out.vaults = { ...legacy.vaults };
+  for (const k of [
+    "wikiIngest",
+    "noteQuestions",
+    "voiceAssistant",
+    "webResearch",
+  ] as const)
+    out.prompts[k] ??= legacy.prompts[k];
+  return out;
+}
+
+function maybeMigrateLegacyConfig(path: string, cfg: SinapsoConfig) {
+  if (path !== defaultConfigPath() || cfg.legacyConfigMigrated) return cfg;
+  const legacy = readConfigFile(legacyConfigPath());
+  if (!legacy) return cfg;
+  const migrated = withLegacyFallback(cfg, legacy);
+  if (JSON.stringify(migrated) !== JSON.stringify(cfg)) {
+    writeConfigFile(path, migrated);
+    try {
+      configCache.set(path, { mtimeMs: statSync(path).mtimeMs, value: migrated });
+    } catch {
+      /* next load will re-read */
+    }
+  }
+  return migrated;
+}
+
 /** Read config; a corrupt file yields defaults plus a logged warning, never a crash. */
 export function loadConfig(path = defaultConfigPath()): SinapsoConfig {
-  if (!existsSync(path)) return defaultConfig();
+  if (!existsSync(path)) return maybeMigrateLegacyConfig(path, defaultConfig());
   let mtimeMs: number;
   try {
     mtimeMs = statSync(path).mtimeMs;
@@ -351,7 +436,8 @@ export function loadConfig(path = defaultConfigPath()): SinapsoConfig {
     );
     return defaultConfig();
   }
-  configCache.set(path, { mtimeMs, value });
+  value = maybeMigrateLegacyConfig(path, value);
+  configCache.set(path, { mtimeMs: statSync(path).mtimeMs, value });
   return value;
 }
 
@@ -361,9 +447,7 @@ export function updateConfig(
   path = defaultConfigPath(),
 ): SinapsoConfig {
   const cfg = merge(loadConfig(path), patch);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n", { mode: 0o600 });
-  chmodSync(path, 0o600); // { mode } only applies on create; enforce on rewrite too
+  writeConfigFile(path, cfg); // { mode } only applies on create; helper enforces on rewrite too
   // Refresh the memo with the post-write mtime so the next loadConfig hits
   // the cache. Skip if the file vanished between write and stat (rare).
   try {

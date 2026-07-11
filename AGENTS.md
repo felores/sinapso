@@ -2,13 +2,23 @@
 
 Sinapso is a local-first 3D visualizer for an Obsidian vault (or any folder of interlinked Markdown). It scans the vault into a graph and renders it as a navigable 3D force-directed map; click a note to read it in a side pane, double-click to open it in Obsidian. Fork of `chntnm/akasha`, MIT.
 
-## Commands
+## Strategic Context
+
+`PRODUCT.md` is the product source of truth: Sinapso serves people with large linked-note collections, keeps the core local-first and plain-Markdown based, and permits external services only through explicit user action with BYO keys.
+
+## Tech Stack and Infrastructure
+
+- Vite + TypeScript frontend, Express loopback server, and Electron desktop shell; npm is the package manager.
+- No application database. Optional semantic search reads qmd's SQLite index read-only.
+- BYO secrets live in the local `~/.sinapso/config.json`; they stay server-side and are never returned by APIs.
+
+## Development
 
 ```bash
 npm install
 npm run scan -- "<vault-path>" [--exclude rel/path]...   # build data/graph.json (incremental; cached by mtime+size)
 npm run dev                                               # vite (5173) + express (5175), hot-reload → http://localhost:5173
-npm test                                                  # vitest: scanner + server path-traversal guard
+npm test                                                  # vitest: server/unit + pure frontend modules
 npm run test:e2e                                          # Playwright smoke + browser diagnostics
 npm run typecheck                                         # tsc --noEmit
 npm run build                                             # build web/ for prod
@@ -17,6 +27,15 @@ npm run desktop                                           # Electron shell (GPU 
 ```
 
 Rescan without restarting: `/api/rescan` (or File → Rescan) re-parses changed files and hot-swaps the graph.
+
+## Development Harness
+
+- Required serial gate: `npm test && npm run typecheck && npm run build && npm run test:e2e`.
+- Vitest covers server/unit and pure frontend modules and excludes `.scratchpad/`. There is no React component runner; frontend logic is tested as pure modules with Vitest and browser behavior with Playwright.
+- Playwright is hermetic: frontend `6173`, dedicated backend `6175`, one worker, Chromium only. All 10 tests must run with zero skips and zero failures, independent of services on development ports.
+- Browser diagnostics fail on unallowlisted console, page, request, or HTTP 500+ errors. Each test writes and attaches its own diagnostic artifact; the most recently completed test is also written to `test-results/browser-diagnostics.json`.
+- The Codebase Memory graph is available for architecture navigation and impact analysis.
+- Future implementation-ready plans enter tracking through `harness-progress init`, then use `harness-progress next` and `harness-progress verify`; historical features remain immutable.
 
 ## Architecture
 

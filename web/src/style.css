@@ -597,9 +597,21 @@ body > :not(#graph) {
 
 /* SEARCH collides with the menu → wraps to row 2, aligned under the menu's
    column (left / center / right). */
-#topbar.search-stacked #search-wrap { position: absolute; margin: 0; top: 100%; left: 18px; right: auto; transform: none; }
+#topbar.search-stacked #search-wrap {
+  position: absolute;
+  margin: 0;
+  top: 100%;
+  left: 18px;
+  right: auto;
+  transform: none;
+  max-width: calc(100vw - var(--right-inset, 0px) - 36px);
+}
 #topbar.menu-center.search-stacked #search-wrap { left: 50%; right: auto; transform: translateX(-50%); }
 #topbar.menu-right.search-stacked  #search-wrap { right: 18px; left: auto; transform: none; }
+#topbar.search-stacked #search {
+  flex: 1 1 160px;
+  min-width: 0;
+}
 
 /* ---- RAIL state: vertical icon rail on the right edge, shown when #topbar has
    .topbar-rail (center gap < wider of menu/search). Rail icons proxy-drive the
@@ -1558,9 +1570,11 @@ body > :not(#graph) {
   max-height: none;
   position: static;
 }
-#reader-editor .cm-selectionBackground,
-#reader-editor .cm-content ::selection {
+#reader-editor .cm-selectionBackground {
   background: color-mix(in srgb, var(--accent) 30%, rgba(0, 0, 0, 0.56)) !important;
+}
+#reader-editor .cm-content ::selection {
+  background: transparent !important;
 }
 #reader-editor .cm-cursor { border-left-color: var(--fg); }
 .reader-note-title {
@@ -1653,9 +1667,16 @@ body > :not(#graph) {
    Two rows: formatting tools on top, the AI input below. The background
    composites the panel tint over the solid bg so it is fully OPAQUE —
    translucency over note text reads badly. */
+.cm-tooltip.cm-selection-toolbar,
+.cm-tooltip:has(.cm-selection-toolbar) {
+  z-index: 80;
+  transform: translateY(calc(-100% - 6px));
+}
 .cm-selection-toolbar {
   display: flex;
   flex-direction: column;
+  z-index: 80;
+  max-width: calc(100vw - 24px);
   background:
     linear-gradient(var(--panel), var(--panel)),
     var(--bg) !important;
@@ -1712,7 +1733,7 @@ body > :not(#graph) {
   font-size: 12px;
   padding: 3px 7px;
   flex: 1;
-  min-width: 170px;
+  min-width: 0;
 }
 .cm-tb-ai-input:focus {
   outline: none;

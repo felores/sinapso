@@ -4,8 +4,9 @@
 // vault notes are never touched; the test note is removed in cleanup.
 import { expect, test, type Page } from "@playwright/test";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { captureBrowserDiagnostics } from "./diagnostics";
+import { E2E_VAULT } from "./global-setup";
 
 const NOTE_ID = "inbox/sinapso-e2e-editable-reader.md";
 const NOTE_CONTENT =
@@ -26,13 +27,9 @@ async function vaultPath(page: Page): Promise<string> {
 async function createTestNote(page: Page): Promise<string> {
   const token = await apiToken(page);
   const vault = await vaultPath(page);
-  // Safety valve: with reuseExistingServer, a developer's own dev server
-  // (real vault) may be answering. These tests WRITE — only ever run them
-  // against the hermetic global-setup vault.
-  test.skip(
-    !vault.includes(join("tests", "e2e", ".tmp", "vault")),
-    "editable-reader E2E only runs against the hermetic test vault",
-  );
+  if (resolve(vault) !== resolve(E2E_VAULT)) {
+    throw new Error(`E2E backend is not using the hermetic test vault: ${vault}`);
+  }
   const file = join(vault, NOTE_ID);
   // Direct write + rescan: guardedCreate would suffix on collision, and a
   // leftover file from an aborted run must not fork into -2.md.

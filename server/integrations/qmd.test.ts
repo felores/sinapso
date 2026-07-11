@@ -817,6 +817,7 @@ describe("GET /api/search history mode", () => {
     writeFileSync(join(VAULT, "a.md"), "# Note A\n\nalpha keyword body\n");
 
     const plain = await request(covered.app).get("/api/search?q=alpha");
+    expect(plain.status, JSON.stringify(plain.body)).toBe(200);
     expect(Array.isArray(plain.body)).toBe(true);
 
     const denied = await request(covered.app).get("/api/search?q=alpha&history=1");

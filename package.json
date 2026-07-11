@@ -37,7 +37,7 @@
   "scripts": {
     "scan": "tsx scanner/scan.ts",
     "dev": "concurrently \"npm:dev:server\" \"npm:dev:web\"",
-    "dev:server": "tsx watch server/index.ts",
+    "dev:server": "SINAPSO_HOST=0.0.0.0 tsx watch server/index.ts",
     "dev:web": "vite web",
     "build": "vite build web",
     "build:cli": "esbuild bin/cli.ts --bundle --platform=node --format=cjs --external:express --outfile=dist/cli.cjs",

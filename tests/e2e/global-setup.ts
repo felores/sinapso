@@ -1,13 +1,14 @@
 // Hermetic E2E fixture (plan 018 U6): the suite runs against a throwaway
-// vault under tests/e2e/.tmp, never the developer's real vault. The dev
-// server is pointed here via SINAPSO_GRAPH in playwright.config.ts.
+// vault outside the repository, never the developer's real vault. The E2E
+// server is pointed here via E2E_GRAPH in playwright.config.ts.
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-export const E2E_TMP = join(ROOT, "tests", "e2e", ".tmp");
+export const E2E_TMP = join(tmpdir(), "sinapso-e2e");
 export const E2E_VAULT = join(E2E_TMP, "vault");
 export const E2E_GRAPH = join(E2E_TMP, "graph.json");
 

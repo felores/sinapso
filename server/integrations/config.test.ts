@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterAll } from "vitest";
 import {
   mkdtempSync,
+  mkdirSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -8,9 +9,10 @@ import {
   utimesSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   defaultConfig,
+  defaultConfigPath,
   defaultPrompts,
   effectivePrompts,
   loadConfig,
@@ -262,6 +264,60 @@ describe("integrations config", () => {
     expect(fromCache.archiveDestination).toBe("archive");
     expect(fromCache.imagesDestination).toBe("images");
     expect(fromCache.consents).toEqual({ web: false });
+  });
+
+  it("migrates legacy ~/.solaris config into the Sinapso config path", () => {
+    const home = mkdtempSync(join(tmpdir(), "sinapso-home-"));
+    vi.stubEnv("HOME", home);
+    try {
+      const legacyPath = join(home, ".solaris", "config.json");
+      mkdirSync(dirname(legacyPath), { recursive: true });
+      const legacy = {
+        ...defaultConfig(),
+        exaKey: "exa-k",
+        openrouterKey: "or-k",
+        consents: { web: true },
+        archiveDestination: "archivo",
+        imagesDestination: "media",
+        voice: {
+          ...defaultConfig().voice,
+          keys: { gemini: "g-k", openai: "o-k", xai: "x-k" },
+        },
+        activeVaultPath: "/legacy-vault",
+        vaults: {
+          "/legacy-vault": {
+            path: "/legacy-vault",
+            excludes: ["raw"],
+            excludesInitialized: true,
+            wikis: [],
+          },
+        },
+      };
+      writeFileSync(legacyPath, JSON.stringify(legacy, null, 2));
+
+      const currentPath = defaultConfigPath();
+      mkdirSync(dirname(currentPath), { recursive: true });
+      writeFileSync(
+        currentPath,
+        JSON.stringify({ activeVaultPath: "/current-vault" }, null, 2),
+      );
+
+      const cfg = loadConfig();
+      expect(cfg.legacyConfigMigrated).toBe(true);
+      expect(cfg.exaKey).toBe("exa-k");
+      expect(cfg.openrouterKey).toBe("or-k");
+      expect(cfg.consents.web).toBe(true);
+      expect(cfg.archiveDestination).toBe("archivo");
+      expect(cfg.imagesDestination).toBe("media");
+      expect(cfg.voice.keys).toEqual({ gemini: "g-k", openai: "o-k", xai: "x-k" });
+      expect(cfg.activeVaultPath).toBe("/current-vault");
+      expect(Object.keys(cfg.vaults)).toEqual(["/legacy-vault"]);
+      expect(statSync(currentPath).mode & 0o777).toBe(0o600);
+      expect(JSON.parse(readFileSync(currentPath, "utf-8")).exaKey).toBe("exa-k");
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
 

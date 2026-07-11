@@ -5,11 +5,13 @@
  *   npm start    (after npm run scan and npm run build)
  *   npx sinapso "<vault-path>"  (all-in-one: scan + serve + open browser)
  *
- * The server binds to 127.0.0.1 only (localhost); vault data never leaves the machine.
+ * The server binds to 127.0.0.1 by default (localhost); vault data never leaves the machine.
+ * Set SINAPSO_HOST to expose on a different interface in local networks.
  */
 
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { networkInterfaces } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createApp } from "./app.js";
 
@@ -20,6 +22,19 @@ const GRAPH_PATH =
 const PORT = Number(process.env.SINAPSO_PORT ?? 5175);
 const HOST = process.env.SINAPSO_HOST ?? "127.0.0.1";
 
+function getNetworkHost(): string | undefined {
+  const interfaces = networkInterfaces();
+  for (const iface of Object.values(interfaces)) {
+    if (!iface) continue;
+    for (const net of iface) {
+      if (net.family === "IPv4" && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  return undefined;
+}
+
 // Verify graph.json exists before starting server
 if (!existsSync(GRAPH_PATH)) {
   console.error(
@@ -28,7 +43,7 @@ if (!existsSync(GRAPH_PATH)) {
   process.exit(1);
 }
 
-// Create server and bind to localhost
+// Create server (localhost by default, configurable by SINAPSO_HOST)
 const { app, meta, attachVoice } = createApp(
   GRAPH_PATH,
   resolve(ROOT, "web", "dist"),
@@ -36,7 +51,15 @@ const { app, meta, attachVoice } = createApp(
 const server = app.listen(PORT, HOST, () => {
   const m = meta();
   console.log(
-    `Sinapso: http://localhost:${PORT}  (vault: ${m.vaultName}, ${m.notes} notes)`,
+    `Sinapso: Local:  http://localhost:${PORT}  (vault: ${m.vaultName}, ${m.notes} notes)`,
   );
+  if (HOST === "0.0.0.0") {
+    const network = getNetworkHost();
+    if (network) {
+      console.log(
+        `Sinapso: Network: http://${network}:${PORT}  (vault: ${m.vaultName}, ${m.notes} notes)`,
+      );
+    }
+  }
 });
 attachVoice(server); // voice-mode WebSocket relay (opt-in, key-gated)
