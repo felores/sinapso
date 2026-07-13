@@ -45,7 +45,7 @@ export interface ResearchHistoryEntry {
   document?: {
     title: string;
     content: string;
-    revision: string;
+    revision?: string;
   };
 }
 
@@ -108,6 +108,25 @@ export function listEntries(dataDir: string): ResearchHistoryEntry[] {
     }
   }
   return out.sort((a, b) => (a.ts < b.ts ? 1 : -1));
+}
+
+/** Read one validated entry without scanning and parsing the entire history. */
+export function getEntry(
+  dataDir: string,
+  id: string,
+): ResearchHistoryEntry | null {
+  if (!ID_RE.test(id)) return null;
+  const d = resolve(dir(dataDir));
+  const full = resolve(d, `${id}.json`);
+  if (!full.startsWith(d + sep) || !existsSync(full)) return null;
+  try {
+    const entry = JSON.parse(
+      readFileSync(full, "utf-8"),
+    ) as ResearchHistoryEntry;
+    return entry.id === id ? entry : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Delete one entry. Returns false for a bad id or a missing file. */

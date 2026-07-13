@@ -574,6 +574,7 @@ async function bridgeGemini(
   browser.on("close", () => {
     console.log("[voice] session ended (mic off)");
     delegationRelay.dispose();
+    toolSession.close();
     try {
       session?.close();
     } catch {
@@ -696,6 +697,7 @@ function bridgeRealtime(
 
   browser.on("close", () => {
     console.log(`[voice] session ended (mic off): provider=${provider}`);
+    toolSession.close();
     try {
       providerWs.close();
     } catch {

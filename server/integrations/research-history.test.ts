@@ -6,6 +6,7 @@ import {
   saveEntry,
   upsertEntry,
   listEntries,
+  getEntry,
   deleteEntry,
   clearEntries,
 } from "./research-history";
@@ -51,6 +52,13 @@ describe("research history", () => {
     expect(deleteEntry(DATA, "..%2Fescape")).toBe(false);
     expect(deleteEntry(DATA, "nonexistent")).toBe(false);
     expect(listEntries(DATA).length).toBe(1); // nothing was removed
+  });
+
+  it("reads one validated entry directly and rejects traversal or mismatched data", () => {
+    const saved = saveEntry(DATA, webEntry("direct"));
+    expect(getEntry(DATA, saved.id)?.query).toBe("direct");
+    expect(getEntry(DATA, "../../etc/passwd")).toBeNull();
+    expect(getEntry(DATA, "missing")).toBeNull();
   });
 
   it("clears all history", () => {

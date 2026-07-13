@@ -31,6 +31,7 @@ export interface ResearchDocumentController {
   retry(): Promise<void>;
   overwrite(): Promise<void>;
   promote(): Promise<{ noteId: string }>;
+  close(): Promise<boolean>;
   dispose(): void;
 }
 
@@ -97,11 +98,32 @@ export function createResearchDocumentController(
       if (autosave.state() !== "clean") throw new Error("document-not-saved");
       return options.transport.promote({ ...current });
     },
+    async close() {
+      await autosave.flush();
+      if (autosave.state() !== "clean") return false;
+      autosave.dispose();
+      return true;
+    },
     dispose() {
       autosave.dispose();
     },
   };
 }
+export function createResearchDocumentConflictActions(
+  controller: ResearchDocumentController,
+  id: string,
+  isActive: (controller: ResearchDocumentController, id: string) => boolean,
+): { reload(): void; overwrite(): void } {
+  return {
+    reload() {
+      if (isActive(controller, id)) void controller.reload();
+    },
+    overwrite() {
+      if (isActive(controller, id)) void controller.overwrite();
+    },
+  };
+}
+
 
 function isConflict(error: unknown): boolean {
   return !!error && typeof error === "object" && "status" in error && error.status === 409;

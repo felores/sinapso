@@ -53,6 +53,7 @@ export function createAutosave(opts: AutosaveOptions): Autosave {
   let inFlight = false;
   let pending = false;
   let disposed = false;
+  const idleWaiters: Array<() => void> = [];
 
   function setState(next: AutosaveState) {
     if (state === next || disposed) return;
@@ -80,6 +81,7 @@ export function createAutosave(opts: AutosaveOptions): Autosave {
     clearTimer();
     if (inFlight) {
       pending = true;
+      await new Promise<void>((resolve) => idleWaiters.push(resolve));
       return;
     }
     const content = opts.getContent();
@@ -103,16 +105,18 @@ export function createAutosave(opts: AutosaveOptions): Autosave {
     } else if (outcome === "conflict") {
       pending = false; // a queued follow-up would just re-conflict
       setState("conflict");
+      while (idleWaiters.length) idleWaiters.shift()?.();
       return;
     } else {
       setState("error"); // editor stays dirty; next flush retries
     }
     if (pending) {
       pending = false;
-      void run(base);
+      await run(base);
     } else if (opts.getContent() !== base) {
       schedule();
     }
+    while (idleWaiters.length) idleWaiters.shift()?.();
   }
 
   return {

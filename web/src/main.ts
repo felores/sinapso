@@ -41,6 +41,7 @@ import { createAutosave, type Autosave, type AutosaveState } from "./autosave";
 import {
   createResearchDocument,
   createResearchDocumentController,
+  createResearchDocumentConflictActions,
   type ResearchDocument,
   type ResearchDocumentController,
   type ResearchDocumentTransport,
@@ -4573,6 +4574,32 @@ async function boot() {
   let voiceSession: VoiceSession | null = null;
   let restartVoiceAfterClose = false;
 
+  function recentResearchContext() {
+    const entry = researchHistory[0];
+    if (!entry) return null;
+    return {
+      id: entry.id,
+      mode: entry.mode,
+      query: entry.query,
+      ...(entry.document
+        ? {
+            document: {
+              title: entry.document.title,
+              content: entry.document.content.slice(0, 3_000),
+            },
+          }
+        : {}),
+      ...(entry.article
+        ? {
+            article: {
+              title: entry.article.title,
+              url: entry.article.url,
+            },
+          }
+        : {}),
+    };
+  }
+
   function syncVoiceContext(displayAcknowledgment?: ResearchDisplayAcknowledgment & {
     requestId?: string;
   }) {
@@ -4583,6 +4610,7 @@ async function boot() {
         researchPanelOpen: !$("#research").classList.contains("hidden"),
         visibleResearchId: currentVisibleResearchId(),
         pinnedResearchId: pinnedResearchEntryId,
+        recentResearch: recentResearchContext(),
       },
       ...(displayAcknowledgment ? { displayAcknowledgment } : {}),
     });
@@ -5267,6 +5295,23 @@ async function boot() {
   let researchDocumentController: ResearchDocumentController | null = null;
   let pinnedResearchEntryId: string | null = null;
 
+  async function teardownResearchDocument(): Promise<boolean> {
+    const controller = researchDocumentController;
+    const editor = researchDocumentEditor;
+    if (!controller && !editor) return true;
+    if (controller && !(await controller.close())) return false;
+    if (
+      researchDocumentController !== controller ||
+      researchDocumentEditor !== editor
+    )
+      return false;
+    researchDocumentController = null;
+    researchDocumentEditor = null;
+    $("#research-banner").classList.add("hidden");
+    editor?.destroy();
+    return true;
+  }
+
   function currentVisibleResearchId(): string | null {
     return $("#research").classList.contains("hidden") ? null : currentEntryId;
   }
@@ -5328,13 +5373,18 @@ async function boot() {
   async function showAgentResearch(id: string) {
     await loadHistory();
     const i = researchHistory.findIndex((entry) => entry.id === id);
-    const decision = agentMayShowResearch(id, i >= 0);
+    let decision = agentMayShowResearch(id, i >= 0);
     if (decision === "shown") {
-      historyIdx = i;
-      showHistoryEntry(researchHistory[i]);
-      if (pinnedResearchEntryId === id)
-        announceResearch(i18n.t("research.refreshed"));
-    } else {
+      if (await showHistoryEntry(researchHistory[i])) {
+        historyIdx = i;
+        updateHistoryNav();
+        if (pinnedResearchEntryId === id)
+          announceResearch(i18n.t("research.refreshed"));
+      } else {
+        decision = "blocked-dirty";
+      }
+    }
+    if (decision !== "shown") {
       historyIdx = researchHistory.findIndex(
         (entry) => entry.id === currentVisibleResearchId(),
       );
@@ -5510,28 +5560,20 @@ async function boot() {
     syncVoiceContext();
   }
 
-  function closeResearch() {
+  async function closeResearch() {
+    if (!(await teardownResearchDocument())) return;
     researchMode = null;
     hideEvidenceBubble();
     $("#research").classList.add("hidden");
     clearSelectionContext("research");
-    const controller = researchDocumentController;
-    const editor = researchDocumentEditor;
-    researchDocumentController = null;
-    researchDocumentEditor = null;
-    if (controller) {
-      void controller.autosave.flush().finally(() => {
-        controller.dispose();
-        editor?.destroy();
-      });
-    }
     // reader returns to the right unless the user pinned it left
     if (!readerLeftPinned) setReaderCtxLeft(false);
     updateBrandStats();
     syncVoiceContext();
   }
-  $("#research-close").addEventListener("click", closeResearch);
+  $("#research-close").addEventListener("click", () => void closeResearch());
   $("#research-create-document").addEventListener("click", async () => {
+    if (!(await teardownResearchDocument())) return;
     const created = await createResearchDocument(
       {
         async create(title, content) {
@@ -5550,7 +5592,7 @@ async function boot() {
     const entry = researchHistory.find((item) => item.id === created.id);
     if (entry) {
       historyIdx = researchHistory.indexOf(entry);
-      showHistoryEntry(entry);
+      await showHistoryEntry(entry);
     }
   });
 
@@ -6050,15 +6092,12 @@ async function boot() {
   // The "document" category: the voice agent's working note, edited in place
   // across turns. Same shape as an article minus the source link. Content is
   // sanitized (agent markdown) before innerHTML.
-  function renderDocumentInto(
+  async function renderDocumentInto(
     body: HTMLElement,
     doc: { title: string; content: string; revision: string } | undefined,
     query: string,
   ) {
-    researchDocumentController?.dispose();
-    researchDocumentEditor?.destroy();
-    researchDocumentController = null;
-    researchDocumentEditor = null;
+    await teardownResearchDocument();
     if (!doc || !currentEntryId) {
       body.innerHTML = '<p class="muted">no document</p>';
       return;
@@ -6137,16 +6176,16 @@ async function boot() {
       wrap.append(icon, input);
       toolbar.appendChild(wrap);
     };
-    researchDocumentEditor = createNoteEditor(editorHost, {
+    const editor = createNoteEditor(editorHost, {
       content: doc.content,
       onWikiLinkClick: navigateWikiTarget,
       toolbarExtras: extras,
       onChange: () => {
         researchDocumentController?.autosave.notifyChange();
         updateBrandStats();
-        syncVoiceContext();
       },
     });
+    researchDocumentEditor = editor;
     const transport: ResearchDocumentTransport = {
       async create(nextTitle, content) {
         const result = await api<{ id: string; revision: string }>("/api/document", {
@@ -6158,7 +6197,7 @@ async function boot() {
         return api<ResearchDocument>(`/api/document/${encodeURIComponent(documentId)}`);
       },
       async save(candidate) {
-        return api<{ revision: string }>("/api/document", {
+        const saved = await api<{ revision: string }>("/api/document", {
           json: {
             id: candidate.id,
             revision: candidate.revision,
@@ -6166,39 +6205,58 @@ async function boot() {
             content: candidate.content,
           },
         });
+        const cached = researchHistory.find((entry) => entry.id === candidate.id);
+        if (cached)
+          cached.document = {
+            title: candidate.title,
+            content: candidate.content,
+            revision: saved.revision,
+          };
+        return saved;
       },
       async promote(candidate) {
-        const noteBody = [
-          "---",
-          `saved: ${new Date().toISOString().slice(0, 10)}`,
-          "via: sinapso-agent-document",
-          "---",
-          "",
-          candidate.content,
-          "",
-        ].join("\n");
-        const saved = await api<{ id: string }>("/api/notes", {
-          json: { title: candidate.title, content: noteBody },
-        });
-        await apiDelete(`/api/research/history/${encodeURIComponent(candidate.id)}`);
-        return { noteId: String(saved.id) };
+        const promoted = await api<{ id: string }>(
+          `/api/document/${encodeURIComponent(candidate.id)}/promote`,
+          { json: { title: candidate.title, kind: "note" } },
+        );
+        return { noteId: String(promoted.id) };
       },
     };
-    const showDocumentConflict = () => {
+    const showDocumentConflict = (controller: ResearchDocumentController) => {
+      const conflict = createResearchDocumentConflictActions(
+        controller,
+        id,
+        (candidate, candidateId) =>
+          currentEntryId === candidateId &&
+          researchDocumentController === candidate,
+      );
       researchBanner(
         i18n.t("research.documentConflict"),
-        { label: i18n.t("editor.conflict.reload"), run: () => void researchDocumentController?.reload() },
-        { label: i18n.t("editor.conflict.overwrite"), run: () => void researchDocumentController?.overwrite() },
+        {
+          label: i18n.t("editor.conflict.reload"),
+          run: conflict.reload,
+        },
+        {
+          label: i18n.t("editor.conflict.overwrite"),
+          run: conflict.overwrite,
+        },
       );
     };
-    researchDocumentController = createResearchDocumentController({
+    const controller = createResearchDocumentController({
       document: { id, ...doc },
-      getContent: () => researchDocumentEditor?.getContent() ?? doc.content,
+      getContent: () => editor.getContent(),
       getTitle: () => title.value,
       setDocument: (fresh) => {
         title.value = fresh.title;
-        researchDocumentEditor?.setContent(fresh.content);
-        void loadHistory().then(() => syncVoiceContext());
+        editor.setContent(fresh.content);
+        const cached = researchHistory.find((entry) => entry.id === id);
+        if (cached)
+          cached.document = {
+            title: fresh.title,
+            content: fresh.content,
+            revision: fresh.revision,
+          };
+        syncVoiceContext();
       },
       transport,
       onState: (next) => {
@@ -6209,10 +6267,10 @@ async function boot() {
               ? ""
               : i18n.t(`editor.saveState.${next}`);
         state.className = `research-document-save-state save-${next}`;
-        if (next === "conflict") showDocumentConflict();
-        if (next === "clean") void loadHistory().then(() => syncVoiceContext());
+        if (next === "conflict") showDocumentConflict(controller);
       },
     });
+    researchDocumentController = controller;
     title.addEventListener("input", () => researchDocumentController?.autosave.notifyChange());
     const apply = (mode: "replace" | "insert") => {
       const view = researchDocumentEditor?.view;
@@ -6220,8 +6278,13 @@ async function boot() {
       const spec = mode === "replace"
         ? replaceSelection(view.state, pending.req, pending.text)
         : insertBelow(view.state, pending.req, pending.text);
-      if (!spec) return;
+      if (!spec) {
+        previewText.textContent = i18n.t("editor.ai.stale");
+        view.focus();
+        return;
+      }
       view.dispatch(spec);
+      view.focus();
       hidePreview();
     };
     replace.addEventListener("click", () => apply("replace"));
@@ -6233,13 +6296,13 @@ async function boot() {
     save.addEventListener("click", async () => {
       save.disabled = true;
       try {
-        const { noteId } = await researchDocumentController!.promote();
-        researchDocumentController?.dispose();
-        researchDocumentController = null;
-        researchDocumentEditor?.destroy();
-        researchDocumentEditor = null;
+        const controller = researchDocumentController;
+        if (!controller) throw new Error("document-not-active");
+        const { noteId } = await controller.promote();
+        await teardownResearchDocument();
         currentEntryId = null;
-        await loadHistory();
+        researchHistory = researchHistory.filter((entry) => entry.id !== id);
+        historyIdx = Math.min(historyIdx, researchHistory.length - 1);
         updateHistoryNav();
         await openAfterIngest(noteId);
       } catch {
@@ -6293,16 +6356,12 @@ async function boot() {
   }
 
   // Re-render a stored entry (no network query, no spend).
-  function showHistoryEntry(entry: ResearchEntry) {
+  async function showHistoryEntry(entry: ResearchEntry): Promise<boolean> {
+    if (!(await teardownResearchDocument())) return false;
     openResearch(entry.mode);
     currentEntryId = entry.id;
+    $("#research-banner").classList.add("hidden");
     researchError(null);
-    if (entry.mode !== "document") {
-      researchDocumentController?.dispose();
-      researchDocumentController = null;
-      researchDocumentEditor?.destroy();
-      researchDocumentEditor = null;
-    }
     const body = $("#research-body");
     body.innerHTML = "";
     if (entry.mode === "web")
@@ -6317,13 +6376,14 @@ async function boot() {
     else if (entry.mode === "article")
       renderArticleInto(body, entry.article, entry.query);
     else if (entry.mode === "document")
-      renderDocumentInto(body, entry.document, entry.query);
+      await renderDocumentInto(body, entry.document, entry.query);
     else if (entry.mode === "keyword")
       renderKeywordInto(body, (entry.results ?? []) as never, entry.query);
     else renderSemanticInto(body, (entry.results ?? []) as never, entry.query);
     updateHistoryNav();
     updateBrandStats();
     syncVoiceContext();
+    return true;
   }
 
   // After a fresh query the new entry is newest (index 0).
@@ -6335,6 +6395,7 @@ async function boot() {
   }
 
   async function clearResearchHistory() {
+    if (!(await teardownResearchDocument())) return;
     await apiDelete("/api/research/history");
     researchHistory = [];
     historyIdx = -1;
@@ -6345,7 +6406,7 @@ async function boot() {
       announceResearch(i18n.t("research.pinCleared"));
     }
     updateHistoryNav();
-    if (!$("#research").classList.contains("hidden")) closeResearch();
+    if (!$("#research").classList.contains("hidden")) await closeResearch();
   }
 
   async function clearNoteHistory() {
@@ -6359,25 +6420,36 @@ async function boot() {
     setResearchPinned(pinnedResearchEntryId === null);
   });
   syncResearchPinUi();
-  $("#research-prev").addEventListener("click", () => {
-    if (historyIdx < researchHistory.length - 1)
-      showHistoryEntry(researchHistory[++historyIdx]);
+  $("#research-prev").addEventListener("click", async () => {
+    const next = historyIdx + 1;
+    if (
+      next < researchHistory.length &&
+      (await showHistoryEntry(researchHistory[next]))
+    ) {
+      historyIdx = next;
+      updateHistoryNav();
+    }
   });
-  $("#research-next").addEventListener("click", () => {
-    if (historyIdx > 0) showHistoryEntry(researchHistory[--historyIdx]);
+  $("#research-next").addEventListener("click", async () => {
+    const next = historyIdx - 1;
+    if (next >= 0 && (await showHistoryEntry(researchHistory[next]))) {
+      historyIdx = next;
+      updateHistoryNav();
+    }
   });
   $("#research-trash").addEventListener("click", async () => {
     const entry = researchHistory[historyIdx];
     if (!entry) return;
+    if (!(await teardownResearchDocument())) return;
     await apiDelete(`/api/research/history/${encodeURIComponent(entry.id)}`);
     await loadHistory();
     if (!researchHistory.length) {
       updateHistoryNav();
-      closeResearch();
+      await closeResearch();
       return;
     }
     historyIdx = Math.min(historyIdx, researchHistory.length - 1);
-    showHistoryEntry(researchHistory[historyIdx]);
+    await showHistoryEntry(researchHistory[historyIdx]);
   });
   void loadHistory();
 
@@ -6455,13 +6527,15 @@ async function boot() {
   $("#reopen-research").addEventListener("click", async () => {
     // Toggle: close the right panel if it's open, otherwise reopen last research.
     if (!$("#research").classList.contains("hidden")) {
-      closeResearch();
+      await closeResearch();
       return;
     }
     if (!researchHistory.length) await loadHistory();
     if (!researchHistory.length) return;
-    historyIdx = 0;
-    showHistoryEntry(researchHistory[0]);
+    if (await showHistoryEntry(researchHistory[0])) {
+      historyIdx = 0;
+      updateHistoryNav();
+    }
   });
   void loadReaderHistory();
 

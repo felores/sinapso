@@ -42,6 +42,7 @@ export interface VoiceToolSession {
   run(name: string, args: VoiceArgs): Promise<VoiceResult>;
   setBrowserContext(context: unknown): void;
   setSelectedContext(context: unknown): void;
+  close(): void;
 }
 
 type SelectionSource = "reader" | "research";
@@ -69,6 +70,7 @@ interface BrowserViewState {
   researchPanelOpen: boolean;
   visibleResearchId: string | null;
   pinnedResearchId: string | null;
+  recentResearch: ResearchHist | null;
 }
 
 /** Cap tool text sent back to the voice model: articles can run 20k+
@@ -204,7 +206,15 @@ export function createVoiceToolSession(
   const contractWikisRead = new Set<string>();
   let selectedContext = emptySelectedContext();
   let browserView: BrowserViewState | null = null;
-  const displayAcks = new Map<string, (ack: Record<string, unknown>) => void>();
+  const displayAcks = new Map<
+    string,
+    {
+      resolve: (ack: Record<string, unknown>) => void;
+      timer: NodeJS.Timeout;
+    }
+  >();
+  let recentResearch: Record<string, unknown> | null = null;
+  const DISPLAY_ACK_TIMEOUT_MS = 5_000;
 
   function setBrowserContext(context: unknown): void {
     if (!context || typeof context !== "object") return;
@@ -220,14 +230,22 @@ export function createVoiceToolSession(
         researchPanelOpen: v.researchPanelOpen === true,
         visibleResearchId: clean(v.visibleResearchId) ?? null,
         pinnedResearchId: clean(v.pinnedResearchId) ?? null,
+        recentResearch:
+          v.recentResearch && typeof v.recentResearch === "object"
+            ? (v.recentResearch as ResearchHist)
+            : null,
       };
+      if (browserView.recentResearch)
+        recentResearch = researchSummary(browserView.recentResearch);
     }
     const ack = raw.displayAcknowledgment;
     if (ack && typeof ack === "object") {
       const requestId = clean((ack as Record<string, unknown>).requestId);
-      if (requestId) {
-        displayAcks.get(requestId)?.(ack as Record<string, unknown>);
+      const pending = requestId ? displayAcks.get(requestId) : undefined;
+      if (requestId && pending) {
+        clearTimeout(pending.timer);
         displayAcks.delete(requestId);
+        pending.resolve(ack as Record<string, unknown>);
       }
     }
   }
@@ -238,15 +256,15 @@ export function createVoiceToolSession(
     extra: Record<string, unknown> = {},
   ): Promise<Record<string, unknown>> {
     const requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const acknowledged = new Promise<Record<string, unknown>>((resolve) => {
-      displayAcks.set(requestId, resolve);
-    });
     send({ type: "action", action, id, requestId, ...extra });
-    if (!browserView) {
-      displayAcks.delete(requestId);
-      return { decision: "view-state-unknown" };
-    }
-    return acknowledged;
+    if (!browserView) return { decision: "display-unavailable" };
+    return new Promise<Record<string, unknown>>((resolve) => {
+      const timer = setTimeout(() => {
+        displayAcks.delete(requestId);
+        resolve({ decision: "display-timeout" });
+      }, DISPLAY_ACK_TIMEOUT_MS);
+      displayAcks.set(requestId, { resolve, timer });
+    });
   }
 
   // ---- shared context helpers (reused by current_view + the open_* tools) ----
@@ -279,7 +297,9 @@ export function createVoiceToolSession(
       const d = (await (
         await fetchFn(`${base}/api/research/history`)
       ).json()) as { entries?: ResearchHist[] };
-      return d.entries ?? [];
+      const entries = d.entries ?? [];
+      recentResearch = entries[0] ? researchSummary(entries[0]) : null;
+      return entries;
     } catch {
       return [];
     }
@@ -572,8 +592,10 @@ export function createVoiceToolSession(
   ): Promise<VoiceResult> {
     if (name === "current_view") {
       send({ type: "status", key: "voice.status.currentView" });
-      if (!browserView) return { viewStateKnown: false, selectedContext };
-      const entries = await researchEntries();
+      if (!browserView) return { viewStateKnown: false, selectedContext, recentResearch };
+      const needsResearch =
+        browserView.researchPanelOpen || browserView.pinnedResearchId !== null;
+      const entries = needsResearch ? await researchEntries() : [];
       const resolveResearch = (id: string | null) => {
         const entry = id ? entries.find((candidate) => candidate.id === id) : undefined;
         return entry ? researchSummary(entry) : null;
@@ -583,6 +605,7 @@ export function createVoiceToolSession(
         openNote: browserView.readerNoteId
           ? await notePreview(browserView.readerNoteId)
           : null,
+        recentResearch,
         research: {
           panelOpen: browserView.researchPanelOpen,
           visible: browserView.researchPanelOpen
@@ -868,5 +891,12 @@ export function createVoiceToolSession(
     run: (name, args) => runTool(name, args),
     setBrowserContext,
     setSelectedContext: setBrowserContext,
+    close() {
+      for (const pending of displayAcks.values()) {
+        clearTimeout(pending.timer);
+        pending.resolve({ decision: "display-unavailable" });
+      }
+      displayAcks.clear();
+    },
   };
 }

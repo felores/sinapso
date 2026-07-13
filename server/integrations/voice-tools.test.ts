@@ -220,10 +220,12 @@ describe("createVoiceToolSession — selected context", () => {
     const session = createVoiceToolSession(ctx);
     const out = (await session.run("current_view", {})) as {
       viewStateKnown: boolean;
+      recentResearch: null;
       selectedContext: { current: null };
     };
     expect(out).toEqual({
       viewStateKnown: false,
+      recentResearch: null,
       selectedContext: { current: null },
     });
   });
@@ -759,6 +761,45 @@ describe("createVoiceToolSession — write_document", () => {
       });
     },
   );
+
+  it("bounds display acknowledgment waits and clears them on session close", async () => {
+    vi.useFakeTimers();
+    try {
+      const { ctx, fake } = makeCtx();
+      fake.on((url) => url === `${BASE}/api/document`, documentResponse);
+      const session = createVoiceToolSession(ctx);
+      session.setBrowserContext({
+        view: {
+          readerNoteId: null,
+          researchPanelOpen: true,
+          visibleResearchId: null,
+          pinnedResearchId: null,
+        },
+      });
+      const timedOut = session.run("write_document", {
+        operation: "create",
+        title: "T",
+        markdown: "M",
+      });
+      await vi.advanceTimersByTimeAsync(5_000);
+      await expect(timedOut).resolves.toMatchObject({
+        display: { decision: "display-timeout" },
+      });
+
+      const closing = session.run("write_document", {
+        operation: "create",
+        title: "Second",
+        markdown: "M",
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      session.close();
+      await expect(closing).resolves.toMatchObject({
+        display: { decision: "display-unavailable" },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("createVoiceToolSession — promote and edit", () => {
@@ -973,12 +1014,19 @@ describe("createVoiceToolSession — web tools", () => {
         researchPanelOpen: true,
         visibleResearchId: "doc-a",
         pinnedResearchId: "article-a",
+        recentResearch: {
+          id: "doc-a",
+          mode: "document",
+          query: "Doc A",
+          document: { title: "Doc A", content: "mutable body" },
+        },
       },
     });
 
     const out = (await session.run("current_view", {})) as Record<string, any>;
     expect(out).toMatchObject({
       viewStateKnown: true,
+      recentResearch: { id: "article-a", mode: "article" },
       research: {
         panelOpen: true,
         visible: {
@@ -1011,6 +1059,30 @@ describe("createVoiceToolSession — web tools", () => {
       visible: null,
       pinned: { id: "article-a" },
     });
+  });
+
+  it("uses browser recentResearch without loading history for a closed unpinned panel", async () => {
+    const { ctx, fake } = makeCtx();
+    const session = createVoiceToolSession(ctx);
+    session.setBrowserContext({
+      view: {
+        readerNoteId: null,
+        researchPanelOpen: false,
+        visibleResearchId: null,
+        pinnedResearchId: null,
+        recentResearch: {
+          id: "recent",
+          mode: "web",
+          query: "Recent",
+          results: [],
+        },
+      },
+    });
+
+    await expect(session.run("current_view", {})).resolves.toMatchObject({
+      recentResearch: { id: "recent", mode: "web", query: "Recent" },
+    });
+    expect(fake.url("/api/research/history")).toHaveLength(0);
   });
 
   it("open_note rejects http URLs without sending an open_note action", async () => {

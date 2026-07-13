@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createResearchDocument,
   createResearchDocumentController,
+  createResearchDocumentConflictActions,
   type ResearchDocument,
   type ResearchDocumentTransport,
 } from "./research-document";
@@ -96,5 +97,83 @@ describe("research document state", () => {
     h.setContent("promoted");
     await expect(h.controller.promote()).resolves.toEqual({ noteId: "saved.md" });
     expect(h.transport.promote).toHaveBeenCalledWith(expect.objectContaining({ content: "promoted", revision: "r2" }));
+  });
+
+  it("flushes a debounced edit before closing the captured controller", async () => {
+    const h = harness();
+    h.setContent("pending at close");
+    await h.controller.close();
+    expect(h.transport.save).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "pending at close" }),
+    );
+    expect(h.controller.autosave.state()).toBe("clean");
+  });
+
+
+  it("waits for an in-flight save and persists the final edit before close", async () => {
+    let releaseFirst: (() => void) | undefined;
+    const first = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const save = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        await first;
+        return { revision: "r2" };
+      })
+      .mockResolvedValueOnce({ revision: "r3" });
+    const h = harness({ save });
+    h.setContent("first snapshot");
+    const saving = h.controller.autosave.flush();
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    h.setContent("final snapshot");
+    const closing = h.controller.close();
+    releaseFirst?.();
+    await Promise.all([saving, closing]);
+
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save).toHaveBeenLastCalledWith(
+      expect.objectContaining({ content: "final snapshot", revision: "r2" }),
+    );
+  });
+  it.each([
+    ["save error", new Error("offline"), "error"],
+    ["conflict", { status: 409 }, "conflict"],
+  ])("keeps the controller alive when close hits a %s", async (_label, failure, state) => {
+    const save = vi.fn().mockRejectedValue(failure);
+    const h = harness({ save });
+    h.setContent("retryable draft");
+
+    await expect(h.controller.close()).resolves.toBe(false);
+    expect(h.controller.autosave.state()).toBe(state);
+    expect(h.controller.document().content).toBe("retryable draft");
+  });
+
+  it("binds conflict actions to the document that raised them", async () => {
+    const first = harness();
+    const second = harness();
+    const reload = vi.spyOn(first.controller, "reload");
+    let active = first.controller;
+    const actions = createResearchDocumentConflictActions(
+      first.controller,
+      "doc-1",
+      (controller) => controller === active,
+    );
+    active = second.controller;
+
+    actions.reload();
+    actions.overwrite();
+    expect(reload).not.toHaveBeenCalled();
+    expect(first.transport.read).not.toHaveBeenCalled();
+  });
+
+  it("does not report promotion success when the endpoint fails", async () => {
+    const promote = vi.fn(async () => {
+      throw new Error("promotion failed");
+    });
+    const h = harness({ promote });
+    h.setContent("kept in history");
+    await expect(h.controller.promote()).rejects.toThrow("promotion failed");
+    expect(h.controller.document().content).toBe("kept in history");
   });
 });

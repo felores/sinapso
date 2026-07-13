@@ -1067,4 +1067,83 @@ describe("server: working document compare-and-swap boundary", () => {
       JSON.parse(readFileSync(join(researchDir, "evidence-id.json"), "utf-8")).mode,
     ).toBe("web");
   });
+
+  it("accepts one revisionless update for a legacy working document", async () => {
+    const researchDir = join(VAULT, "research");
+    mkdirSync(researchDir, { recursive: true });
+    writeFileSync(
+      join(researchDir, "doc-legacy.json"),
+      JSON.stringify({
+        id: "doc-legacy",
+        ts: new Date().toISOString(),
+        mode: "document",
+        query: "Legacy",
+        document: { title: "Legacy", content: "old" },
+      }),
+    );
+    const firstRead = await request(app).get("/api/document/doc-legacy");
+    expect(firstRead.body.revision).toEqual(expect.any(String));
+    const secondRead = await request(app).get("/api/document/doc-legacy");
+    expect(secondRead.body.revision).toBe(firstRead.body.revision);
+    const token = await sessionToken(app);
+    const updated = await request(app)
+      .post("/api/document")
+      .set("x-sinapso-token", token)
+      .send({
+        id: "doc-legacy",
+        revision: firstRead.body.revision,
+        title: "Legacy",
+        content: "new",
+      });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.revision).toEqual(expect.any(String));
+    const read = await request(app).get("/api/document/doc-legacy");
+    expect(read.body).toMatchObject({
+      id: "doc-legacy",
+      content: "new",
+      revision: updated.body.revision,
+    });
+  });
+  it("promotes a working document through the generic note destination", async () => {
+    const token = await sessionToken(app);
+    const created = await request(app)
+      .post("/api/document")
+      .set("x-sinapso-token", token)
+      .send({ title: "Promoted", content: "# Saved body" });
+    const promoted = await request(app)
+      .post(`/api/document/${created.body.id}/promote`)
+      .set("x-sinapso-token", token)
+      .send({ kind: "note", path: "promoted-explicit.md" });
+
+    expect(promoted.status).toBe(200);
+    expect(promoted.body).toMatchObject({
+      id: "promoted-explicit.md",
+      removedHistory: true,
+    });
+    expect(readFileSync(join(VAULT, "promoted-explicit.md"), "utf-8")).toContain(
+      "# Saved body",
+    );
+    expect(
+      (await request(app).get(`/api/document/${created.body.id}`)).status,
+    ).toBe(404);
+  });
+
+
+  it("retains the working document when promotion fails", async () => {
+    const token = await sessionToken(app);
+    const created = await request(app)
+      .post("/api/document")
+      .set("x-sinapso-token", token)
+      .send({ title: "Promotion failure", content: "keep me" });
+    const promoted = await request(app)
+      .post(`/api/document/${created.body.id}/promote`)
+      .set("x-sinapso-token", token)
+      .send({ kind: "note", path: "../../outside.md" });
+
+    expect(promoted.status).toBeGreaterThanOrEqual(400);
+    const retained = await request(app).get(`/api/document/${created.body.id}`);
+    expect(retained.status).toBe(200);
+    expect(retained.body.content).toBe("keep me");
+  });
 });

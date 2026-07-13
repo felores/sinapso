@@ -86,6 +86,7 @@ import {
 import {
   clearEntries,
   deleteEntry,
+  getEntry,
   listEntries,
   saveEntry,
   upsertEntry,
@@ -1116,9 +1117,7 @@ export function createApp(
       res.status(400).json({ error: "bad-id" });
       return;
     }
-    const existing = requestedId
-      ? listEntries(dataDir).find((entry) => entry.id === requestedId)
-      : undefined;
+    const existing = requestedId ? getEntry(dataDir, requestedId) : null;
     if (existing && (existing.mode !== "document" || !existing.document)) {
       res.status(409).json({ error: "immutable-evidence" });
       return;
@@ -1129,7 +1128,10 @@ export function createApp(
     }
     const expectedRevision =
       typeof req.body?.revision === "string" ? req.body.revision : null;
-    if (existing?.document && expectedRevision !== existing.document.revision) {
+    if (
+      existing?.document?.revision &&
+      expectedRevision !== existing.document.revision
+    ) {
       res.status(409).json({
         error: "stale-revision",
         revision: existing.document.revision,
@@ -1154,10 +1156,17 @@ export function createApp(
   });
 
   app.get("/api/document/:id", (req, res) => {
-    const entry = listEntries(dataDir).find((item) => item.id === req.params.id);
+    let entry = getEntry(dataDir, String(req.params.id));
     if (!entry || entry.mode !== "document" || !entry.document) {
       res.status(404).json({ error: "document-not-found" });
       return;
+    }
+    if (!entry.document.revision) {
+      const revision = randomUUID();
+      entry = upsertEntry(dataDir, {
+        ...entry,
+        document: { ...entry.document, revision },
+      });
     }
     res.json({ id: entry.id, ...entry.document });
   });
@@ -1324,19 +1333,55 @@ export function createApp(
     express.json({ limit: "5mb" }),
     (req, res) => {
       try {
-        const entry = listEntries(dataDir).find(
-          (e) => e.id === req.params.id && e.mode === "document" && e.document,
-        );
+        const entry = getEntry(dataDir, String(req.params.id));
         if (!entry?.document) throw new WriteError(404, "document not found");
         const b = (req.body ?? {}) as Record<string, unknown>;
-        const kind = b.kind === "raw_copy" ? "raw_copy" : "wiki_note";
-        const cfg = ingestTargetConfig(loadConfig(configPath));
-        const wiki = resolveWikiTarget(vaultRoot, cfg, { wikiId: b.wikiId });
+        const kind =
+          b.kind === "raw_copy"
+            ? "raw_copy"
+            : b.kind === "note"
+              ? "note"
+              : "wiki_note";
         const title =
           (typeof b.title === "string" && b.title.trim()) ||
           entry.document.title ||
           entry.query ||
           "Untitled";
+        if (kind === "note") {
+          const cfg = loadConfig(configPath);
+          const content = [
+            "---",
+            `saved: ${new Date().toISOString().slice(0, 10)}`,
+            "via: sinapso-agent-document",
+            "---",
+            "",
+            entry.document.content,
+            "",
+          ].join("\n");
+          const saved = guardedCreate(writeDeps(), {
+            content,
+            path:
+              typeof b.path === "string" && b.path.trim()
+                ? b.path.trim()
+                : undefined,
+            title,
+            destination:
+              typeof b.destination === "string"
+                ? b.destination
+                : cfg.writeDestination,
+            actor: "user",
+          });
+          deleteEntry(dataDir, entry.id);
+          res.json({
+            ok: true,
+            id: saved.id,
+            ids: [saved.id],
+            removedHistory: true,
+          });
+          return;
+        }
+        const cfg = ingestTargetConfig(loadConfig(configPath));
+        const wiki = resolveWikiTarget(vaultRoot, cfg, { wikiId: b.wikiId });
         const converted: ConvertedDocument = {
           source: `voice-document:${entry.id}`,
           sourceLabel: `voice working document: ${title}`,
