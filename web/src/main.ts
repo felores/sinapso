@@ -1599,6 +1599,7 @@ async function boot() {
     openNoteWords = null;
     clearSelectionContext("reader");
     updateBrandStats();
+    syncVoiceContext();
   }
 
   // The one live editor instance for the open note (plan 018 U2). Destroyed
@@ -2009,6 +2010,7 @@ async function boot() {
     readerPreviewingVersion = false;
     updateVersionControls();
     openNodeId = nextOpenNodeId;
+    syncVoiceContext();
     const body = $("#reader-body");
     destroyNoteEditor();
     if (n.phantom) {
@@ -3477,11 +3479,13 @@ async function boot() {
     includeSelectionContext = true;
     selectionToggle.checked = true;
     renderSelectionContextStrip();
+    syncVoiceContext();
   }
 
   function clearSelectionContext(source: SelectionSource) {
     selectionContextState = clearSelectionSlot(selectionContextState, source);
     renderSelectionContextStrip();
+    syncVoiceContext();
   }
 
   function selectedSearchSnapshot(): SelectionSnapshot | null {
@@ -4476,6 +4480,21 @@ async function boot() {
   let voiceSession: VoiceSession | null = null;
   let restartVoiceAfterClose = false;
 
+  function syncVoiceContext(displayAcknowledgment?: ResearchDisplayAcknowledgment & {
+    requestId?: string;
+  }) {
+    voiceSession?.sendContext({
+      ...currentSelectionSnapshot(),
+      view: {
+        readerNoteId: $("#reader").classList.contains("hidden") ? null : openNodeId,
+        researchPanelOpen: !$("#research").classList.contains("hidden"),
+        visibleResearchId: currentVisibleResearchId(),
+        pinnedResearchId: pinnedResearchEntryId,
+      },
+      ...(displayAcknowledgment ? { displayAcknowledgment } : {}),
+    });
+  }
+
   function renderVoiceConfig() {
     const v = integrations?.voice;
     // Provider always resolves to a real backend (Gemini default); the assistant
@@ -4652,6 +4671,7 @@ async function boot() {
         onReady: () => {
           voiceToggle.disabled = false;
           setVoiceActive(true);
+          syncVoiceContext();
         },
         onClose: () => {
           const shouldRestart = restartVoiceAfterClose;
@@ -4685,9 +4705,9 @@ async function boot() {
             voiceStatusTimer = null;
           }, 4000);
         },
-        onAction: (action, p) => {
+        onAction: async (action, p) => {
           // the agent drives the panels: open a note in the reader, or reopen
-          // a stored research entry — same code paths as clicking the UI.
+          // a stored research entry, then reports the browser's actual outcome.
           if (action === "open_note") {
             const n = byId.get(String(p.note ?? ""));
             if (n) select(n);
@@ -4698,7 +4718,11 @@ async function boot() {
             // History creation is independent from display. Reload first so a
             // newly-created agent entry remains reachable even when pinning
             // prevents it from replacing the user's current view.
-            void showAgentResearch(String(p.id ?? ""));
+            const acknowledgment = await showAgentResearch(String(p.id ?? ""));
+            syncVoiceContext({
+              ...acknowledgment,
+              requestId: String(p.requestId ?? ""),
+            });
           } else if (action === "open_saved_note") {
             const note = String(p.note ?? "");
             if (note) void openAfterIngest(note).then(loadHistory);
@@ -5175,6 +5199,7 @@ async function boot() {
       announceResearch(
         i18n.t(pinnedResearchEntryId ? "research.pinned" : "research.unpinned"),
       );
+    syncVoiceContext();
   }
 
   function hasUnsavedResearchDocumentEdits(): boolean {
@@ -5363,6 +5388,7 @@ async function boot() {
     $("#research-title").textContent = i18n.t(`research.${mode}`);
     researchError(null);
     updateBrandStats();
+    syncVoiceContext();
   }
 
   function closeResearch() {
@@ -5372,6 +5398,7 @@ async function boot() {
     // reader returns to the right unless the user pinned it left
     if (!readerLeftPinned) setReaderCtxLeft(false);
     updateBrandStats();
+    syncVoiceContext();
   }
   $("#research-close").addEventListener("click", closeResearch);
 
@@ -5954,6 +5981,7 @@ async function boot() {
         syncResearchPinUi();
         announceResearch(i18n.t("research.pinCleared"));
       }
+      syncVoiceContext();
     } catch {
       researchHistory = [];
     }
@@ -5999,6 +6027,7 @@ async function boot() {
     else renderSemanticInto(body, (entry.results ?? []) as never, entry.query);
     updateHistoryNav();
     updateBrandStats();
+    syncVoiceContext();
   }
 
   // After a fresh query the new entry is newest (index 0).

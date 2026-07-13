@@ -1647,7 +1647,7 @@
         "command": "npm test -- --run server/integrations/voice-tools.test.ts server/integrations/voice.test.ts server/integrations/registry.test.ts && npm run typecheck",
         "expected": "Focused voice tests cover unknown initial state, visible mutable document summaries, pinned immutable articles with URLs, closed-panel null visibility, selected-context preservation, browser acknowledgments, and updated declarations; typecheck passes."
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": ["F062"],
       "files_touched": ["web/src/main.ts", "web/src/voice.ts", "server/integrations/voice-tools.ts", "server/integrations/voice.ts", "server/integrations/registry.ts", "server/integrations/voice-tools.test.ts", "server/integrations/voice.test.ts", "server/integrations/registry.test.ts", "server/integrations/__fixtures__/voice-tools.snapshot.json"],
       "estimated_lines": 320,
@@ -1656,11 +1656,11 @@
       "confidence": "needs-review",
       "context_note": "Use VoiceSession.sendContext() and preserve selectedContext. Resolve browser-provided ids against research history; do not infer current visibility from server history order.",
       "spec_ref": "docs/plans/2026-07-11-019-feat-research-panel-pin-current-view-plan.md#u2-browser-to-voice-current-view-synchronization",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "PASS 2026-07-13: voice-tools, voice, and registry focused suites passed 65/65; npm run typecheck passed.",
+      "implemented_by": "Main",
+      "implemented_at": "2026-07-13T03:02:50Z",
+      "verified_by": "Main",
+      "verified_at": "2026-07-13T03:13:18Z"
     },
     {
       "id": "F064",

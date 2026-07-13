@@ -219,9 +219,13 @@ describe("createVoiceToolSession — selected context", () => {
     fake.on("/api/research/history", () => jsonResponse({ entries: [] }));
     const session = createVoiceToolSession(ctx);
     const out = (await session.run("current_view", {})) as {
+      viewStateKnown: boolean;
       selectedContext: { current: null };
     };
-    expect(out.selectedContext).toEqual({ current: null });
+    expect(out).toEqual({
+      viewStateKnown: false,
+      selectedContext: { current: null },
+    });
   });
 });
 
@@ -708,6 +712,53 @@ describe("createVoiceToolSession — write_document", () => {
     expect(show?.content).toBe("M");
     expect(show?.id).toMatch(/^doc-generated-\d+$/);
   });
+
+  it.each(["shown", "blocked-pinned"] as const)(
+    "waits for the browser display acknowledgment: %s",
+    async (decision) => {
+      const { ctx, fake, sent } = makeCtx();
+      fake.on((url) => url === `${BASE}/api/document`, documentResponse);
+      const session = createVoiceToolSession(ctx);
+      session.setBrowserContext({
+        view: {
+          readerNoteId: null,
+          researchPanelOpen: true,
+          visibleResearchId: "visible",
+          pinnedResearchId: decision === "blocked-pinned" ? "visible" : null,
+        },
+      });
+
+      const pending = session.run("write_document", {
+        operation: "create",
+        title: "T",
+        markdown: "M",
+      });
+      let action: object | undefined;
+      await vi.waitFor(() => {
+        action = sent.find(
+          (value) =>
+            value !== null &&
+            typeof value === "object" &&
+            "action" in value &&
+            value.action === "show_document",
+        );
+        expect(action).toBeDefined();
+      });
+      if (!action || !("requestId" in action)) throw new Error("missing requestId");
+      session.setBrowserContext({
+        displayAcknowledgment: {
+          requestId: action.requestId,
+          decision,
+          visibleId: decision === "shown" ? "doc-generated-1" : "visible",
+          pinnedId: decision === "blocked-pinned" ? "visible" : null,
+        },
+      });
+
+      await expect(pending).resolves.toMatchObject({
+        display: { decision },
+      });
+    },
+  );
 });
 
 describe("createVoiceToolSession — promote and edit", () => {
@@ -890,49 +941,75 @@ describe("createVoiceToolSession — promote and edit", () => {
 });
 
 describe("createVoiceToolSession — web tools", () => {
-  it("current_view includes recent research ids and web result URLs", async () => {
+  it("current_view resolves the browser-visible document and pinned article", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on("/api/reader-history", () => jsonResponse({ entries: [] }));
     fake.on("/api/research/history", () =>
       jsonResponse({
         entries: [
           {
-            id: "hist-web",
-            mode: "web",
-            query: "q",
-            results: [
-              { title: "A", url: "https://a.example" },
-              { title: "B", url: "https://b.example" },
-            ],
+            id: "article-a",
+            mode: "article",
+            query: "Article",
+            article: {
+              title: "Source",
+              url: "https://source.example/article",
+              content: "immutable body",
+            },
           },
           {
             id: "doc-a",
             mode: "document",
             query: "Doc A",
-            document: { title: "Doc A", content: "body" },
+            document: { title: "Doc A", content: "mutable body" },
           },
         ],
       }),
     );
     const session = createVoiceToolSession(ctx);
-
-    const out = (await session.run("current_view", {})) as {
-      recentResearch: Array<Record<string, unknown>>;
-    };
-
-    expect(out.recentResearch[0]).toMatchObject({
-      id: "hist-web",
-      mode: "web",
-      query: "q",
-      results: [
-        { title: "A", url: "https://a.example" },
-        { title: "B", url: "https://b.example" },
-      ],
+    session.setBrowserContext({
+      current: { source: "research", text: "selected passage" },
+      view: {
+        readerNoteId: null,
+        researchPanelOpen: true,
+        visibleResearchId: "doc-a",
+        pinnedResearchId: "article-a",
+      },
     });
-    expect(out.recentResearch[1]).toMatchObject({
-      id: "doc-a",
-      mode: "document",
-      document: { title: "Doc A" },
+
+    const out = (await session.run("current_view", {})) as Record<string, any>;
+    expect(out).toMatchObject({
+      viewStateKnown: true,
+      research: {
+        panelOpen: true,
+        visible: {
+          id: "doc-a",
+          mutable: true,
+          document: { title: "Doc A", content: "mutable body" },
+        },
+        pinned: {
+          id: "article-a",
+          mutable: false,
+          article: { title: "Source", url: "https://source.example/article" },
+        },
+      },
+      selectedContext: {
+        current: { source: "research", text: "selected passage" },
+      },
+    });
+
+    session.setBrowserContext({
+      view: {
+        readerNoteId: null,
+        researchPanelOpen: false,
+        visibleResearchId: "doc-a",
+        pinnedResearchId: "article-a",
+      },
+    });
+    const closed = (await session.run("current_view", {})) as Record<string, any>;
+    expect(closed.research).toMatchObject({
+      panelOpen: false,
+      visible: null,
+      pinned: { id: "article-a" },
     });
   });
 

@@ -280,7 +280,7 @@ const BASE_SYSTEM_PROMPT = `You are the voice assistant inside Sinapso, a 3D vis
 Speak briefly and conversationally, in the SAME language they speak. Refer to notes by their title; don't read raw file paths or line numbers aloud unless asked.
 
 Answer anything about THEIR OWN notes/vault from the tools — never from your own memory. Choose the tool by intent:
-- When they point at what's on screen ("this note", "what I'm reading", "esto", "lo que tengo abierto", "the research I just did") → current_view FIRST to see the open note + recent research, then answer (use the open note's path with the tools below for specifics).
+- When they point at what's on screen ("this note", "what I'm reading", "esto", "lo que tengo abierto", "the research I just did") → current_view FIRST. Browser context is the source of truth: if viewStateKnown is false, do not infer visibility from server history. A closed research panel always means visible research is null; pinned research may still be returned separately.
 - current_view also returns selectedContext.current when the user highlighted text. It includes the selected text and source metadata. Treat it as grounding for "this", "esto", or "dig deeper into this research". It is not a command by itself. If it is truncated, mention that only if it affects the answer.
 - To OPEN something on their screen: use open_resource when the target could be a URL, research result, or note path. Use open_note only for a known vault-relative .md note path. open_last_note reopens the last note; open_last_research reopens their last search. These also return a preview so you immediately know what's in it, so say something about it instead of only confirming.
 - To ANSWER a question from their notes ("what does it say about X", "what did I write on Y", "según mis notas…") → search_passages. It returns the matching passages. This is your default for content.
@@ -567,7 +567,7 @@ async function bridgeGemini(
         audio: { data: m.data, mimeType: "audio/pcm;rate=16000" },
       });
     } else if (m.type === "context") {
-      toolSession.setSelectedContext(m.context);
+      toolSession.setBrowserContext(m.context);
     }
   });
 
@@ -690,7 +690,7 @@ function bridgeRealtime(
         audio: resamplePcm16Base64(m.data, 16000, 24000),
       });
     } else if (m.type === "context") {
-      toolSession.setSelectedContext(m.context);
+      toolSession.setBrowserContext(m.context);
     }
   });
 

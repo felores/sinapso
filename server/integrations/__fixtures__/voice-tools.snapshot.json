@@ -1,7 +1,7 @@
 [
   {
     "name": "current_view",
-    "description": "What the user is looking at RIGHT NOW: the note open in the reader, their recent research, and selectedContext.current from the one highlighted reader/research passage. Call this FIRST whenever they refer to what's on screen or selected text: 'this note', 'what I'm reading', 'this', 'the research I just did', 'esto', 'lo seleccionado'. Then use the open note's path or selectedContext source label with the other tools to answer specifics.",
+    "description": "What the browser shows RIGHT NOW, never inferred from server history: whether view state is known, the reader note, research panel open state, visible and pinned research (including mutable document content or immutable article URL), and selectedContext.current. Call this FIRST whenever the user refers to what's on screen or selected text. If viewStateKnown is false, say the browser view is not available rather than guessing.",
     "parameters": {
       "type": "OBJECT",
       "properties": {}

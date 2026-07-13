@@ -40,6 +40,7 @@ export interface VoiceToolContext {
 
 export interface VoiceToolSession {
   run(name: string, args: VoiceArgs): Promise<VoiceResult>;
+  setBrowserContext(context: unknown): void;
   setSelectedContext(context: unknown): void;
 }
 
@@ -61,6 +62,13 @@ interface SelectedSlot {
 
 interface SelectedContextState {
   current: SelectedSlot | null;
+}
+
+interface BrowserViewState {
+  readerNoteId: string | null;
+  researchPanelOpen: boolean;
+  visibleResearchId: string | null;
+  pinnedResearchId: string | null;
 }
 
 /** Cap tool text sent back to the voice model: articles can run 20k+
@@ -195,12 +203,50 @@ export function createVoiceToolSession(
   const documentRevisions = new Map<string, string>();
   const contractWikisRead = new Set<string>();
   let selectedContext = emptySelectedContext();
+  let browserView: BrowserViewState | null = null;
+  const displayAcks = new Map<string, (ack: Record<string, unknown>) => void>();
 
-  function setSelectedContext(context: unknown): void {
+  function setBrowserContext(context: unknown): void {
     if (!context || typeof context !== "object") return;
     const raw = context as Record<string, unknown>;
-    if (!Object.prototype.hasOwnProperty.call(raw, "current")) return;
-    selectedContext = capSelectedContext({ current: normalizeSlot(raw.current) });
+    if (Object.prototype.hasOwnProperty.call(raw, "current")) {
+      selectedContext = capSelectedContext({ current: normalizeSlot(raw.current) });
+    }
+    const view = raw.view;
+    if (view && typeof view === "object") {
+      const v = view as Record<string, unknown>;
+      browserView = {
+        readerNoteId: clean(v.readerNoteId) ?? null,
+        researchPanelOpen: v.researchPanelOpen === true,
+        visibleResearchId: clean(v.visibleResearchId) ?? null,
+        pinnedResearchId: clean(v.pinnedResearchId) ?? null,
+      };
+    }
+    const ack = raw.displayAcknowledgment;
+    if (ack && typeof ack === "object") {
+      const requestId = clean((ack as Record<string, unknown>).requestId);
+      if (requestId) {
+        displayAcks.get(requestId)?.(ack as Record<string, unknown>);
+        displayAcks.delete(requestId);
+      }
+    }
+  }
+
+  async function requestResearchDisplay(
+    action: "open_research" | "show_document",
+    id: string,
+    extra: Record<string, unknown> = {},
+  ): Promise<Record<string, unknown>> {
+    const requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const acknowledged = new Promise<Record<string, unknown>>((resolve) => {
+      displayAcks.set(requestId, resolve);
+    });
+    send({ type: "action", action, id, requestId, ...extra });
+    if (!browserView) {
+      displayAcks.delete(requestId);
+      return { decision: "view-state-unknown" };
+    }
+    return acknowledged;
   }
 
   // ---- shared context helpers (reused by current_view + the open_* tools) ----
@@ -228,7 +274,6 @@ export function createVoiceToolSession(
       return { error: `could not read ${path}` };
     }
   }
-
   async function researchEntries(): Promise<ResearchHist[]> {
     try {
       const d = (await (
@@ -274,6 +319,7 @@ export function createVoiceToolSession(
       id: entry.id,
       mode: entry.mode,
       query: entry.query,
+      mutable: entry.mode === "document",
     };
     if (entry.mode === "web") {
       base.results = webResults(entry)
@@ -285,7 +331,10 @@ export function createVoiceToolSession(
       base.article = { title: entry.article.title, url: entry.article.url };
     }
     if (entry.document) {
-      base.document = { title: entry.document.title };
+      base.document = {
+        title: entry.document.title,
+        content: cap(entry.document.content ?? "", 3000),
+      };
     }
     return base;
   }
@@ -523,12 +572,24 @@ export function createVoiceToolSession(
   ): Promise<VoiceResult> {
     if (name === "current_view") {
       send({ type: "status", key: "voice.status.currentView" });
-      const noteId = await lastReaderNoteId();
+      if (!browserView) return { viewStateKnown: false, selectedContext };
+      const entries = await researchEntries();
+      const resolveResearch = (id: string | null) => {
+        const entry = id ? entries.find((candidate) => candidate.id === id) : undefined;
+        return entry ? researchSummary(entry) : null;
+      };
       return {
-        openNote: noteId ? await notePreview(noteId) : null,
-        recentResearch: (await researchEntries())
-          .slice(0, 6)
-          .map(researchSummary),
+        viewStateKnown: true,
+        openNote: browserView.readerNoteId
+          ? await notePreview(browserView.readerNoteId)
+          : null,
+        research: {
+          panelOpen: browserView.researchPanelOpen,
+          visible: browserView.researchPanelOpen
+            ? resolveResearch(browserView.visibleResearchId)
+            : null,
+          pinned: resolveResearch(browserView.pinnedResearchId),
+        },
         selectedContext,
       };
     }
@@ -556,11 +617,10 @@ export function createVoiceToolSession(
       send({ type: "status", key: "voice.status.openingLastResearch" });
       const entry = (await researchEntries())[0];
       if (!entry) return { error: "no research yet" };
-      send({ type: "action", action: "open_research", id: entry.id });
+      const display = await requestResearchDisplay("open_research", entry.id);
       return {
-        mode: entry.mode,
-        query: entry.query,
-        answer: entry.answer?.content ?? null,
+        ...researchSummary(entry),
+        display,
       };
     }
     if (name === "read_wiki_contract") {
@@ -627,10 +687,7 @@ export function createVoiceToolSession(
       knownDocumentIds.add(d.id);
       documentRevisions.set(d.id, d.revision);
       activeWorkingDocId = d.id;
-      send({
-        type: "action",
-        action: "show_document",
-        id: d.id,
+      const display = await requestResearchDisplay("show_document", d.id, {
         title,
         content,
         revision: d.revision,
@@ -640,6 +697,7 @@ export function createVoiceToolSession(
         id: d.id,
         revision: d.revision,
         chars: content.length,
+        display,
       };
     }
     if (name === "save_working_document") {
@@ -808,6 +866,7 @@ export function createVoiceToolSession(
 
   return {
     run: (name, args) => runTool(name, args),
-    setSelectedContext,
+    setBrowserContext,
+    setSelectedContext: setBrowserContext,
   };
 }
