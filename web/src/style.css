@@ -2213,13 +2213,14 @@ body > :not(#graph) {
 .rel-row:hover { background: rgba(88, 166, 255, 0.12); }
 .rel-title { font-size: 13.5px; color: var(--fg); }
 .rel-snippet {
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--muted);
-  line-height: 1.45;
-  /* Show the matched passage over several lines instead of a truncated
-     sliver — the semantically relevant content is the point of the result. */
+  line-height: 1.5;
+  /* Show the matched passage instead of a truncated sliver. Both the
+     research passage and the related-notes excerpt clamp to seven lines;
+     research passages also get an expand/collapse toggle (.clampable). */
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 7;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -2252,8 +2253,8 @@ body > :not(#graph) {
   font-variant-numeric: tabular-nums;
 }
 
-/* Preview clamp + expand toggle + relevance score for local passage snippets.
-   .clampable previews ~7 lines; .expanded shows all. */
+/* Preview clamp + expand toggle for research snippets (semantic, keyword,
+   web). .clampable previews EXACTLY seven lines; .expanded shows all. */
 .clampable {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -2265,7 +2266,8 @@ body > :not(#graph) {
   overflow: visible;
 }
 .expand-btn {
-  align-self: flex-start;
+  /* metadata/date stays left in its own row; the toggle aligns right */
+  align-self: flex-end;
   background: none;
   border: none;
   color: var(--accent);
@@ -2385,7 +2387,7 @@ body > :not(#graph) {
 .web-result a { color: var(--accent); font-size: 13px; text-decoration: none; }
 .web-result a:hover { text-decoration: underline; }
 .web-result-title { cursor: pointer; }
-.web-result .web-snippet { font-size: 12px; color: var(--fg); opacity: 0.85; }
+.web-result .web-snippet { font-size: 13.5px; line-height: 1.55; color: var(--fg); opacity: 0.85; }
 
 /* Article category (full-text fetched from a web result). */
 .article-source {
@@ -2396,12 +2398,12 @@ body > :not(#graph) {
   font-size: 12px;
 }
 .article-body {
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 14.5px;
+  line-height: 1.65;
   padding: 0 8px;
 }
 .article-body p { margin: 0 0 10px; }
-.article-body h1, .article-body h2, .article-body h3 { font-size: 15px; margin: 14px 0 6px; }
+.article-body h1, .article-body h2, .article-body h3 { font-size: 16px; margin: 14px 0 6px; }
 .article-body a { color: var(--accent); }
 .article-body img { max-width: 100%; height: auto; }
 .article-body pre { overflow-x: auto; }
@@ -2756,6 +2758,8 @@ body > :not(#graph) {
   overflow-y: auto;
   min-height: 0;
   padding: 14px 18px;
+  font-size: 14.5px;
+  line-height: 1.65;
 }
 #research-body.hidden { display: none; }
 #research-error {

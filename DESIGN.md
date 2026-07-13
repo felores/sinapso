@@ -144,3 +144,45 @@ All bare-letter shortcuts are suppressed while typing in any `INPUT`/`TEXTAREA`/
 Confirms the outline's claim (`a`=left panel, `d`=right panel, `r/g/l/u/o` for camera/display toggles, `Ctrl ±` for zoom): all bindings check out against the code as written above.
 
 Note: `Escape` order is modal → menus → research column → selection; the reader panel itself has no dedicated Escape-close entry in this handler (it's closed via its own `#reader-close` button / the `a` shortcut).
+
+## 7. Research panel: pin/current-view boundary & readability
+
+### Pin / current-view boundary (plan 019, U1)
+
+The research panel has a "current view" — whatever result the user is looking at — and a pin that protects it from being overwritten by agent-driven actions (`open_research` / `show_document` over the voice/browser bridge).
+
+- `#research-pin` button (inside `#research-head` / `#research-nav`, `web/index.html`): toggles `pinnedResearchEntryId` (`web/src/main.ts`) between `null` and the currently visible entry id. `aria-pressed` reflects pin state (`syncResearchPinUi()`).
+- `currentVisibleResearchId()`: the visible entry id, or `null` when the panel is closed. This is the browser-side ground truth the server's `current_view` tool (plan 019, U2) mirrors — `current_view` reports actual visible/pinned state, not a server guess.
+- `agentMayShowResearch(id, targetExists)` delegates to `decideAgentResearchDisplay(...)` (pure helper in `web/src/research-state.ts`, unit-tested in `research-state.test.ts`). It decides whether an agent action may take over the panel:
+  - `shown` — unpinned (agents may auto-open), OR a clean same-id refresh of the pinned entry.
+  - `blocked-pinned` — a *different* entry is pinned; the agent result is recorded in history but does NOT replace the visible result.
+  - `blocked-dirty` — the visible entry is a working document with unsaved local edits; even a same-id agent update is held back to preserve the user's edits.
+- Pin auto-clears when the pinned entry leaves history (reload/delete/promote) via `clearStaleResearchPin`, which announces `research.pinCleared`.
+
+In short: **pinning freezes the current view; agents append to history instead of hijacking the panel.** Never auto-show an agent result without routing it through `agentMayShowResearch`.
+
+### Research readability scale (plan 019, U6)
+
+Research content reads at the same scale as the reader panel; metadata stays subordinate. `#research-body` is set to the reader scale (`14.5px / 1.65`, matching `#reader-body`), and content surfaces step down from it.
+
+| Surface | Size | Notes |
+|---|---|---|
+| `#research-body` (base) | `14.5px / 1.65` | research-column reading scale = `#reader-body` |
+| `.article-body` (article + working-document) | `14.5px / 1.65` | primary fetched/agent text; headings `16px` |
+| `.web-result .web-snippet` | `13.5px / 1.55` | search-result excerpt; `opacity: 0.85` |
+| `.rel-snippet` (semantic/keyword passage + `#related`) | `13px / 1.5` | matched passage; `color: var(--muted)` |
+| `.web-meta` / `.sem-line` / `.score-badge` (metadata) | `11px / 10.5px / 10px` | deliberately small — subordinate to content |
+
+When touching research type, keep this hierarchy: **content ≥ 13px, metadata ≤ 11px.** Don't promote metadata to content size.
+
+### Seven-line snippet clamp
+
+Long snippets clamp to **exactly seven lines**, then expand in place without opening the row. The single mechanism is `attachExpand(snip)` (`web/src/main.ts`):
+
+1. Adds `.clampable` to the snippet (`-webkit-line-clamp: 7`, `display: -webkit-box`).
+2. After layout, if the text actually overflows (`scrollHeight - clientHeight ≥ 4`), inserts an `.expand-btn` right after the snippet. Short snippets get no button — the clamp is a ceiling, not a floor.
+3. The toggle flips `.clampable.expanded` (`-webkit-line-clamp: 9999`). Its click handler calls `e.stopPropagation()` so expanding/collapsing **never** triggers the enclosing row (opening the note / article).
+
+Coverage: `attachExpand` is reused by semantic passages (`renderSemanticInto`), keyword results (`renderKeywordInto`), and web-result snippets (`renderWebResult`). `.rel-snippet` also carries its own `-webkit-line-clamp: 7` so the `#related`-panel excerpts (which don't get an expand toggle) still clamp at seven. There is exactly one clamp height in the app: **7**.
+
+Alignment: `.expand-btn` is `align-self: flex-end`, so the toggle sits at the row's right edge while metadata/date (`.web-meta`, `.sem-passage-meta`) remain left-aligned in their own rows. Expand/collapse never opens the row.

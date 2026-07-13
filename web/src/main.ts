@@ -6951,6 +6951,7 @@ async function boot() {
     const badge = scoreBadge(r.score);
     if (badge) meta.append(badge);
     row.append(link, snip, meta);
+    attachExpand(snip);
     return row;
   }
 
