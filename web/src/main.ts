@@ -5334,9 +5334,15 @@ async function boot() {
       showHistoryEntry(researchHistory[i]);
       if (pinnedResearchEntryId === id)
         announceResearch(i18n.t("research.refreshed"));
-    } else if (decision === "blocked-dirty") {
-      researchError(i18n.t("research.refreshConflict"));
-      announceResearch(i18n.t("research.refreshConflict"));
+    } else {
+      historyIdx = researchHistory.findIndex(
+        (entry) => entry.id === currentVisibleResearchId(),
+      );
+      updateHistoryNav();
+      if (decision === "blocked-dirty") {
+        researchError(i18n.t("research.refreshConflict"));
+        announceResearch(i18n.t("research.refreshConflict"));
+      }
     }
     return emitResearchDisplayAcknowledgment(decision);
   }
@@ -5509,6 +5515,16 @@ async function boot() {
     hideEvidenceBubble();
     $("#research").classList.add("hidden");
     clearSelectionContext("research");
+    const controller = researchDocumentController;
+    const editor = researchDocumentEditor;
+    researchDocumentController = null;
+    researchDocumentEditor = null;
+    if (controller) {
+      void controller.autosave.flush().finally(() => {
+        controller.dispose();
+        editor?.destroy();
+      });
+    }
     // reader returns to the right unless the user pinned it left
     if (!readerLeftPinned) setReaderCtxLeft(false);
     updateBrandStats();
@@ -6186,7 +6202,12 @@ async function boot() {
       },
       transport,
       onState: (next) => {
-        state.textContent = i18n.t(`editor.saveState.${next}`);
+        state.textContent =
+          next === "clean"
+            ? i18n.t("editor.saveState.saved")
+            : next === "conflict"
+              ? ""
+              : i18n.t(`editor.saveState.${next}`);
         state.className = `research-document-save-state save-${next}`;
         if (next === "conflict") showDocumentConflict();
         if (next === "clean") void loadHistory().then(() => syncVoiceContext());

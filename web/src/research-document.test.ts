@@ -65,6 +65,20 @@ describe("research document state", () => {
     expect(h.controller.autosave.state()).toBe("conflict");
   });
 
+  it("explicitly rebases a local overwrite onto the latest revision", async () => {
+    const save = vi.fn()
+      .mockRejectedValueOnce({ status: 409 })
+      .mockResolvedValueOnce({ revision: "r4" });
+    const h = harness({ save });
+    h.setContent("local survives");
+    await h.controller.autosave.flush();
+    await h.controller.overwrite();
+    expect(save).toHaveBeenLastCalledWith(
+      expect.objectContaining({ content: "local survives", revision: "r3" }),
+    );
+    expect(h.controller.autosave.state()).toBe("clean");
+  });
+
   it("remains editable and retries after a failed save", async () => {
     const save = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ revision: "r2" });
     const h = harness({ save });

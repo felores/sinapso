@@ -1767,7 +1767,7 @@
         "command": "npm run test:e2e",
         "expected": "All Chromium E2E tests pass with zero skips and zero unallowlisted console, page, request, WebSocket, or HTTP 500+ diagnostics, including the complete research pinning and working-document collaboration flow."
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": ["F062", "F063", "F064", "F065", "F066", "F067"],
       "files_touched": ["tests/e2e/research-pinning.spec.ts", "tests/e2e/global-setup.ts"],
       "estimated_lines": 260,
@@ -1776,11 +1776,11 @@
       "confidence": "needs-review",
       "context_note": "Use the hermetic Playwright ports and diagnostics contract. Stub audio and route /api/voice/ws deterministically; do not depend on Gemini, external services, or development ports.",
       "spec_ref": "docs/plans/2026-07-11-019-feat-research-panel-pin-current-view-plan.md#u7-end-to-end-pinning-and-document-collaboration-proof",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "PASS 2026-07-13: npm run test:e2e passed 13/13 with zero skips and clean per-test browser diagnostics; 3 new collaboration scenarios cover pin, refresh, conflict, navigation, document persistence, evidence immutability, and snippet expansion.",
+      "implemented_by": "Main",
+      "implemented_at": "2026-07-13T03:30:33Z",
+      "verified_by": "Main",
+      "verified_at": "2026-07-13T03:46:23Z"
     }
   ]
 }
