@@ -948,3 +948,79 @@ describe("POST /api/selection-assist (plan 018 U7)", () => {
     }
   });
 });
+
+describe("server: working document compare-and-swap boundary", () => {
+  it("creates, reads, updates, and rejects a stale revision without mutation", async () => {
+    const token = await sessionToken(app);
+    const created = await request(app)
+      .post("/api/document")
+      .set("x-sinapso-token", token)
+      .send({ title: "Draft", content: "one" });
+    expect(created.status).toBe(200);
+    expect(created.body.id).toMatch(/^doc-[a-z0-9-]+$/);
+    expect(created.body.revision).toEqual(expect.any(String));
+
+    const read = await request(app).get(`/api/document/${created.body.id}`);
+    expect(read.body).toEqual({
+      id: created.body.id,
+      title: "Draft",
+      content: "one",
+      revision: created.body.revision,
+    });
+
+    const updated = await request(app)
+      .post("/api/document")
+      .set("x-sinapso-token", token)
+      .send({
+        id: created.body.id,
+        revision: created.body.revision,
+        title: "Draft",
+        content: "two",
+      });
+    expect(updated.status).toBe(200);
+    expect(updated.body.revision).not.toBe(created.body.revision);
+
+    const stale = await request(app)
+      .post("/api/document")
+      .set("x-sinapso-token", token)
+      .send({
+        id: created.body.id,
+        revision: created.body.revision,
+        title: "Draft",
+        content: "lost update",
+      });
+    expect(stale.status).toBe(409);
+    const after = await request(app).get(`/api/document/${created.body.id}`);
+    expect(after.body.content).toBe("two");
+  });
+
+  it("rejects missing updates and immutable evidence ids", async () => {
+    const token = await sessionToken(app);
+    const missing = await request(app)
+      .post("/api/document")
+      .set("x-sinapso-token", token)
+      .send({ id: "doc-missing", revision: "rev", content: "x" });
+    expect(missing.status).toBe(404);
+
+    const researchDir = join(VAULT, "research");
+    mkdirSync(researchDir, { recursive: true });
+    writeFileSync(
+      join(researchDir, "evidence-id.json"),
+      JSON.stringify({
+        id: "evidence-id",
+        ts: new Date().toISOString(),
+        mode: "web",
+        query: "source",
+      }),
+    );
+    const collision = await request(app)
+      .post("/api/document")
+      .set("x-sinapso-token", token)
+      .send({ id: "evidence-id", revision: "rev", content: "overwrite" });
+    expect(collision.status).toBe(409);
+    expect((await request(app).get("/api/document/evidence-id")).status).toBe(404);
+    expect(
+      JSON.parse(readFileSync(join(researchDir, "evidence-id.json"), "utf-8")).mode,
+    ).toBe("web");
+  });
+});

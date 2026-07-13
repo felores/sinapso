@@ -45,6 +45,7 @@ export interface ResearchHistoryEntry {
   document?: {
     title: string;
     content: string;
+    revision: string;
   };
 }
 

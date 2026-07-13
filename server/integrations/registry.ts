@@ -262,7 +262,7 @@ export const REGISTRY: RegistryEntry[] = [
   {
     name: "write_document",
     description:
-      "Create or update a temporary working document shown in the research panel. Use operation='create' for a separate new artifact, draft, alternate version, or second document. Use operation='update' with documentId when revising a known document. If operation is omitted, the current active document is updated; if none exists, a new one is created. Always pass the COMPLETE new markdown, never a fragment, because it REPLACES that document in place. The user can then save it as a vault note.",
+      "Create or update a temporary working document shown in the research panel. Use operation='create' without documentId to create a new document. Before operation='update', call read_working_document and pass its documentId and revision with the COMPLETE replacement markdown. Updates use compare-and-swap and reject stale revisions.",
     params: {
       type: "object",
       properties: {
@@ -272,19 +272,23 @@ export const REGISTRY: RegistryEntry[] = [
         },
         operation: {
           type: "string",
-          description:
-            "Optional: 'create' for a separate new document, or 'update' to revise an existing document.",
+          description: "Required: either 'create' or 'update'.",
+          enum: ["create", "update"],
         },
         documentId: {
           type: "string",
-          description: "Optional id of the temporary document to update.",
+          description: "Existing temporary document id. Required for update and forbidden for create.",
+        },
+        revision: {
+          type: "string",
+          description: "Revision returned by read_working_document. Required for update.",
         },
         markdown: {
           type: "string",
           description: "The complete document body in markdown.",
         },
       },
-      required: ["title", "markdown"],
+      required: ["operation", "title", "markdown"],
     },
     surfaces: ["voice", "mcp", "cli"],
     route: {
@@ -293,9 +297,31 @@ export const REGISTRY: RegistryEntry[] = [
       tokenRequired: true,
       body: {
         documentId: "id",
+        operation: "operation",
+        revision: "revision",
         title: "title",
         markdown: "content",
       },
+    },
+  },
+  {
+    name: "read_working_document",
+    description:
+      "Read the complete markdown and current revision of a temporary working document before replacing it. Only mode=document entries are readable.",
+    params: {
+      type: "object",
+      properties: {
+        documentId: {
+          type: "string",
+          description: "Existing temporary document id.",
+        },
+      },
+      required: ["documentId"],
+    },
+    surfaces: ["voice", "mcp", "cli"],
+    route: {
+      method: "GET",
+      path: "/api/document/{documentId}",
     },
   },
   {

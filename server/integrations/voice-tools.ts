@@ -192,6 +192,7 @@ export function createVoiceToolSession(
   // Mutable session state - one per conversation.
   let activeWorkingDocId: string | null = null;
   const knownDocumentIds = new Set<string>();
+  const documentRevisions = new Map<string, string>();
   const contractWikisRead = new Set<string>();
   let selectedContext = emptySelectedContext();
 
@@ -239,17 +240,17 @@ export function createVoiceToolSession(
     }
   }
 
-  function documentIdForTitle(title: string): string {
-    const slug =
-      title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 32) || "doc";
-    const prefix = `doc-${Date.now().toString(36)}-${slug}`;
-    let id = prefix;
-    for (let i = 2; knownDocumentIds.has(id); i++) id = `${prefix}-${i}`;
-    return id;
+  async function readWorkingDocument(id: string): Promise<VoiceResult> {
+    if (!DOC_ID_RE.test(id)) return { error: "invalid documentId" };
+    const r = await fetchFn(
+      `${base}/api/document/${encodeURIComponent(id)}`,
+    );
+    const d = (await r.json().catch(() => ({}))) as VoiceResult;
+    if (!r.ok) return { error: String(d.error ?? "document not found") };
+    if (typeof d.revision === "string") documentRevisions.set(id, d.revision);
+    knownDocumentIds.add(id);
+    activeWorkingDocId = id;
+    return d;
   }
 
   async function knownDocumentId(id: string): Promise<boolean> {
@@ -571,25 +572,36 @@ export function createVoiceToolSession(
       }
       return result;
     }
+    if (name === "read_working_document") {
+      const documentId = clean(args.documentId);
+      if (!documentId) return { error: "documentId required" };
+      return readWorkingDocument(documentId);
+    }
     if (name === "write_document") {
       const title = String(args.title ?? "").trim() || "Untitled";
       send({ type: "status", key: "voice.status.writingDocument", title });
       const content = String(args.markdown ?? "");
       const requestedId = clean(args.documentId);
-      const operation = args.operation === "create" || args.operation === "update" ? args.operation : null;
-      let documentId: string;
-      if (operation === "create") {
-        documentId = documentIdForTitle(title);
-      } else if (requestedId) {
-        if (!(await knownDocumentId(requestedId)))
-          return { error: "unknown documentId" };
-        documentId = requestedId;
-      } else if (activeWorkingDocId) {
-        documentId = activeWorkingDocId;
-      } else if (operation === "update") {
+      const operation = args.operation;
+      if (operation !== "create" && operation !== "update") {
+        return { error: "operation must be create or update" };
+      }
+      if (operation === "create" && requestedId) {
+        return { error: "documentId is not allowed when creating a document" };
+      }
+      if (operation === "update" && !requestedId) {
         return { error: "documentId required to update a document" };
-      } else {
-        documentId = documentIdForTitle(title);
+      }
+      const revision = clean(args.revision);
+      if (operation === "update" && !revision) {
+        return { error: "revision required to update a document" };
+      }
+      if (
+        operation === "update" &&
+        requestedId &&
+        documentRevisions.get(requestedId) !== revision
+      ) {
+        return { error: "read_working_document required before update" };
       }
       const r = await fetchFn(`${base}/api/document`, {
         method: "POST",
@@ -597,19 +609,38 @@ export function createVoiceToolSession(
           "content-type": "application/json",
           "x-sinapso-token": getSessionToken(),
         },
-        body: JSON.stringify({ id: documentId, title, content }),
+        body: JSON.stringify({
+          id: requestedId,
+          title,
+          content,
+          revision,
+        }),
       });
-      if (!r.ok) return { error: "could not save the document" };
-      knownDocumentIds.add(documentId);
-      activeWorkingDocId = documentId;
+      const d = (await r.json().catch(() => ({}))) as {
+        id?: string;
+        revision?: string;
+        error?: string;
+      };
+      if (!r.ok || !d.id || !d.revision) {
+        return { error: d.error ?? "could not save the document" };
+      }
+      knownDocumentIds.add(d.id);
+      documentRevisions.set(d.id, d.revision);
+      activeWorkingDocId = d.id;
       send({
         type: "action",
         action: "show_document",
-        id: documentId,
+        id: d.id,
         title,
         content,
+        revision: d.revision,
       });
-      return { ok: true, id: documentId, chars: content.length };
+      return {
+        ok: true,
+        id: d.id,
+        revision: d.revision,
+        chars: content.length,
+      };
     }
     if (name === "save_working_document") {
       send({ type: "status", key: "voice.status.savingDocument" });

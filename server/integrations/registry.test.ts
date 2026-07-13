@@ -63,6 +63,7 @@ describe("registry surfaces and routes", () => {
       "browse_folder",
       "list_wikis",
       "read_wiki_contract",
+      "read_working_document",
       "create_note",
       "edit_vault_note",
       "archive_vault_note",
@@ -97,7 +98,7 @@ describe("token-required dispatch (mutating routes send the header)", () => {
   // Canned args per tool so each mutating voice tool actually reaches its
   // bound route through the session dispatch.
   const ARGS: Record<string, Record<string, unknown>> = {
-    write_document: { title: "T", markdown: "body" },
+    write_document: { operation: "create", title: "T", markdown: "body" },
     save_working_document: { documentId: "doc-x" },
     edit_vault_note: { note: "a.md", markdown: "new" },
     archive_vault_note: { note: "a.md" },
@@ -132,9 +133,10 @@ describe("token-required dispatch (mutating routes send the header)", () => {
             }),
             { status: 200 },
           );
-        return new Response(JSON.stringify({ ok: true, id: "x" }), {
-          status: 200,
-        });
+        return new Response(
+          JSON.stringify({ ok: true, id: "x", revision: "rev-1" }),
+          { status: 200 },
+        );
       }) as typeof fetch;
       const session = createVoiceToolSession({
         base: "http://127.0.0.1:9",

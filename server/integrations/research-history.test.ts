@@ -70,13 +70,13 @@ describe("research history", () => {
       id: "doc-a",
       mode: "document",
       query: "A",
-      document: { title: "A", content: "one" },
+      document: { title: "A", content: "one", revision: "r1" },
     });
     upsertEntry(DATA, {
       id: "doc-b",
       mode: "document",
       query: "B",
-      document: { title: "B", content: "two" },
+      document: { title: "B", content: "two", revision: "r1" },
     });
 
     expect(listEntries(DATA).map((e) => e.id).sort()).toEqual(["doc-a", "doc-b"]);
@@ -87,19 +87,19 @@ describe("research history", () => {
       id: "doc-a",
       mode: "document",
       query: "A",
-      document: { title: "A", content: "one" },
+      document: { title: "A", content: "one", revision: "r1" },
     });
     upsertEntry(DATA, {
       id: "doc-b",
       mode: "document",
       query: "B",
-      document: { title: "B", content: "two" },
+      document: { title: "B", content: "two", revision: "r1" },
     });
     upsertEntry(DATA, {
       id: "doc-a",
       mode: "document",
       query: "A",
-      document: { title: "A", content: "one edited" },
+      document: { title: "A", content: "one edited", revision: "r2" },
     });
 
     const byId = new Map(listEntries(DATA).map((e) => [e.id, e]));

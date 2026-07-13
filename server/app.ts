@@ -18,6 +18,7 @@
 
 import express from "express";
 import type { Server } from "node:http";
+import { randomUUID } from "node:crypto";
 import {
   existsSync,
   readFileSync,
@@ -1106,28 +1107,59 @@ export function createApp(
     }
   });
 
-  // POST /api/document: upsert the voice agent's working document (mode
-  // "document"). Same id across a session's turns → the entry is edited in
-  // place, not appended (no chat log). Token-guarded (mutates local history).
+  // Working documents live in app-local research history. Evidence entries are
+  // immutable, and document replacement is compare-and-swap by revision.
   app.post("/api/document", guarded, express.json(), (req, res) => {
-    const id = String(req.body?.id ?? "");
-    if (!/^[a-z0-9-]+$/.test(id)) {
+    const requestedId =
+      typeof req.body?.id === "string" && req.body.id ? req.body.id : null;
+    if (requestedId && !/^[a-z0-9-]+$/.test(requestedId)) {
       res.status(400).json({ error: "bad-id" });
       return;
     }
+    const existing = requestedId
+      ? listEntries(dataDir).find((entry) => entry.id === requestedId)
+      : undefined;
+    if (existing && (existing.mode !== "document" || !existing.document)) {
+      res.status(409).json({ error: "immutable-evidence" });
+      return;
+    }
+    if (requestedId && !existing) {
+      res.status(404).json({ error: "document-not-found" });
+      return;
+    }
+    const expectedRevision =
+      typeof req.body?.revision === "string" ? req.body.revision : null;
+    if (existing?.document && expectedRevision !== existing.document.revision) {
+      res.status(409).json({
+        error: "stale-revision",
+        revision: existing.document.revision,
+      });
+      return;
+    }
+    const id = requestedId ?? `doc-${randomUUID()}`;
     const title = String(req.body?.title ?? "").trim() || "Untitled";
     const content = String(req.body?.content ?? "");
     try {
+      const revision = randomUUID();
       const entry = upsertEntry(dataDir, {
         id,
         mode: "document",
         query: title,
-        document: { title, content },
+        document: { title, content, revision },
       });
-      res.json({ ok: true, id: entry.id });
+      res.json({ ok: true, id: entry.id, revision });
     } catch {
       res.status(400).json({ error: "document-save-failed" });
     }
+  });
+
+  app.get("/api/document/:id", (req, res) => {
+    const entry = listEntries(dataDir).find((item) => item.id === req.params.id);
+    if (!entry || entry.mode !== "document" || !entry.document) {
+      res.status(404).json({ error: "document-not-found" });
+      return;
+    }
+    res.json({ id: entry.id, ...entry.document });
   });
 
   // ---- Research history (app-local, data/research/): page past results,

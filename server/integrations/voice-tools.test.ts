@@ -41,14 +41,26 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+let documentSequence = 0;
+function documentResponse(_url: string, init?: RequestInit): Response {
+  const body = JSON.parse(String(init?.body ?? "{}")) as {
+    id?: string;
+  };
+  return jsonResponse({
+    ok: true,
+    id: body.id ?? `doc-generated-${++documentSequence}`,
+    revision: `revision-${documentSequence}`,
+  });
+}
+
 interface FakeFetch {
   fn: FetchFn;
   calls: RecordedCall[];
   queue: Array<{
     match: (url: string, init?: RequestInit) => boolean;
-    respond: () => Response;
+    respond: (url: string, init?: RequestInit) => Response;
   }>;
-  on: (predicate: Matcher, respond: () => Response) => void;
+  on: (predicate: Matcher, respond: (url: string, init?: RequestInit) => Response) => void;
   url: (predicate: Matcher) => RecordedCall[];
 }
 
@@ -56,7 +68,7 @@ function makeFakeFetch(): FakeFetch {
   const calls: RecordedCall[] = [];
   const queue: Array<{
     match: (url: string, init?: RequestInit) => boolean;
-    respond: () => Response;
+    respond: (url: string, init?: RequestInit) => Response;
   }> = [];
   const fn: FetchFn = async (input, init) => {
     const url =
@@ -67,7 +79,7 @@ function makeFakeFetch(): FakeFetch {
           : (input as Request).url;
     calls.push({ url, init });
     for (const q of queue) {
-      if (q.match(url, init)) return q.respond();
+      if (q.match(url, init)) return q.respond(url, init);
     }
     return new Response("", { status: 200 });
   };
@@ -465,10 +477,10 @@ describe("consolidated search contracts (U5, AE5)", () => {
 describe("createVoiceToolSession — read_wiki_contract gating (save_working_document)", () => {
   it("rejects save_working_document (wiki_note) before read_wiki_contract with the current error", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
+    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
     const session = createVoiceToolSession(ctx);
 
-    await session.run("write_document", { title: "T", markdown: "M" });
+    await session.run("write_document", { operation: "create", title: "T", markdown: "M" });
     fake.calls.length = 0;
 
     const out = (await session.run("save_working_document", {
@@ -483,7 +495,7 @@ describe("createVoiceToolSession — read_wiki_contract gating (save_working_doc
 
   it("allows save_working_document (wiki_note) after read_wiki_contract for the same wiki", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
+    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
     fake.on("/api/wiki-contracts", () =>
       jsonResponse({ wiki: { id: "agencia/wiki", path: "agencia/wiki" } }),
     );
@@ -492,7 +504,7 @@ describe("createVoiceToolSession — read_wiki_contract gating (save_working_doc
     );
     const session = createVoiceToolSession(ctx);
 
-    await session.run("write_document", { title: "T", markdown: "M" });
+    await session.run("write_document", { operation: "create", title: "T", markdown: "M" });
     await session.run("read_wiki_contract", { wikiId: "agencia/wiki" });
     fake.calls.length = 0;
 
@@ -518,13 +530,13 @@ describe("createVoiceToolSession — read_wiki_contract gating (save_working_doc
 
   it("skips the read_wiki_contract check when kind=raw_copy", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
+    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
     fake.on((url) => url.includes("/promote"), () =>
       jsonResponse({ id: "research/2025-01-01_thing.md", removedHistory: false }),
     );
     const session = createVoiceToolSession(ctx);
 
-    await session.run("write_document", { title: "T", markdown: "M" });
+    await session.run("write_document", { operation: "create", title: "T", markdown: "M" });
     fake.calls.length = 0;
 
     const out = (await session.run("save_working_document", {
@@ -557,135 +569,112 @@ describe("createVoiceToolSession — write_document", () => {
     vi.setSystemTime(new Date("2025-01-01T00:00:00Z"));
   });
 
-  it("mints a doc-<base36 timestamp>-<slug> id on first call and tracks it", async () => {
+  it("creates without an id and adopts the server id and revision", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
+    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
     const session = createVoiceToolSession(ctx);
 
     const out = (await session.run("write_document", {
+      operation: "create",
       title: "My Note!",
       markdown: "body",
-    })) as { ok: boolean; id: string; chars: number };
+    })) as { ok: boolean; id: string; revision: string; chars: number };
 
     expect(out.ok).toBe(true);
-    expect(out.id).toMatch(/^doc-[a-z0-9]+-my-note$/);
+    expect(out.id).toMatch(/^doc-generated-\d+$/);
+    expect(out.revision).toMatch(/^revision-\d+$/);
     expect(out.chars).toBe(4);
-
-    expect(fake.calls[0].init?.method).toBe("POST");
     const body = JSON.parse(fake.calls[0].init?.body as string);
-    expect(body).toEqual({ id: out.id, title: "My Note!", content: "body" });
+    expect(body).toEqual({
+      id: undefined,
+      title: "My Note!",
+      content: "body",
+      revision: undefined,
+    });
     const headers = fake.calls[0].init?.headers as Record<string, string>;
     expect(headers["x-sinapso-token"]).toBe(TEST_TOKEN);
   });
 
-  it("keeps old-style write_document calls as active-document edits", async () => {
+  it("requires explicit create or update semantics", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
     const session = createVoiceToolSession(ctx);
-
-    const first = (await session.run("write_document", {
-      title: "T1",
-      markdown: "M1",
-    })) as { id: string };
-    const second = (await session.run("write_document", {
-      title: "T1",
-      markdown: "M1 edited",
-    })) as { id: string };
-
-    expect(first.id).toBe(second.id);
-    expect(fake.calls).toHaveLength(2);
-    const secondBody = JSON.parse(fake.calls[1].init?.body as string);
-    expect(secondBody.id).toBe(first.id);
-    expect(secondBody.content).toBe("M1 edited");
+    const out = await session.run("write_document", {
+      title: "T",
+      markdown: "M",
+    });
+    expect(out).toEqual({ error: "operation must be create or update" });
+    expect(fake.calls).toHaveLength(0);
   });
 
-  it("creates separate document ids when operation=create is requested", async () => {
+  it("reads a document before replacing it with its current revision", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
+    fake.on(
+      (url) => url === `${BASE}/api/document/doc-existing`,
+      () =>
+        jsonResponse({
+          id: "doc-existing",
+          title: "A",
+          content: "one",
+          revision: "rev-1",
+        }),
+    );
+    fake.on((url) => url === `${BASE}/api/document`, (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      return jsonResponse({ ok: true, id: body.id, revision: "rev-2" });
+    });
     const session = createVoiceToolSession(ctx);
 
-    const first = (await session.run("write_document", {
-      operation: "create",
-      title: "A",
-      markdown: "one",
-    })) as { id: string };
-    const second = (await session.run("write_document", {
-      operation: "create",
-      title: "B",
-      markdown: "two",
-    })) as { id: string };
-
-    expect(first.id).not.toBe(second.id);
-    expect(JSON.parse(fake.calls[0].init?.body as string)).toMatchObject({
-      id: first.id,
-      title: "A",
-      content: "one",
+    const read = await session.run("read_working_document", {
+      documentId: "doc-existing",
     });
-    expect(JSON.parse(fake.calls[1].init?.body as string)).toMatchObject({
-      id: second.id,
-      title: "B",
-      content: "two",
-    });
-  });
-
-  it("updates a specific document id without touching the active document", async () => {
-    const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
-    const session = createVoiceToolSession(ctx);
-
-    const first = (await session.run("write_document", {
-      operation: "create",
-      title: "A",
-      markdown: "one",
-    })) as { id: string };
-    await session.run("write_document", {
-      operation: "create",
-      title: "B",
-      markdown: "two",
-    });
-    fake.calls.length = 0;
-
-    const out = (await session.run("write_document", {
+    expect(read).toMatchObject({ content: "one", revision: "rev-1" });
+    const out = await session.run("write_document", {
       operation: "update",
-      documentId: first.id,
+      documentId: "doc-existing",
+      revision: "rev-1",
       title: "A",
       markdown: "one edited",
-    })) as { id: string };
+    });
 
-    expect(out.id).toBe(first.id);
-    const body = JSON.parse(fake.calls[0].init?.body as string);
-    expect(body).toEqual({ id: first.id, title: "A", content: "one edited" });
+    expect(out).toMatchObject({ ok: true, id: "doc-existing", revision: "rev-2" });
+    expect(JSON.parse(fake.calls[1].init?.body as string)).toEqual({
+      id: "doc-existing",
+      title: "A",
+      content: "one edited",
+      revision: "rev-1",
+    });
   });
 
-  it("rejects an unknown documentId without writing", async () => {
+  it("rejects update without a prior full read", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on("/api/research/history", () => jsonResponse({ entries: [] }));
     const session = createVoiceToolSession(ctx);
-
-    const out = (await session.run("write_document", {
+    const out = await session.run("write_document", {
       operation: "update",
       documentId: "doc-missing",
+      revision: "rev-1",
       title: "A",
       markdown: "x",
-    })) as { error: string };
-
-    expect(out.error).toBe("unknown documentId");
-    expect(fake.url(`${BASE}/api/document`)).toHaveLength(0);
+    });
+    expect(out).toEqual({
+      error: "read_working_document required before update",
+    });
+    expect(fake.calls).toHaveLength(0);
   });
 
-  it("falls back to the 'doc' slug when the title slugs to an empty string", async () => {
+  it("rejects update without revision", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
     const session = createVoiceToolSession(ctx);
-
-    const out = (await session.run("write_document", {
-      title: "!!!",
+    const out = await session.run("write_document", {
+      operation: "update",
+      documentId: "doc-existing",
+      title: "A",
       markdown: "x",
-    })) as { id: string };
-    expect(out.id).toMatch(/^doc-[a-z0-9]+-doc$/);
+    });
+    expect(out).toEqual({ error: "revision required to update a document" });
+    expect(fake.calls).toHaveLength(0);
   });
 
-  it("returns the 'could not save the document' error when the document endpoint is non-OK", async () => {
+  it("surfaces the document endpoint error when the write fails", async () => {
     const { ctx, fake } = makeCtx();
     fake.on((url) => url === `${BASE}/api/document`, () =>
       jsonResponse({ error: "boom" }, 500),
@@ -693,18 +682,19 @@ describe("createVoiceToolSession — write_document", () => {
     const session = createVoiceToolSession(ctx);
 
     const out = (await session.run("write_document", {
+      operation: "create",
       title: "T",
       markdown: "M",
     })) as { error: string };
-    expect(out.error).toBe("could not save the document");
+    expect(out.error).toBe("boom");
   });
 
   it("emits a show_document action to the browser with the new id, title, and content", async () => {
     const { ctx, fake, sent } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
+    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
     const session = createVoiceToolSession(ctx);
 
-    await session.run("write_document", { title: "T", markdown: "M" });
+    await session.run("write_document", { operation: "create", title: "T", markdown: "M" });
 
     const show = sent.find(
       (s) =>
@@ -716,14 +706,14 @@ describe("createVoiceToolSession — write_document", () => {
     expect(show).toBeDefined();
     expect(show?.title).toBe("T");
     expect(show?.content).toBe("M");
-    expect(show?.id).toMatch(/^doc-[a-z0-9]+-t$/);
+    expect(show?.id).toMatch(/^doc-generated-\d+$/);
   });
 });
 
 describe("createVoiceToolSession — promote and edit", () => {
   it("save_working_document hits /api/document/:id/promote with the current working doc id and the session token", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
+    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
     fake.on("/api/wiki-contracts", () =>
       jsonResponse({ wiki: { id: "w", path: "w" } }),
     );
@@ -736,7 +726,7 @@ describe("createVoiceToolSession — promote and edit", () => {
     );
     const session = createVoiceToolSession(ctx);
 
-    await session.run("write_document", { title: "T", markdown: "M" });
+    await session.run("write_document", { operation: "create", title: "T", markdown: "M" });
     await session.run("read_wiki_contract", { wikiId: "w" });
     fake.calls.length = 0;
 
@@ -776,7 +766,7 @@ describe("createVoiceToolSession — promote and edit", () => {
 
   it("save_working_document can promote a specified document while another is active", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
+    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
     fake.on("/api/wiki-contracts", () =>
       jsonResponse({ wiki: { id: "w", path: "w" } }),
     );
@@ -818,7 +808,7 @@ describe("createVoiceToolSession — promote and edit", () => {
 
   it("save_working_document surfaces the server error message when the promote endpoint fails", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, () => jsonResponse({ ok: true }));
+    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
     fake.on("/api/wiki-contracts", () =>
       jsonResponse({ wiki: { id: "w", path: "w" } }),
     );
@@ -827,7 +817,7 @@ describe("createVoiceToolSession — promote and edit", () => {
     );
     const session = createVoiceToolSession(ctx);
 
-    await session.run("write_document", { title: "T", markdown: "M" });
+    await session.run("write_document", { operation: "create", title: "T", markdown: "M" });
     await session.run("read_wiki_contract", { wikiId: "w" });
     fake.calls.length = 0;
 
@@ -1154,9 +1144,24 @@ describe("createVoiceToolSession — delegate_to_thinker (U7)", () => {
       TEST_TOKEN,
     );
     // adopted document: a follow-up write_document targets doc-77
-    fake.on("/api/document", () => jsonResponse({ ok: true }));
-    await session.run("write_document", { title: "Rev", markdown: "x" });
-    const write = fake.url("/api/document")[0];
+    fake.on("/api/document/doc-77", () =>
+      jsonResponse({ id: "doc-77", title: "Rev", content: "old", revision: "rev-1" }),
+    );
+    fake.on("/api/document", (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      return jsonResponse({ ok: true, id: body.id, revision: "rev-2" });
+    });
+    await session.run("read_working_document", { documentId: "doc-77" });
+    await session.run("write_document", {
+      operation: "update",
+      documentId: "doc-77",
+      revision: "rev-1",
+      title: "Rev",
+      markdown: "x",
+    });
+    const write = fake.calls.find(
+      (item) => item.url === `${BASE}/api/document` && item.init?.method === "POST",
+    )!;
     expect(JSON.parse(String(write.init?.body)).id).toBe("doc-77");
   });
 

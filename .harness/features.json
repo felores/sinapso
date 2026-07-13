@@ -1671,7 +1671,7 @@
         "command": "npm test -- --run server/app.test.ts server/integrations/voice-tools.test.ts server/integrations/voice-promote.test.ts server/integrations/registry.test.ts",
         "expected": "Focused server tests prove generated-id creation, full reads with revision, successful compare-and-swap update, stale and missing update rejection without mutation, evidence read/write rejection, and guarded promotion with temporary-entry removal."
       },
-      "state": "not_started",
+      "state": "passing",
       "depends_on": [],
       "files_touched": ["server/app.ts", "server/integrations/registry.ts", "server/integrations/voice-tools.ts", "server/integrations/mcp-bridge.ts", "server/integrations/voice-tools.test.ts", "server/integrations/registry.test.ts", "server/app.test.ts", "server/integrations/voice-promote.test.ts"],
       "estimated_lines": 300,
@@ -1680,11 +1680,11 @@
       "confidence": "needs-review",
       "context_note": "Harden the existing /api/document boundary; never create another vault writer. Non-document history entries are immutable evidence, and full replace requires a prior full document read.",
       "spec_ref": "docs/plans/2026-07-11-019-feat-research-panel-pin-current-view-plan.md#u3-agent-safe-working-document-readwrite-boundary",
-      "evidence": null,
-      "implemented_by": null,
-      "implemented_at": null,
-      "verified_by": null,
-      "verified_at": null
+      "evidence": "PASS 2026-07-13: focused server/app, voice-tools, voice-promote, and registry suites passed 108/108; npm run typecheck passed.",
+      "implemented_by": "Main",
+      "implemented_at": "2026-07-13T02:40:59Z",
+      "verified_by": "Main",
+      "verified_at": "2026-07-13T02:53:40Z"
     },
     {
       "id": "F065",

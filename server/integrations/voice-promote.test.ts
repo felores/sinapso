@@ -45,18 +45,17 @@ describe("voice working document promotion", () => {
   it("saves a working document as a structured wiki note and removes history", async () => {
     const f = fixture();
     const t = await token(f.server.app);
-    await request(f.server.app)
+    const created = await request(f.server.app)
       .post("/api/document")
       .set("x-sinapso-token", t)
       .send({
-        id: "doc-test",
         title: "Ada Lovelace",
         content: "# Ada Lovelace\n\nSource: web research.\n\n[[Mathematics]]",
       })
       .expect(200);
 
     const res = await request(f.server.app)
-      .post("/api/document/doc-test/promote")
+      .post(`/api/document/${created.body.id}/promote`)
       .set("x-sinapso-token", t)
       .send({
         kind: "wiki_note",
@@ -70,9 +69,9 @@ describe("voice working document promotion", () => {
       "[[Mathematics]]",
     );
     const history = await request(f.server.app).get("/api/research/history");
-    expect(history.body.entries.some((e: { id: string }) => e.id === "doc-test")).toBe(
-      false,
-    );
+    expect(
+      history.body.entries.some((e: { id: string }) => e.id === created.body.id),
+    ).toBe(false);
     expect(readChangeLog(f.data).at(-1)).toMatchObject({
       actor: "agent",
       action: "create",
@@ -83,14 +82,14 @@ describe("voice working document promotion", () => {
   it("saves a working document as a raw copy in the wiki raw destination", async () => {
     const f = fixture();
     const t = await token(f.server.app);
-    await request(f.server.app)
+    const created = await request(f.server.app)
       .post("/api/document")
       .set("x-sinapso-token", t)
-      .send({ id: "doc-raw", title: "Raw Interview", content: "raw transcript" })
+      .send({ title: "Raw Interview", content: "raw transcript" })
       .expect(200);
 
     const res = await request(f.server.app)
-      .post("/api/document/doc-raw/promote")
+      .post(`/api/document/${created.body.id}/promote`)
       .set("x-sinapso-token", t)
       .send({ kind: "raw_copy", wikiId: "area/wiki" });
 
