@@ -461,3 +461,21 @@ This session implements U1 only (Vault-path guard module). Subsequent units land
 ## Reconciliation 2026-07-10
 
 F001-F061 are immutable historical completed features. Plans and work completed after July 7 happened outside feature tracking and will not be retroactively fabricated. The next new implementation-ready plan must enter through `harness-progress init`, `harness-progress next`, and `harness-progress verify`.
+
+## Session 2026-07-12-123442
+
+**Features completed:**
+- F062: not_started -> active -> passing. Added session-scoped research pinning, agent display gating, dirty-draft protection, stale-pin cleanup, acknowledgments, and focused state tests.
+- F063: not_started -> active -> passing. Synchronized browser reader/research/pin state into voice `current_view`, restored bounded recent research, and bounded display acknowledgments.
+- F064: not_started -> active -> passing. Added revision-CAS working-document create/read/update semantics, immutable evidence protection, direct history lookup, legacy revision migration, and guarded promotion.
+- F065: not_started -> active -> passing. Added isolated editable research documents with autosave, conflict-safe teardown, AI/toolbar parity, retryable failures, and explicit promotion.
+- F066: not_started -> active -> passing. Added mutability-aware selection eligibility and an ask-only evidence bubble with passive capture.
+- F067: not_started -> active -> passing. Raised research typography to reader scale, standardized seven-line snippets, and documented pin/current-view conventions.
+- F068: not_started -> active -> passing. Added three hermetic collaboration E2E scenarios covering pinning, agent refresh, dirty conflicts, navigation, document persistence, evidence immutability, and snippet expansion.
+
+**Review fixes:** preserved queued edits during teardown; scoped conflict actions to their document; restored promotion, current-view, legacy-revision, and stale-selection contracts; removed redundant hot-path history work; bounded pending acknowledgments.
+
+**Commits:** `20f8a8a`, `99ebce7`, `63a9404`, `85d9628`, `e384486`, `3a6a8fe`, `e76d5e0`, `5f07b5b`, `ee86f03`.
+
+**Verifier result:** required serial gate passed on current HEAD: `npm test` 773/773 (50 files), `npm run typecheck`, `npm run build`, and `npm run test:e2e` 13/13 with zero skips and clean browser diagnostics. Independent validator PASS. Features passing: 68/68 (100%).
+
