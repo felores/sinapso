@@ -26,7 +26,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, relative, resolve, sep } from "node:path";
 import { scanVault } from "../scanner/scan.js";
 import {
   defaultPrompts,
@@ -90,6 +90,7 @@ import {
   listEntries,
   saveEntry,
   upsertEntry,
+  convertedFromResearchEntry,
 } from "./integrations/research-history.js";
 import {
   clearReaderHistory,
@@ -152,7 +153,6 @@ import { attachVoiceRelay } from "./integrations/voice.js";
 import { discoverAndMerge } from "./integrations/wiki.js";
 import {
   applyWikiIngestOperations,
-  buildRawOperation,
   buildWikiIngestProposal,
   readWikiContracts,
   resolveWikiTarget,
@@ -1301,17 +1301,6 @@ export function createApp(
   const noteCheckpointMessage = (id: string) =>
     `Checkpoint note: ${id.split(/[\\/]/).pop() || id}`;
 
-  const noteSlug = (title: string) =>
-    title
-      .normalize("NFKD")
-      .replace(/[̀-ͯ]/g, "")
-      .toLowerCase()
-      .replace(/['’‘"]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 80)
-      .replace(/-+$/g, "") || "document";
-
   app.get("/api/wiki-contracts", (req, res) => {
     try {
       const cfg = ingestTargetConfig(loadConfig(configPath));
@@ -1327,97 +1316,6 @@ export function createApp(
     }
   });
 
-  app.post(
-    "/api/document/:id/promote",
-    guarded,
-    express.json({ limit: "5mb" }),
-    (req, res) => {
-      try {
-        const entry = getEntry(dataDir, String(req.params.id));
-        if (!entry?.document) throw new WriteError(404, "document not found");
-        const b = (req.body ?? {}) as Record<string, unknown>;
-        const kind =
-          b.kind === "raw_copy"
-            ? "raw_copy"
-            : b.kind === "note"
-              ? "note"
-              : "wiki_note";
-        const title =
-          (typeof b.title === "string" && b.title.trim()) ||
-          entry.document.title ||
-          entry.query ||
-          "Untitled";
-        if (kind === "note") {
-          const cfg = loadConfig(configPath);
-          const content = [
-            "---",
-            `saved: ${new Date().toISOString().slice(0, 10)}`,
-            "via: sinapso-agent-document",
-            "---",
-            "",
-            entry.document.content,
-            "",
-          ].join("\n");
-          const saved = guardedCreate(writeDeps(), {
-            content,
-            path:
-              typeof b.path === "string" && b.path.trim()
-                ? b.path.trim()
-                : undefined,
-            title,
-            destination:
-              typeof b.destination === "string"
-                ? b.destination
-                : cfg.writeDestination,
-            actor: "user",
-          });
-          deleteEntry(dataDir, entry.id);
-          res.json({
-            ok: true,
-            id: saved.id,
-            ids: [saved.id],
-            removedHistory: true,
-          });
-          return;
-        }
-        const cfg = ingestTargetConfig(loadConfig(configPath));
-        const wiki = resolveWikiTarget(vaultRoot, cfg, { wikiId: b.wikiId });
-        const converted: ConvertedDocument = {
-          source: `voice-document:${entry.id}`,
-          sourceLabel: `voice working document: ${title}`,
-          title,
-          markdown: entry.document.content,
-          via: "voice",
-        };
-        const op =
-          kind === "raw_copy"
-            ? buildRawOperation(vaultRoot, wiki, converted, new Date())
-            : {
-                type: "create" as const,
-                path:
-                  typeof b.path === "string" && b.path.trim()
-                    ? b.path.trim()
-                    : `${wiki.path}/${noteSlug(title)}.md`,
-                title,
-                content: converted.markdown,
-              };
-        if (!op)
-          throw new WriteError(400, "selected wiki has no raw destination");
-        const ids = applyWikiIngestOperations(
-          writeDeps(),
-          vaultRoot,
-          wiki,
-          [op],
-          { actor: "agent" },
-        );
-        deleteEntry(dataDir, entry.id);
-        res.json({ ok: true, id: ids[0], ids, removedHistory: true });
-      } catch (e) {
-        writeFail(res, e, "document promote");
-      }
-    },
-  );
-
   async function markitdownBinOrFail(
     res: express.Response,
   ): Promise<string | null> {
@@ -1427,6 +1325,7 @@ export function createApp(
   async function wikiIngestProposal(
     converted: ConvertedDocument,
     wikiId: unknown,
+    opts: { researchId?: string; sourceNote?: string } = {},
   ) {
     const cfg = loadConfig(configPath);
     // Wiki-ingest synthesis is the thinker-tier operation (R8).
@@ -1440,8 +1339,68 @@ export function createApp(
       wiki,
       converted,
       (messages) => tierCompletion(llm, messages, integrations?.openrouter),
+      opts,
     );
   }
+
+  function inboxSourceNote(
+    raw: unknown,
+    cfg: ReturnType<typeof loadConfig>,
+    allowMissing = false,
+  ): string | undefined {
+    if (raw == null) return undefined;
+    if (typeof raw !== "string" || !raw.trim())
+      throw new WriteError(400, "source note required");
+    const full = allowMissing
+      ? confineNoteId(vaultRoot, raw.trim())
+      : noteFileOrFail(vaultRoot, raw.trim());
+    if (!full) throw new WriteError(400, "source note required");
+    const destination = resolve(vaultRoot, cfg.writeDestination);
+    if (!full.startsWith(destination + sep))
+      throw new WriteError(400, "source note must be in the configured Inbox");
+    return relative(resolve(vaultRoot), full).split(sep).join("/");
+  }
+
+  function convertedFromInboxNote(sourceNote: string): ConvertedDocument {
+    const markdown = readFileSync(
+      noteFileOrFail(vaultRoot, sourceNote),
+      "utf-8",
+    );
+    const heading = markdown.match(/^#\s+(.+?)\s*#*\s*$/m)?.[1]?.trim();
+    return {
+      source: sourceNote,
+      sourceLabel: sourceNote,
+      title:
+        heading ||
+        sourceNote.split("/").pop()?.replace(/\.md$/i, "") ||
+        "Inbox note",
+      markdown,
+      via: "inbox",
+    };
+  }
+
+  app.post("/api/research/history/:id/save-inbox", guarded, (req, res) => {
+    try {
+      const entry = getEntry(dataDir, String(req.params.id));
+      const converted = entry && convertedFromResearchEntry(entry);
+      if (!converted)
+        throw new WriteError(
+          400,
+          "only web, article, and document research can be saved",
+        );
+      const cfg = loadConfig(configPath);
+      const saved = guardedCreate(writeDeps(), {
+        title: converted.title,
+        content: converted.markdown,
+        destination: cfg.writeDestination,
+        actor: "user",
+      });
+      deleteEntry(dataDir, entry.id);
+      res.json({ ok: true, id: saved.id, removedHistory: true });
+    } catch (e) {
+      writeFail(res, e, "research save inbox");
+    }
+  });
 
   app.post(
     "/api/wiki-ingest/propose",
@@ -1464,7 +1423,25 @@ export function createApp(
         ) {
           return;
         }
+        const sourceNote = inboxSourceNote(b.sourceNote, cfg);
+        const researchId =
+          !sourceNote && typeof b.researchId === "string"
+            ? b.researchId
+            : undefined;
+        const researchEntry = researchId ? getEntry(dataDir, researchId) : null;
+        if (researchId && !researchEntry)
+          throw new WriteError(404, "research entry not found");
+        const researchConverted = researchEntry
+          ? convertedFromResearchEntry(researchEntry)
+          : null;
+        if (researchId && !researchConverted)
+          throw new WriteError(
+            400,
+            "only web, article, and document research can be ingested",
+          );
         const converted =
+          (sourceNote ? convertedFromInboxNote(sourceNote) : null) ??
+          researchConverted ??
           convertedFromBody(b) ??
           (await (async () => {
             const bin = await markitdownBinOrFail(res);
@@ -1485,7 +1462,12 @@ export function createApp(
             );
           })());
         if (!converted) return;
-        res.json(await wikiIngestProposal(converted, b.wikiId));
+        res.json(
+          await wikiIngestProposal(converted, b.wikiId, {
+            researchId,
+            sourceNote,
+          }),
+        );
       } catch (e) {
         writeFail(res, e, "wiki ingest proposal");
       }
@@ -1537,13 +1519,29 @@ export function createApp(
         const b = (req.body ?? {}) as Record<string, unknown>;
         const cfg = ingestTargetConfig(loadConfig(configPath));
         const wiki = resolveWikiTarget(vaultRoot, cfg, { wikiId: b.wikiId });
+        const sourceNote = inboxSourceNote(b.sourceNote, cfg, true);
+        const researchId =
+          typeof b.researchId === "string" ? b.researchId : undefined;
+        if (researchId) {
+          const entry = getEntry(dataDir, researchId);
+          if (!entry || !convertedFromResearchEntry(entry))
+            throw new WriteError(400, "research entry cannot be ingested");
+        }
         const ids = applyWikiIngestOperations(
           writeDeps(),
           vaultRoot,
           wiki,
           b.operations,
+          { sourceNote },
         );
-        res.json({ ok: true, ids });
+        if (sourceNote) {
+          const move = ids[0];
+          if (move) res.json({ ok: true, ids, id: move });
+          else res.json({ ok: true, ids });
+          return;
+        }
+        if (researchId) deleteEntry(dataDir, researchId);
+        res.json({ ok: true, ids, removedHistory: Boolean(researchId) });
       } catch (e) {
         writeFail(res, e, "wiki ingest apply");
       }

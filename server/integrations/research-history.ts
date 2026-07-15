@@ -15,6 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, resolve, sep } from "node:path";
+import type { ConvertedDocument } from "./ingest.js";
 
 /** Keep the newest N entries; older ones are pruned on write. */
 const CAP = 200;
@@ -47,6 +48,67 @@ export interface ResearchHistoryEntry {
     content: string;
     revision?: string;
   };
+}
+
+/** Turn persisted curatable research into the common ingestion envelope. */
+export function convertedFromResearchEntry(
+  entry: ResearchHistoryEntry,
+): ConvertedDocument | null {
+  if (entry.mode === "document" && entry.document) {
+    return {
+      source: `sinapso:research:${entry.id}`,
+      sourceLabel: `Sinapso working document: ${entry.document.title}`,
+      title: entry.document.title,
+      markdown: entry.document.content,
+      via: "sinapso-working-document",
+    };
+  }
+  if (entry.mode === "article" && entry.article) {
+    const article = entry.article;
+    return {
+      source: article.url,
+      sourceLabel: article.author
+        ? `${article.url} (by ${article.author})`
+        : article.url,
+      title: article.title || entry.query,
+      markdown: [
+        `# ${article.title || entry.query}`,
+        "",
+        `Source: [${article.url}](${article.url})`,
+        ...(article.author ? [`Author: ${article.author}`] : []),
+        ...(article.publishedDate
+          ? [`Published: ${article.publishedDate}`]
+          : []),
+        "",
+        article.content,
+        "",
+      ].join("\n"),
+      via: "sinapso-web-article",
+    };
+  }
+  if (entry.mode === "web" && entry.answer?.content) {
+    const citations = entry.answer.citations
+      .map(
+        (citation) => `- [${citation.title || citation.url}](${citation.url})`,
+      )
+      .join("\n");
+    return {
+      source: `sinapso:research:${entry.id}`,
+      sourceLabel: `Sinapso web research: ${entry.query}`,
+      title: entry.query,
+      markdown: [
+        `# ${entry.query}`,
+        "",
+        "## Answer",
+        "",
+        entry.answer.content,
+        ...(citations ? ["", "## Sources", "", citations] : []),
+        "",
+      ].join("\n"),
+      via: "sinapso-web-research",
+    };
+  }
+  return null;
 }
 
 function dir(dataDir: string): string {

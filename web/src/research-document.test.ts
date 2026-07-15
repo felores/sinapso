@@ -15,10 +15,19 @@ function harness(overrides: Partial<ResearchDocumentTransport> = {}) {
     title = doc.title;
   });
   const transport: ResearchDocumentTransport = {
-    create: vi.fn(async (nextTitle, nextContent) => ({ id: "doc-1", title: nextTitle, content: nextContent, revision: "r1" })),
-    read: vi.fn(async () => ({ id: "doc-1", title: "Remote", content: "remote", revision: "r3" })),
+    create: vi.fn(async (nextTitle, nextContent) => ({
+      id: "doc-1",
+      title: nextTitle,
+      content: nextContent,
+      revision: "r1",
+    })),
+    read: vi.fn(async () => ({
+      id: "doc-1",
+      title: "Remote",
+      content: "remote",
+      revision: "r3",
+    })),
     save: vi.fn(async () => ({ revision: "r2" })),
-    promote: vi.fn(async () => ({ noteId: "saved.md" })),
     ...overrides,
   };
   const states: string[] = [];
@@ -35,18 +44,28 @@ function harness(overrides: Partial<ResearchDocumentTransport> = {}) {
     controller,
     transport,
     states,
-    setContent(value: string) { content = value; controller.autosave.notifyChange(); },
+    setContent(value: string) {
+      content = value;
+      controller.autosave.notifyChange();
+    },
   };
 }
 
 describe("research document state", () => {
   it("creates without an id and persists edits with the current revision", async () => {
     const h = harness();
-    await expect(createResearchDocument(h.transport, "New", "")).resolves.toMatchObject({ id: "doc-1", revision: "r1" });
+    await expect(
+      createResearchDocument(h.transport, "New", ""),
+    ).resolves.toMatchObject({ id: "doc-1", revision: "r1" });
     expect(h.transport.create).toHaveBeenCalledWith("New", "");
     h.setContent("two");
     await h.controller.autosave.flush();
-    expect(h.transport.save).toHaveBeenCalledWith({ id: "doc-1", title: "Draft", content: "two", revision: "r1" });
+    expect(h.transport.save).toHaveBeenCalledWith({
+      id: "doc-1",
+      title: "Draft",
+      content: "two",
+      revision: "r1",
+    });
     expect(h.controller.document().revision).toBe("r2");
   });
 
@@ -54,12 +73,21 @@ describe("research document state", () => {
     const h = harness();
     h.setContent("local");
     await h.controller.reload();
-    expect(h.controller.document()).toEqual({ id: "doc-1", title: "Remote", content: "remote", revision: "r3" });
+    expect(h.controller.document()).toEqual({
+      id: "doc-1",
+      title: "Remote",
+      content: "remote",
+      revision: "r3",
+    });
     expect(h.states.at(-1)).toBe("clean");
   });
 
   it("preserves local edits on a stale conflict", async () => {
-    const h = harness({ save: vi.fn(async () => { throw { status: 409 }; }) });
+    const h = harness({
+      save: vi.fn(async () => {
+        throw { status: 409 };
+      }),
+    });
     h.setContent("local survives");
     await h.controller.autosave.flush();
     expect(h.controller.document().content).toBe("local survives");
@@ -67,7 +95,8 @@ describe("research document state", () => {
   });
 
   it("explicitly rebases a local overwrite onto the latest revision", async () => {
-    const save = vi.fn()
+    const save = vi
+      .fn()
       .mockRejectedValueOnce({ status: 409 })
       .mockResolvedValueOnce({ revision: "r4" });
     const h = harness({ save });
@@ -81,7 +110,10 @@ describe("research document state", () => {
   });
 
   it("remains editable and retries after a failed save", async () => {
-    const save = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ revision: "r2" });
+    const save = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce({ revision: "r2" });
     const h = harness({ save });
     h.setContent("first");
     await h.controller.autosave.flush();
@@ -89,14 +121,9 @@ describe("research document state", () => {
     h.setContent("retry content");
     await h.controller.retry();
     expect(h.controller.autosave.state()).toBe("clean");
-    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ content: "retry content", revision: "r1" }));
-  });
-
-  it("promotes only clean saved content and returns the note for cleanup", async () => {
-    const h = harness();
-    h.setContent("promoted");
-    await expect(h.controller.promote()).resolves.toEqual({ noteId: "saved.md" });
-    expect(h.transport.promote).toHaveBeenCalledWith(expect.objectContaining({ content: "promoted", revision: "r2" }));
+    expect(save).toHaveBeenLastCalledWith(
+      expect.objectContaining({ content: "retry content", revision: "r1" }),
+    );
   });
 
   it("flushes a debounced edit before closing the captured controller", async () => {
@@ -108,7 +135,6 @@ describe("research document state", () => {
     );
     expect(h.controller.autosave.state()).toBe("clean");
   });
-
 
   it("waits for an in-flight save and persists the final edit before close", async () => {
     let releaseFirst: (() => void) | undefined;
@@ -139,15 +165,18 @@ describe("research document state", () => {
   it.each([
     ["save error", new Error("offline"), "error"],
     ["conflict", { status: 409 }, "conflict"],
-  ])("keeps the controller alive when close hits a %s", async (_label, failure, state) => {
-    const save = vi.fn().mockRejectedValue(failure);
-    const h = harness({ save });
-    h.setContent("retryable draft");
+  ])(
+    "keeps the controller alive when close hits a %s",
+    async (_label, failure, state) => {
+      const save = vi.fn().mockRejectedValue(failure);
+      const h = harness({ save });
+      h.setContent("retryable draft");
 
-    await expect(h.controller.close()).resolves.toBe(false);
-    expect(h.controller.autosave.state()).toBe(state);
-    expect(h.controller.document().content).toBe("retryable draft");
-  });
+      await expect(h.controller.close()).resolves.toBe(false);
+      expect(h.controller.autosave.state()).toBe(state);
+      expect(h.controller.document().content).toBe("retryable draft");
+    },
+  );
 
   it("binds conflict actions to the document that raised them", async () => {
     const first = harness();
@@ -165,15 +194,5 @@ describe("research document state", () => {
     actions.overwrite();
     expect(reload).not.toHaveBeenCalled();
     expect(first.transport.read).not.toHaveBeenCalled();
-  });
-
-  it("does not report promotion success when the endpoint fails", async () => {
-    const promote = vi.fn(async () => {
-      throw new Error("promotion failed");
-    });
-    const h = harness({ promote });
-    h.setContent("kept in history");
-    await expect(h.controller.promote()).rejects.toThrow("promotion failed");
-    expect(h.controller.document().content).toBe("kept in history");
   });
 });

@@ -1,22 +1,26 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { REGISTRY, entryFor, operationTier, toolsForSurface } from "./registry";
 import { createVoiceToolSession, VOICE_TOOLS } from "./voice-tools";
 import { realtimeVoiceTools } from "./voice";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-
 describe("registry → voice derivation (characterization, U4)", () => {
-  it("derived Gemini declarations deep-equal the pre-refactor snapshot", () => {
-    const snapshot = JSON.parse(
-      readFileSync(
-        join(HERE, "__fixtures__", "voice-tools.snapshot.json"),
-        "utf-8",
-      ),
-    );
-    expect(JSON.parse(JSON.stringify(VOICE_TOOLS))).toEqual(snapshot);
+  it("derives the research curation capabilities from the registry", () => {
+    const tools = new Map(VOICE_TOOLS.map((tool) => [tool.name, tool]));
+    expect(tools.get("save_research_to_inbox")).toMatchObject({
+      parameters: { properties: { researchId: expect.any(Object) } },
+    });
+    expect(tools.get("propose_wiki_ingest")).toMatchObject({
+      parameters: {
+        properties: {
+          researchId: expect.any(Object),
+          sourceNote: expect.any(Object),
+          wikiId: expect.any(Object),
+        },
+      },
+    });
+    expect(tools.get("apply_wiki_ingest")).toMatchObject({
+      parameters: { required: ["wikiId", "operations"] },
+    });
   });
 
   it("realtime conversion still lowercases every type", () => {
@@ -64,6 +68,9 @@ describe("registry surfaces and routes", () => {
       "list_wikis",
       "read_wiki_contract",
       "read_working_document",
+      "save_research_to_inbox",
+      "propose_wiki_ingest",
+      "apply_wiki_ingest",
       "create_note",
       "edit_vault_note",
       "archive_vault_note",
@@ -99,7 +106,9 @@ describe("token-required dispatch (mutating routes send the header)", () => {
   // bound route through the session dispatch.
   const ARGS: Record<string, Record<string, unknown>> = {
     write_document: { operation: "create", title: "T", markdown: "body" },
-    save_working_document: { documentId: "doc-x" },
+    save_research_to_inbox: { researchId: "doc-x" },
+    propose_wiki_ingest: { researchId: "doc-x", wikiId: "w" },
+    apply_wiki_ingest: { wikiId: "w", operations: [] },
     edit_vault_note: { note: "a.md", markdown: "new" },
     archive_vault_note: { note: "a.md" },
     web_research: { query: "q" },

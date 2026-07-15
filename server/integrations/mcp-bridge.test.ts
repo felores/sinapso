@@ -149,11 +149,10 @@ describe("surface-scoped token (R17, release-blocking)", () => {
   it("rejects the MCP token on routes outside the mcp surface", async () => {
     const mcpToken = (await request(`${base}`).get("/api/session?surface=mcp"))
       .body.token as string;
-    // delegate is voice-only; config is browser-only; git sync is browser-only
+    // delegate is voice-only; config is browser-only
     for (const [method, path, body] of [
       ["post", "/api/delegate", { sessionId: "s", task: "t" }],
       ["post", "/api/integrations/config", { consents: { web: true } }],
-      ["post", "/api/wiki-ingest/apply", { operations: [] }],
     ] as const) {
       const res = await request(`${base}`)
         [method](path)
@@ -178,9 +177,10 @@ describe("surface-scoped token (R17, release-blocking)", () => {
     expect(mcpRouteAllowed("PUT", "/api/notes", false)).toBe(false); // edit gated
     expect(mcpRouteAllowed("PUT", "/api/notes", true)).toBe(true);
     expect(mcpRouteAllowed("POST", "/api/delegate", true)).toBe(false); // voice-only
-    expect(
-      mcpRouteAllowed("POST", "/api/document/doc-abc123/promote", false),
-    ).toBe(true); // {param} path binding
+    expect(mcpRouteAllowed("POST", "/api/wiki-ingest/propose", false)).toBe(
+      true,
+    );
+    expect(mcpRouteAllowed("POST", "/api/wiki-ingest/apply", false)).toBe(true);
   });
 });
 
@@ -203,7 +203,9 @@ describe("token rotation recovery (restart)", () => {
       const tok = (init?.headers as Record<string, string>)["x-sinapso-token"];
       tokensSeen.push(tok);
       if (tok === "tok-1")
-        return new Response(JSON.stringify({ error: "invalid" }), { status: 403 });
+        return new Response(JSON.stringify({ error: "invalid" }), {
+          status: 403,
+        });
       return new Response(JSON.stringify({ ok: true, id: "n.md" }), {
         status: 200,
       });

@@ -11,6 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { createVoiceToolSession, VOICE_TOOLS } from "./voice-tools";
 
 type FetchFn = typeof fetch;
@@ -29,7 +30,8 @@ function toMatcher(p: Matcher) {
   }
   if (p instanceof RegExp) {
     const re = p;
-    return (url: string, init?: RequestInit) => re.test(url) && re.test(`${init?.method ?? "GET"} ${url}`);
+    return (url: string, init?: RequestInit) =>
+      re.test(url) && re.test(`${init?.method ?? "GET"} ${url}`);
   }
   return p;
 }
@@ -60,7 +62,10 @@ interface FakeFetch {
     match: (url: string, init?: RequestInit) => boolean;
     respond: (url: string, init?: RequestInit) => Response;
   }>;
-  on: (predicate: Matcher, respond: (url: string, init?: RequestInit) => Response) => void;
+  on: (
+    predicate: Matcher,
+    respond: (url: string, init?: RequestInit) => Response,
+  ) => void;
   url: (predicate: Matcher) => RecordedCall[];
 }
 
@@ -100,12 +105,14 @@ function makeFakeFetch(): FakeFetch {
 const TEST_TOKEN = "tok-test";
 const BASE = "http://127.0.0.1:5175";
 
-function makeCtx(over: Partial<{
-  base: string;
-  fetchFn: FetchFn;
-  getSessionToken: () => string;
-  send: (obj: object) => void;
-}> = {}) {
+function makeCtx(
+  over: Partial<{
+    base: string;
+    fetchFn: FetchFn;
+    getSessionToken: () => string;
+    send: (obj: object) => void;
+  }> = {},
+) {
   const fake = makeFakeFetch();
   const sent: object[] = [];
   const ctx = {
@@ -123,6 +130,16 @@ afterEach(() => {
 });
 
 describe("VOICE_TOOLS declarations", () => {
+  it("matches the documented characterization fixture", () => {
+    const snapshot = JSON.parse(
+      readFileSync(
+        new URL("./__fixtures__/voice-tools.snapshot.json", import.meta.url),
+        "utf-8",
+      ),
+    );
+    expect(snapshot).toEqual(VOICE_TOOLS);
+  });
+
   it("includes the read/write/save tool names", () => {
     const names = new Set(VOICE_TOOLS.map((t) => t.name));
     for (const expected of [
@@ -132,7 +149,9 @@ describe("VOICE_TOOLS declarations", () => {
       "list_wikis",
       "read_wiki_contract",
       "write_document",
-      "save_working_document",
+      "save_research_to_inbox",
+      "propose_wiki_ingest",
+      "apply_wiki_ingest",
       "edit_vault_note",
       "archive_vault_note",
       "web_research",
@@ -185,7 +204,11 @@ describe("createVoiceToolSession — selected context", () => {
     });
     const out = (await session.run("current_view", {})) as {
       selectedContext: {
-        current: { truncated: boolean; originalWordCount: number; originalCharCount: number };
+        current: {
+          truncated: boolean;
+          originalWordCount: number;
+          originalCharCount: number;
+        };
       };
     };
 
@@ -204,13 +227,18 @@ describe("createVoiceToolSession — selected context", () => {
     session.setSelectedContext({
       current: { source: "research", text: "research selected" },
     });
-    session.setSelectedContext({ current: { source: "reader", text: "new reader" } });
+    session.setSelectedContext({
+      current: { source: "reader", text: "new reader" },
+    });
     session.setSelectedContext({ nope: true });
 
     const out = (await session.run("current_view", {})) as {
       selectedContext: { current: { source: string; text: string } };
     };
-    expect(out.selectedContext.current).toMatchObject({ source: "reader", text: "new reader" });
+    expect(out.selectedContext.current).toMatchObject({
+      source: "reader",
+      text: "new reader",
+    });
   });
 
   it("starts a new voice tool session with no selected context", async () => {
@@ -263,11 +291,19 @@ describe("createVoiceToolSession — read-only tools", () => {
       path: "alpha/one.md",
     });
     expect(out.historyId).toBe("hist-keyword");
-    expect(sent).toContainEqual({ type: "action", action: "open_research", id: "hist-keyword" });
+    expect(sent).toContainEqual({
+      type: "action",
+      action: "open_research",
+      id: "hist-keyword",
+    });
     const call = fake.url("/api/search?")[0];
-    expect(call.url).toBe(`${BASE}/api/search?q=alpha&history=1&displayQuery=alpha`);
+    expect(call.url).toBe(
+      `${BASE}/api/search?q=alpha&history=1&displayQuery=alpha`,
+    );
     expect(call.init?.method).toBeUndefined();
-    expect((call.init?.headers as Record<string, string>)["x-sinapso-token"]).toBe(TEST_TOKEN);
+    expect(
+      (call.init?.headers as Record<string, string>)["x-sinapso-token"],
+    ).toBe(TEST_TOKEN);
   });
 
   it("search_notes scopes results to the requested path prefix and trims trailing slashes", async () => {
@@ -293,7 +329,9 @@ describe("createVoiceToolSession — read-only tools", () => {
       "felo/wiki/intro.md",
       "felo/wiki/sub/deep.md",
     ]);
-    expect(fake.url("/api/search?")[0].url).toBe(`${BASE}/api/search?q=anything`);
+    expect(fake.url("/api/search?")[0].url).toBe(
+      `${BASE}/api/search?q=anything`,
+    );
   });
 
   it("search_notes caps the result list at 8 entries", async () => {
@@ -415,7 +453,10 @@ describe("consolidated search contracts (U5, AE5)", () => {
   it("search_passages exact=true without a note explains the contract", async () => {
     const { ctx } = makeCtx();
     const session = createVoiceToolSession(ctx);
-    const out = await session.run("search_passages", { query: "x", exact: true });
+    const out = await session.run("search_passages", {
+      query: "x",
+      exact: true,
+    });
     expect(out.error).toContain("note");
   });
 
@@ -442,7 +483,9 @@ describe("consolidated search contracts (U5, AE5)", () => {
     fake.on("/api/semantic-search", () =>
       jsonResponse({ state: "ready", results: [] }),
     );
-    fake.on("/api/passages", () => jsonResponse({ state: "ready", results: [] }));
+    fake.on("/api/passages", () =>
+      jsonResponse({ state: "ready", results: [] }),
+    );
     fake.on("/api/search", () => jsonResponse([]));
     fake.on("/api/note-grep", () => jsonResponse({ matches: [] }));
     const session = createVoiceToolSession(ctx);
@@ -470,102 +513,16 @@ describe("consolidated search contracts (U5, AE5)", () => {
       jsonResponse({ from: 37, to: 96, text: "surrounding lines" }),
     );
     const session = createVoiceToolSession(ctx);
-    const out = await session.run("read_passage", { note: "a/one.md", line: 42 });
+    const out = await session.run("read_passage", {
+      note: "a/one.md",
+      line: 42,
+    });
     expect(out).toEqual({
       path: "a/one.md",
       line: 37,
       to: 96,
       snippet: "surrounding lines",
     });
-  });
-});
-
-describe("createVoiceToolSession — read_wiki_contract gating (save_working_document)", () => {
-  it("rejects save_working_document (wiki_note) before read_wiki_contract with the current error", async () => {
-    const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
-    const session = createVoiceToolSession(ctx);
-
-    await session.run("write_document", { operation: "create", title: "T", markdown: "M" });
-    fake.calls.length = 0;
-
-    const out = (await session.run("save_working_document", {
-      kind: "wiki_note",
-      wikiId: "agencia/wiki",
-    })) as { error: string };
-    expect(out.error).toBe(
-      "read_wiki_contract before saving a structured wiki note",
-    );
-    expect(fake.calls).toHaveLength(0);
-  });
-
-  it("allows save_working_document (wiki_note) after read_wiki_contract for the same wiki", async () => {
-    const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
-    fake.on("/api/wiki-contracts", () =>
-      jsonResponse({ wiki: { id: "agencia/wiki", path: "agencia/wiki" } }),
-    );
-    fake.on((url) => url.includes("/promote"), () =>
-      jsonResponse({ id: "agencia/wiki/notes/foo.md", ids: ["x"], removedHistory: true }),
-    );
-    const session = createVoiceToolSession(ctx);
-
-    await session.run("write_document", { operation: "create", title: "T", markdown: "M" });
-    await session.run("read_wiki_contract", { wikiId: "agencia/wiki" });
-    fake.calls.length = 0;
-
-    const out = (await session.run("save_working_document", {
-      kind: "wiki_note",
-      wikiId: "agencia/wiki",
-    })) as { ok: boolean; path: string };
-    expect(out.ok).toBe(true);
-    expect(out.path).toBe("agencia/wiki/notes/foo.md");
-    expect(fake.calls).toHaveLength(1);
-    expect(fake.calls[0].url).toMatch(
-      new RegExp(`^${BASE.replace(/\./g, "\\.")}/api/document/doc-[\\w-]+/promote$`),
-    );
-    expect(fake.calls[0].init?.method).toBe("POST");
-    const headers = fake.calls[0].init?.headers as Record<string, string>;
-    expect(headers["x-sinapso-token"]).toBe(TEST_TOKEN);
-    const body = JSON.parse(fake.calls[0].init?.body as string);
-    expect(body).toEqual({
-      kind: "wiki_note",
-      wikiId: "agencia/wiki",
-    });
-  });
-
-  it("skips the read_wiki_contract check when kind=raw_copy", async () => {
-    const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
-    fake.on((url) => url.includes("/promote"), () =>
-      jsonResponse({ id: "research/2025-01-01_thing.md", removedHistory: false }),
-    );
-    const session = createVoiceToolSession(ctx);
-
-    await session.run("write_document", { operation: "create", title: "T", markdown: "M" });
-    fake.calls.length = 0;
-
-    const out = (await session.run("save_working_document", {
-      kind: "raw_copy",
-      wikiId: "agencia/wiki",
-    })) as { ok: boolean; path: string };
-    expect(out.ok).toBe(true);
-    expect(out.path).toBe("research/2025-01-01_thing.md");
-    expect(fake.calls[0].url).toMatch(/\/api\/document\/doc-[\w-]+\/promote$/);
-    const body = JSON.parse(fake.calls[0].init?.body as string);
-    expect(body).toEqual({
-      kind: "raw_copy",
-      wikiId: "agencia/wiki",
-    });
-  });
-
-  it("save_working_document with no working document yields the current error", async () => {
-    const { ctx } = makeCtx();
-    const session = createVoiceToolSession(ctx);
-    const out = (await session.run("save_working_document", {
-      kind: "wiki_note",
-    })) as { error: string };
-    expect(out.error).toBe("no working document to save");
   });
 });
 
@@ -624,10 +581,13 @@ describe("createVoiceToolSession — write_document", () => {
           revision: "rev-1",
         }),
     );
-    fake.on((url) => url === `${BASE}/api/document`, (_url, init) => {
-      const body = JSON.parse(String(init?.body));
-      return jsonResponse({ ok: true, id: body.id, revision: "rev-2" });
-    });
+    fake.on(
+      (url) => url === `${BASE}/api/document`,
+      (_url, init) => {
+        const body = JSON.parse(String(init?.body));
+        return jsonResponse({ ok: true, id: body.id, revision: "rev-2" });
+      },
+    );
     const session = createVoiceToolSession(ctx);
 
     const read = await session.run("read_working_document", {
@@ -642,7 +602,11 @@ describe("createVoiceToolSession — write_document", () => {
       markdown: "one edited",
     });
 
-    expect(out).toMatchObject({ ok: true, id: "doc-existing", revision: "rev-2" });
+    expect(out).toMatchObject({
+      ok: true,
+      id: "doc-existing",
+      revision: "rev-2",
+    });
     expect(JSON.parse(fake.calls[1].init?.body as string)).toEqual({
       id: "doc-existing",
       title: "A",
@@ -682,8 +646,9 @@ describe("createVoiceToolSession — write_document", () => {
 
   it("surfaces the document endpoint error when the write fails", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, () =>
-      jsonResponse({ error: "boom" }, 500),
+    fake.on(
+      (url) => url === `${BASE}/api/document`,
+      () => jsonResponse({ error: "boom" }, 500),
     );
     const session = createVoiceToolSession(ctx);
 
@@ -700,7 +665,11 @@ describe("createVoiceToolSession — write_document", () => {
     fake.on((url) => url === `${BASE}/api/document`, documentResponse);
     const session = createVoiceToolSession(ctx);
 
-    await session.run("write_document", { operation: "create", title: "T", markdown: "M" });
+    await session.run("write_document", {
+      operation: "create",
+      title: "T",
+      markdown: "M",
+    });
 
     const show = sent.find(
       (s) =>
@@ -746,7 +715,8 @@ describe("createVoiceToolSession — write_document", () => {
         );
         expect(action).toBeDefined();
       });
-      if (!action || !("requestId" in action)) throw new Error("missing requestId");
+      if (!action || !("requestId" in action))
+        throw new Error("missing requestId");
       session.setBrowserContext({
         displayAcknowledgment: {
           requestId: action.requestId,
@@ -802,124 +772,7 @@ describe("createVoiceToolSession — write_document", () => {
   });
 });
 
-describe("createVoiceToolSession — promote and edit", () => {
-  it("save_working_document hits /api/document/:id/promote with the current working doc id and the session token", async () => {
-    const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
-    fake.on("/api/wiki-contracts", () =>
-      jsonResponse({ wiki: { id: "w", path: "w" } }),
-    );
-    fake.on((url) => url.includes("/promote"), () =>
-      jsonResponse({
-        id: "w/note.md",
-        ids: ["w/note.md"],
-        removedHistory: true,
-      }),
-    );
-    const session = createVoiceToolSession(ctx);
-
-    await session.run("write_document", { operation: "create", title: "T", markdown: "M" });
-    await session.run("read_wiki_contract", { wikiId: "w" });
-    fake.calls.length = 0;
-
-    const out = (await session.run("save_working_document", {
-      kind: "wiki_note",
-      wikiId: "w",
-      path: "w/note.md",
-      title: "Note",
-    })) as {
-      ok: boolean;
-      path: string;
-      ids: string[];
-      removedTemporaryDocument: boolean;
-    };
-
-    expect(out).toEqual({
-      ok: true,
-      path: "w/note.md",
-      ids: ["w/note.md"],
-      removedTemporaryDocument: true,
-    });
-    expect(fake.calls).toHaveLength(1);
-    expect(fake.calls[0].url).toMatch(
-      new RegExp(`^${BASE.replace(/\./g, "\\.")}/api/document/doc-[\\w-]+/promote$`),
-    );
-    const headers = fake.calls[0].init?.headers as Record<string, string>;
-    expect(headers["x-sinapso-token"]).toBe(TEST_TOKEN);
-    expect(headers["content-type"]).toBe("application/json");
-    const body = JSON.parse(fake.calls[0].init?.body as string);
-    expect(body).toEqual({
-      kind: "wiki_note",
-      wikiId: "w",
-      path: "w/note.md",
-      title: "Note",
-    });
-  });
-
-  it("save_working_document can promote a specified document while another is active", async () => {
-    const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
-    fake.on("/api/wiki-contracts", () =>
-      jsonResponse({ wiki: { id: "w", path: "w" } }),
-    );
-    fake.on((url) => url.includes("/promote"), () =>
-      jsonResponse({ id: "w/note.md", ids: ["w/note.md"], removedHistory: true }),
-    );
-    const session = createVoiceToolSession(ctx);
-
-    const first = (await session.run("write_document", {
-      operation: "create",
-      title: "A",
-      markdown: "one",
-    })) as { id: string };
-    const second = (await session.run("write_document", {
-      operation: "create",
-      title: "B",
-      markdown: "two",
-    })) as { id: string };
-    await session.run("read_wiki_contract", { wikiId: "w" });
-    fake.calls.length = 0;
-
-    const out = (await session.run("save_working_document", {
-      documentId: first.id,
-      kind: "wiki_note",
-      wikiId: "w",
-    })) as { ok: boolean };
-
-    expect(out.ok).toBe(true);
-    expect(fake.calls[0].url).toBe(
-      `${BASE}/api/document/${encodeURIComponent(first.id)}/promote`,
-    );
-
-    fake.calls.length = 0;
-    await session.run("save_working_document", { kind: "raw_copy" });
-    expect(fake.calls[0].url).toBe(
-      `${BASE}/api/document/${encodeURIComponent(second.id)}/promote`,
-    );
-  });
-
-  it("save_working_document surfaces the server error message when the promote endpoint fails", async () => {
-    const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
-    fake.on("/api/wiki-contracts", () =>
-      jsonResponse({ wiki: { id: "w", path: "w" } }),
-    );
-    fake.on((url) => url.includes("/promote"), () =>
-      jsonResponse({ error: "wiki contract missing" }, 400),
-    );
-    const session = createVoiceToolSession(ctx);
-
-    await session.run("write_document", { operation: "create", title: "T", markdown: "M" });
-    await session.run("read_wiki_contract", { wikiId: "w" });
-    fake.calls.length = 0;
-
-    const out = (await session.run("save_working_document", {
-      kind: "wiki_note",
-      wikiId: "w",
-    })) as { error: string };
-    expect(out.error).toBe("wiki contract missing");
-  });
-
+describe("createVoiceToolSession — curation and edit", () => {
   it("edit_vault_note PUTs the full body to /api/notes with the session token", async () => {
     const { ctx, fake } = makeCtx();
     fake.on("/api/notes", () => jsonResponse({ id: "foo.md" }));
@@ -941,10 +794,14 @@ describe("createVoiceToolSession — promote and edit", () => {
   it("edit_vault_note rejects an empty path or empty body with the current errors", async () => {
     const { ctx } = makeCtx();
     const session = createVoiceToolSession(ctx);
-    expect(await session.run("edit_vault_note", { note: "  ", markdown: "x" })).toEqual({
+    expect(
+      await session.run("edit_vault_note", { note: "  ", markdown: "x" }),
+    ).toEqual({
       error: "note path required",
     });
-    expect(await session.run("edit_vault_note", { note: "x.md", markdown: "  " })).toEqual({
+    expect(
+      await session.run("edit_vault_note", { note: "x.md", markdown: "  " }),
+    ).toEqual({
       error: "content required",
     });
   });
@@ -978,6 +835,51 @@ describe("createVoiceToolSession — promote and edit", () => {
     expect(await session.run("archive_vault_note", { note: "  " })).toEqual({
       error: "note path required",
     });
+  });
+
+  it("proposes before applying wiki ingestion with the returned operation shape", async () => {
+    const { ctx, fake } = makeCtx();
+    fake.on("/api/wiki-ingest/propose", () =>
+      jsonResponse({
+        wiki: { id: "wiki" },
+        operations: [
+          { type: "create", path: "wiki/derived.md", content: "# Derived" },
+          {
+            type: "move",
+            path: "raw/source.md",
+            raw: true,
+            sourceNote: "inbox/source.md",
+          },
+        ],
+      }),
+    );
+    fake.on("/api/wiki-ingest/apply", () =>
+      jsonResponse({ ids: ["wiki/derived.md", "raw/source.md"] }),
+    );
+    const session = createVoiceToolSession(ctx);
+    const proposal = await session.run("propose_wiki_ingest", {
+      researchId: "research-1",
+      wikiId: "wiki",
+    });
+    expect(proposal).toMatchObject({ ok: true, operations: expect.any(Array) });
+    expect(JSON.parse(String(fake.calls[0].init?.body))).toEqual({
+      wikiId: "wiki",
+      researchId: "research-1",
+      sourceNote: undefined,
+    });
+    const applied = await session.run("apply_wiki_ingest", {
+      wikiId: "wiki",
+      researchId: "research-1",
+      operations: proposal.operations,
+    });
+    expect(applied).toMatchObject({
+      ok: true,
+      ids: ["wiki/derived.md", "raw/source.md"],
+    });
+    expect(fake.calls.map((call) => call.url)).toEqual([
+      `${BASE}/api/wiki-ingest/propose`,
+      `${BASE}/api/wiki-ingest/apply`,
+    ]);
   });
 });
 
@@ -1053,7 +955,10 @@ describe("createVoiceToolSession — web tools", () => {
         pinnedResearchId: "article-a",
       },
     });
-    const closed = (await session.run("current_view", {})) as Record<string, any>;
+    const closed = (await session.run("current_view", {})) as Record<
+      string,
+      any
+    >;
     expect(closed.research).toMatchObject({
       panelOpen: false,
       visible: null,
@@ -1093,7 +998,9 @@ describe("createVoiceToolSession — web tools", () => {
       note: "https://example.com/a",
     })) as { error: string };
 
-    expect(out.error).toBe("target is a web URL; use open_resource or fetch_url");
+    expect(out.error).toBe(
+      "target is a web URL; use open_resource or fetch_url",
+    );
     expect(sent).not.toContainEqual({
       type: "action",
       action: "open_note",
@@ -1104,7 +1011,11 @@ describe("createVoiceToolSession — web tools", () => {
   it("open_resource routes http URLs through /api/article and opens research", async () => {
     const { ctx, fake, sent } = makeCtx();
     fake.on("/api/article", () =>
-      jsonResponse({ title: "An article", content: "hello", historyId: "hist-article" }),
+      jsonResponse({
+        title: "An article",
+        content: "hello",
+        historyId: "hist-article",
+      }),
     );
     const session = createVoiceToolSession(ctx);
 
@@ -1226,7 +1137,9 @@ describe("createVoiceToolSession — web tools", () => {
     );
     const session = createVoiceToolSession(ctx);
 
-    const out = (await session.run("fetch_url", { url: "https://example.com/x" })) as {
+    const out = (await session.run("fetch_url", {
+      url: "https://example.com/x",
+    })) as {
       title: string;
       text: string;
     };
@@ -1240,7 +1153,9 @@ describe("createVoiceToolSession — web tools", () => {
   it("fetch_url rejects non-http URLs with the current error", async () => {
     const { ctx } = makeCtx();
     const session = createVoiceToolSession(ctx);
-    expect(await session.run("fetch_url", { url: "ftp://example.com" })).toEqual({
+    expect(
+      await session.run("fetch_url", { url: "ftp://example.com" }),
+    ).toEqual({
       error: "a valid http(s) URL is required",
     });
   });
@@ -1275,7 +1190,9 @@ describe("createVoiceToolSession — delegate_to_thinker (U7)", () => {
   it("starts the job with the session token and adopts the working document", async () => {
     const { ctx, fake } = makeCtx();
     fake.on("/api/delegate", () =>
-      jsonResponse({ job: { id: "job-1", documentId: "doc-77", state: "running" } }),
+      jsonResponse({
+        job: { id: "job-1", documentId: "doc-77", state: "running" },
+      }),
     );
     const session = createVoiceToolSession({ ...ctx, sessionId: "sess-abc" });
     const out = (await session.run("delegate_to_thinker", {
@@ -1289,12 +1206,17 @@ describe("createVoiceToolSession — delegate_to_thinker (U7)", () => {
     const body = JSON.parse(String(call.init?.body));
     expect(body.sessionId).toBe("sess-abc");
     expect(body.notes).toEqual(["a/one.md"]);
-    expect((call.init?.headers as Record<string, string>)["x-sinapso-token"]).toBe(
-      TEST_TOKEN,
-    );
+    expect(
+      (call.init?.headers as Record<string, string>)["x-sinapso-token"],
+    ).toBe(TEST_TOKEN);
     // adopted document: a follow-up write_document targets doc-77
     fake.on("/api/document/doc-77", () =>
-      jsonResponse({ id: "doc-77", title: "Rev", content: "old", revision: "rev-1" }),
+      jsonResponse({
+        id: "doc-77",
+        title: "Rev",
+        content: "old",
+        revision: "rev-1",
+      }),
     );
     fake.on("/api/document", (_url, init) => {
       const body = JSON.parse(String(init?.body));
@@ -1309,7 +1231,8 @@ describe("createVoiceToolSession — delegate_to_thinker (U7)", () => {
       markdown: "x",
     });
     const write = fake.calls.find(
-      (item) => item.url === `${BASE}/api/document` && item.init?.method === "POST",
+      (item) =>
+        item.url === `${BASE}/api/document` && item.init?.method === "POST",
     )!;
     expect(JSON.parse(String(write.init?.body)).id).toBe("doc-77");
   });
@@ -1317,7 +1240,10 @@ describe("createVoiceToolSession — delegate_to_thinker (U7)", () => {
   it("passes the one-job-per-session rejection through as a tool error (R14)", async () => {
     const { ctx, fake } = makeCtx();
     fake.on("/api/delegate", () =>
-      jsonResponse({ error: "a delegation is already running for this session" }, 409),
+      jsonResponse(
+        { error: "a delegation is already running for this session" },
+        409,
+      ),
     );
     const session = createVoiceToolSession(ctx);
     const out = await session.run("delegate_to_thinker", { task: "t" });

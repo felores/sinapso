@@ -14,9 +14,12 @@ import { createApp } from "../app";
 import { updateConfig } from "./config";
 import { TOKEN_HEADER } from "./security";
 import { readChangeLog } from "./write";
+import { getEntry, saveEntry } from "./research-history";
 
 const ROOTS: string[] = [];
-afterAll(() => ROOTS.forEach((r) => rmSync(r, { recursive: true, force: true })));
+afterAll(() =>
+  ROOTS.forEach((r) => rmSync(r, { recursive: true, force: true })),
+);
 
 const MD_BIN = "/fake/bin/markitdown";
 
@@ -33,12 +36,14 @@ function wiki(rawDestination: string | null = "raw/") {
   };
 }
 
-function fixture(opts: {
-  openrouterKey?: boolean;
-  rawDestination?: string | null;
-  llm?: string;
-  prompt?: string;
-} = {}) {
+function fixture(
+  opts: {
+    openrouterKey?: boolean;
+    rawDestination?: string | null;
+    llm?: string;
+    prompt?: string;
+  } = {},
+) {
   const root = mkdtempSync(join(tmpdir(), "sinapso-wiki-ingest-"));
   ROOTS.push(root);
   const vault = join(root, "vault");
@@ -65,7 +70,14 @@ function fixture(opts: {
       openrouterKey: opts.openrouterKey === false ? null : "or-key",
       prompts: opts.prompt ? { wikiIngest: opts.prompt } : undefined,
       vaults: {
-        [vault]: { path: vault, wikis: [wiki(opts.rawDestination ?? "raw/")] },
+        [vault]: {
+          path: vault,
+          wikis: [
+            wiki(
+              opts.rawDestination === undefined ? "raw/" : opts.rawDestination,
+            ),
+          ],
+        },
       },
     },
     configPath,
@@ -81,7 +93,11 @@ function fixture(opts: {
       run: async (cmd, args) => {
         if (cmd === MD_BIN && args[0] === "--version")
           return { ok: true, stdout: "markitdown 1.0", stderr: "" };
-        return { ok: true, stdout: "# Source Title\n\nConverted body.", stderr: "" };
+        return {
+          ok: true,
+          stdout: "# Source Title\n\nConverted body.",
+          stderr: "",
+        };
       },
     },
     openrouter: {
@@ -132,22 +148,32 @@ describe("wiki ingest proposals", () => {
     expect(readChangeLog(f.data)).toHaveLength(before);
   });
 
-  it("previews a raw copy in the inferred ../raw fallback without writing", async () => {
+  it("rejects a RAW-only proposal without writing", async () => {
     const f = fixture({ llm: '{"operations":[]}' });
     const res = await request(f.app)
       .post("/api/wiki-ingest/propose")
       .set(TOKEN_HEADER, await token(f.app))
       .send({ source: f.doc, wikiId: "wiki" });
-    expect(res.status).toBe(200);
-    expect(res.body.operations[0]).toMatchObject({ type: "create", raw: true });
-    expect(res.body.operations[0].path).toMatch(
-      /^raw\/\d{4}-\d{2}-\d{2}_source-title\.md$/,
-    );
-    expect(existsSync(join(f.vault, res.body.operations[0].path))).toBe(false);
+    expect(res.status).toBe(422);
+    expect(existsSync(join(f.vault, "raw"))).toBe(false);
+  });
+
+  it("requires a configured RAW destination before synthesis", async () => {
+    const f = fixture({ rawDestination: null });
+    const res = await request(f.app)
+      .post("/api/wiki-ingest/propose")
+      .set(TOKEN_HEADER, await token(f.app))
+      .send({ source: f.doc, wikiId: "wiki" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("RAW destination");
+    expect(f.chatBody()).toBeNull();
   });
 
   it("previews custom ../research raw destinations under the vault", async () => {
-    const f = fixture({ rawDestination: "../research/", llm: '{"operations":[]}' });
+    const f = fixture({
+      rawDestination: "../research/",
+      llm: '{"operations":[{"type":"create","path":"wiki/derived.md","content":"# Derived"}]}',
+    });
     const res = await request(f.app)
       .post("/api/wiki-ingest/propose")
       .set(TOKEN_HEADER, await token(f.app))
@@ -166,7 +192,11 @@ describe("wiki ingest proposals", () => {
           { type: "edit", path: "wiki/log.md", content: "log" },
           { type: "edit", path: "wiki/hot.md", content: "hot" },
           { type: "edit", path: "wiki/AGENTS.md", content: "contract" },
-          { type: "create", path: "wiki/source-title.md", content: "# Source\n" },
+          {
+            type: "create",
+            path: "wiki/source-title.md",
+            content: "# Source\n",
+          },
         ],
       }),
     });
@@ -189,9 +219,14 @@ describe("wiki ingest proposals", () => {
       .send({ source: f.doc, wikiId: "wiki" });
     expect(res.status).toBe(200);
     const prompt = f.chatBody()?.messages?.at(-1)?.content ?? "";
+    const rawPath = res.body.operations[0].path as string;
     expect(prompt).toContain("Custom wiki ingest prompt");
     expect(prompt).toContain("wiki/AGENTS.md");
     expect(prompt).toContain("Use links.");
+    expect(prompt).toContain(
+      `Canonical RAW source path after approval: ${rawPath}`,
+    );
+    expect(prompt).toContain(`must cite or link ${rawPath}`);
     expect(res.body.contracts.map((c: { path: string }) => c.path)).toEqual([
       "wiki/AGENTS.md",
       "wiki/index.md",
@@ -214,21 +249,59 @@ describe("wiki ingest proposals", () => {
     const applied = await request(f.app)
       .post("/api/wiki-ingest/apply")
       .set(TOKEN_HEADER, t)
-      .send({ wikiId: "wiki", operations: proposed.body.operations });
+      .send({
+        wikiId: "wiki",
+        operations: [
+          ...proposed.body.operations.slice(1),
+          proposed.body.operations[0],
+        ],
+      });
     expect(applied.status).toBe(200);
     expect(applied.body.ids).toContain("wiki/new-page.md");
     expect(readFileSync(join(f.vault, "wiki", "new-page.md"), "utf-8")).toBe(
       "# New\n",
     );
-    expect(readChangeLog(f.data).at(-1)).toMatchObject({
+    expect(readChangeLog(f.data)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "create",
+          path: "wiki/new-page.md",
+          mode: "approval",
+        }),
+      ]),
+    );
+    expect(readChangeLog(f.data)[0]).toMatchObject({
       action: "create",
-      path: "wiki/new-page.md",
+      path: expect.stringMatching(/^raw\//),
       mode: "approval",
     });
   });
 
+  it("fails on an occupied exact RAW path before derived writes", async () => {
+    const f = fixture({
+      llm: '{"operations":[{"type":"create","path":"wiki/derived.md","content":"# Derived"}]}',
+    });
+    const t = await token(f.app);
+    const proposed = await request(f.app)
+      .post("/api/wiki-ingest/propose")
+      .set(TOKEN_HEADER, t)
+      .send({ source: f.doc, wikiId: "wiki" });
+    const raw = proposed.body.operations[0] as { path: string };
+    mkdirSync(join(f.vault, "raw"), { recursive: true });
+    writeFileSync(join(f.vault, raw.path), "different source");
+
+    const applied = await request(f.app)
+      .post("/api/wiki-ingest/apply")
+      .set(TOKEN_HEADER, t)
+      .send({ wikiId: "wiki", operations: proposed.body.operations });
+
+    expect(applied.status).toBe(409);
+    expect(applied.body.error).toContain("exact note path already exists");
+    expect(existsSync(join(f.vault, "wiki", "derived.md"))).toBe(false);
+  });
+
   it("runs synthesis on the thinker tier when configured (U2)", async () => {
-    const f = fixture({ llm: '{"operations":[]}' });
+    const f = fixture();
     updateConfig(
       { deepseekKey: "ds-k", thinkerProvider: "deepseek" },
       join(f.data, "config.json"),
@@ -247,7 +320,7 @@ describe("wiki ingest proposals", () => {
   });
 
   it("falls back to the worker slot when no thinker is configured (AE2)", async () => {
-    const f = fixture({ llm: '{"operations":[]}' });
+    const f = fixture();
     updateConfig(
       { workerProvider: "openrouter", workerModel: "meta/fast" },
       join(f.data, "config.json"),
@@ -287,7 +360,9 @@ describe("wiki ingest proposals", () => {
   });
 
   it("rejects LLM proposal paths outside the selected wiki", async () => {
-    const f = fixture({ llm: '{"operations":[{"type":"create","path":"elsewhere/page.md","content":"x"}]}' });
+    const f = fixture({
+      llm: '{"operations":[{"type":"create","path":"elsewhere/page.md","content":"x"}]}',
+    });
     const res = await request(f.app)
       .post("/api/wiki-ingest/propose")
       .set(TOKEN_HEADER, await token(f.app))
@@ -310,7 +385,7 @@ describe("wiki ingest proposals", () => {
   });
 
   it("previews browser uploads with the same wiki target", async () => {
-    const f = fixture({ llm: '{"operations":[]}' });
+    const f = fixture();
     const res = await request(f.app)
       .post("/api/wiki-ingest/propose-upload?name=clip.docx&wikiId=wiki")
       .set(TOKEN_HEADER, await token(f.app))
@@ -321,7 +396,7 @@ describe("wiki ingest proposals", () => {
   });
 
   it("accepts an already converted preview payload", async () => {
-    const f = fixture({ llm: '{"operations":[]}' });
+    const f = fixture();
     const res = await request(f.app)
       .post("/api/wiki-ingest/propose")
       .set(TOKEN_HEADER, await token(f.app))
@@ -338,5 +413,180 @@ describe("wiki ingest proposals", () => {
     expect(res.status).toBe(200);
     expect(res.body.title).toBe("Article Title");
     expect(res.body.operations[0]).toMatchObject({ raw: true });
+  });
+
+  it("converts persisted research into Inbox and only removes it after the write", async () => {
+    const f = fixture();
+    const entry = saveEntry(f.data, {
+      mode: "web",
+      query: "Useful research",
+      answer: {
+        content: "A useful answer.",
+        citations: [{ title: "Source", url: "https://example.com/source" }],
+      },
+    });
+    const res = await request(f.app)
+      .post(`/api/research/history/${entry.id}/save-inbox`)
+      .set(TOKEN_HEADER, await token(f.app));
+    expect(res.status).toBe(200);
+    expect(readFileSync(join(f.vault, res.body.id), "utf-8")).toContain(
+      "https://example.com/source",
+    );
+    expect(getEntry(f.data, entry.id)).toBeNull();
+  });
+
+  it("rejects semantic history from Inbox curation", async () => {
+    const f = fixture();
+    const entry = saveEntry(f.data, {
+      mode: "semantic",
+      query: "x",
+      results: [],
+    });
+    const res = await request(f.app)
+      .post(`/api/research/history/${entry.id}/save-inbox`)
+      .set(TOKEN_HEADER, await token(f.app));
+    expect(res.status).toBe(400);
+    expect(getEntry(f.data, entry.id)).not.toBeNull();
+  });
+
+  it("builds a contract-aware proposal from persisted research", async () => {
+    const f = fixture();
+    const entry = saveEntry(f.data, {
+      mode: "article",
+      query: "Article",
+      article: {
+        url: "https://example.com/article",
+        title: "Article",
+        content: "Article body.",
+        publishedDate: null,
+        author: "Author",
+      },
+    });
+    const res = await request(f.app)
+      .post("/api/wiki-ingest/propose")
+      .set(TOKEN_HEADER, await token(f.app))
+      .send({ researchId: entry.id, wikiId: "wiki" });
+    expect(res.status).toBe(200);
+    expect(res.body.researchId).toBe(entry.id);
+    expect(res.body.contracts).toHaveLength(2);
+    expect(res.body.operations[0]).toMatchObject({
+      raw: true,
+      type: "create",
+    });
+  });
+
+  it("moves an Inbox note to its exact RAW path before derived operations", async () => {
+    const f = fixture({
+      llm: '{"operations":[{"type":"create","path":"wiki/derived.md","content":"# Derived"}]}',
+    });
+    mkdirSync(join(f.vault, "inbox"), { recursive: true });
+    writeFileSync(join(f.vault, "inbox", "source.md"), "# Source\n");
+    const t = await token(f.app);
+    const proposed = await request(f.app)
+      .post("/api/wiki-ingest/propose")
+      .set(TOKEN_HEADER, t)
+      .send({
+        wikiId: "wiki",
+        sourceNote: "inbox/source.md",
+        converted: {
+          source: "inbox/source.md",
+          sourceLabel: "inbox/source.md",
+          title: "Source",
+          markdown: "# Source\n",
+        },
+      });
+    expect(proposed.status).toBe(200);
+    expect(proposed.body.operations[0]).toMatchObject({
+      type: "move",
+      raw: true,
+      sourceNote: "inbox/source.md",
+    });
+    const failed = await request(f.app)
+      .post("/api/wiki-ingest/apply")
+      .set(TOKEN_HEADER, t)
+      .send({
+        wikiId: "wiki",
+        sourceNote: "inbox/source.md",
+        operations: [
+          proposed.body.operations[0],
+          { type: "edit", path: "wiki/missing.md", content: "x" },
+        ],
+      });
+    expect(failed.status).toBe(404);
+    expect(existsSync(join(f.vault, "inbox", "source.md"))).toBe(false);
+    const applied = await request(f.app)
+      .post("/api/wiki-ingest/apply")
+      .set(TOKEN_HEADER, t)
+      .send({
+        wikiId: "wiki",
+        sourceNote: "inbox/source.md",
+        operations: proposed.body.operations,
+      });
+    expect(applied.status).toBe(200);
+    expect(existsSync(join(f.vault, "inbox", "source.md"))).toBe(false);
+    expect(existsSync(join(f.vault, proposed.body.operations[0].path))).toBe(
+      true,
+    );
+    expect(
+      readFileSync(join(f.vault, proposed.body.operations[0].path), "utf-8"),
+    ).toBe("# Source\n");
+    expect(
+      readChangeLog(f.data).filter(
+        (entry) => entry.newPath === proposed.body.operations[0].path,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("uses the actual Inbox note instead of spoofed converted content", async () => {
+    const f = fixture();
+    mkdirSync(join(f.vault, "inbox"), { recursive: true });
+    writeFileSync(
+      join(f.vault, "inbox", "source.md"),
+      "# Actual Inbox Title\n\nActual Inbox body.\n",
+    );
+    const res = await request(f.app)
+      .post("/api/wiki-ingest/propose")
+      .set(TOKEN_HEADER, await token(f.app))
+      .send({
+        wikiId: "wiki",
+        sourceNote: "inbox/source.md",
+        converted: {
+          source: "https://spoofed.example",
+          sourceLabel: "spoofed",
+          title: "Spoofed Title",
+          markdown: "Spoofed content.",
+        },
+      });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      source: "inbox/source.md",
+      title: "Actual Inbox Title",
+    });
+    const prompt = f.chatBody()?.messages?.at(-1)?.content ?? "";
+    expect(prompt).toContain("Actual Inbox body.");
+    expect(prompt).not.toContain("Spoofed content.");
+  });
+
+  it("leaves persisted research untouched when the proposal is RAW-only", async () => {
+    const f = fixture({ llm: '{"operations":[]}' });
+    const entry = saveEntry(f.data, {
+      mode: "article",
+      query: "Article",
+      article: {
+        url: "https://example.com/article",
+        title: "Article",
+        content: "Article body.",
+        publishedDate: null,
+        author: "Author",
+      },
+    });
+    const before = readChangeLog(f.data);
+    const res = await request(f.app)
+      .post("/api/wiki-ingest/propose")
+      .set(TOKEN_HEADER, await token(f.app))
+      .send({ researchId: entry.id, wikiId: "wiki" });
+    expect(res.status).toBe(422);
+    expect(getEntry(f.data, entry.id)).not.toBeNull();
+    expect(readChangeLog(f.data)).toEqual(before);
   });
 });

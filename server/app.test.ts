@@ -102,7 +102,9 @@ describe("server: /api/note-lines slice + guard", () => {
 
 describe("server: rescan excludes", () => {
   it("reconciles stale graph files with default archive and images excludes on startup", async () => {
-    const root = mkdtempSync(join(tmpdir(), "sinapso-startup-default-excludes-"));
+    const root = mkdtempSync(
+      join(tmpdir(), "sinapso-startup-default-excludes-"),
+    );
     try {
       mkdirSync(join(root, "archivo"));
       mkdirSync(join(root, "images"));
@@ -160,7 +162,9 @@ describe("server: rescan excludes", () => {
       const { app } = createApp(graph, undefined, { configPath });
 
       const res = await request(app).post("/api/rescan");
-      const ids = (res.body.graph.nodes as Array<{ id: string }>).map((n) => n.id);
+      const ids = (res.body.graph.nodes as Array<{ id: string }>).map(
+        (n) => n.id,
+      );
 
       expect(res.status).toBe(200);
       expect(res.body.graph.meta.excludes).toEqual(["skip"]);
@@ -369,7 +373,13 @@ describe("server: git note versions", () => {
   function git(args: string[], cwd: string): void {
     execFileSync("git", args, {
       cwd,
-      env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" },
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "t",
+        GIT_AUTHOR_EMAIL: "t@t",
+        GIT_COMMITTER_NAME: "t",
+        GIT_COMMITTER_EMAIL: "t@t",
+      },
       stdio: ["ignore", "ignore", "ignore"],
     });
   }
@@ -405,7 +415,9 @@ describe("server: git note versions", () => {
   }
 
   function gitApp(f: { root: string; graphPath: string }) {
-    return createApp(f.graphPath, undefined, { configPath: join(f.root, "config.json") });
+    return createApp(f.graphPath, undefined, {
+      configPath: join(f.root, "config.json"),
+    });
   }
 
   function gitSyncFixture() {
@@ -518,7 +530,9 @@ describe("server: git note versions", () => {
       const token = (await request(app).get("/api/session")).body.token;
       const headBefore = execFileSync("git", ["rev-parse", "HEAD"], {
         cwd: f.vault,
-      }).toString().trim();
+      })
+        .toString()
+        .trim();
       const hist = await request(app).get("/api/note-versions?id=real.md");
       const oldCommit = hist.body.versions[1].commit;
 
@@ -537,7 +551,9 @@ describe("server: git note versions", () => {
       // Git HEAD unchanged
       const headAfter = execFileSync("git", ["rev-parse", "HEAD"], {
         cwd: f.vault,
-      }).toString().trim();
+      })
+        .toString()
+        .trim();
       expect(headAfter).toBe(headBefore);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
@@ -576,14 +592,20 @@ describe("server: git note versions", () => {
       expect(res.body.checkpointed).toBe(true);
       expect(res.body.versioned).toBe(true);
       expect(
-        execFileSync("git", ["show", "--name-only", "--pretty=format:", "HEAD"], {
-          cwd: f.vault,
-        })
+        execFileSync(
+          "git",
+          ["show", "--name-only", "--pretty=format:", "HEAD"],
+          {
+            cwd: f.vault,
+          },
+        )
           .toString()
           .trim(),
       ).toBe("real.md");
       expect(
-        execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: f.vault })
+        execFileSync("git", ["diff", "--cached", "--name-only"], {
+          cwd: f.vault,
+        })
           .toString()
           .trim(),
       ).toBe("sibling.md");
@@ -597,7 +619,9 @@ describe("server: git note versions", () => {
     try {
       const { app } = gitApp(f);
       const token = (await request(app).get("/api/session")).body.token;
-      const headBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: f.vault })
+      const headBefore = execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: f.vault,
+      })
         .toString()
         .trim();
 
@@ -608,7 +632,11 @@ describe("server: git note versions", () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual(
-        expect.objectContaining({ ok: true, checkpointed: false, versioned: true }),
+        expect.objectContaining({
+          ok: true,
+          checkpointed: false,
+          versioned: true,
+        }),
       );
       expect(
         execFileSync("git", ["rev-parse", "HEAD"], { cwd: f.vault })
@@ -823,7 +851,9 @@ describe("server: delegation routes trust negatives (U6, release-blocking)", () 
       // The loopback document write hits the real ephemeral base (no live
       // listener in supertest), so the job may fail at the write step — the
       // tier resolution evidence is the model in the captured LLM body.
-      expect(["running", "succeeded", "failed"]).toContain(status.body.job.state);
+      expect(["running", "succeeded", "failed"]).toContain(
+        status.body.job.state,
+      );
       expect(bodies[0]).toContain("meta/worker-model");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -1062,9 +1092,12 @@ describe("server: working document compare-and-swap boundary", () => {
       .set("x-sinapso-token", token)
       .send({ id: "evidence-id", revision: "rev", content: "overwrite" });
     expect(collision.status).toBe(409);
-    expect((await request(app).get("/api/document/evidence-id")).status).toBe(404);
+    expect((await request(app).get("/api/document/evidence-id")).status).toBe(
+      404,
+    );
     expect(
-      JSON.parse(readFileSync(join(researchDir, "evidence-id.json"), "utf-8")).mode,
+      JSON.parse(readFileSync(join(researchDir, "evidence-id.json"), "utf-8"))
+        .mode,
     ).toBe("web");
   });
 
@@ -1105,45 +1138,27 @@ describe("server: working document compare-and-swap boundary", () => {
       revision: updated.body.revision,
     });
   });
-  it("promotes a working document through the generic note destination", async () => {
+  it("saves a working document to Inbox through research curation", async () => {
     const token = await sessionToken(app);
     const created = await request(app)
       .post("/api/document")
       .set("x-sinapso-token", token)
       .send({ title: "Promoted", content: "# Saved body" });
     const promoted = await request(app)
-      .post(`/api/document/${created.body.id}/promote`)
+      .post(`/api/research/history/${created.body.id}/save-inbox`)
       .set("x-sinapso-token", token)
-      .send({ kind: "note", path: "promoted-explicit.md" });
+      .send({});
 
     expect(promoted.status).toBe(200);
     expect(promoted.body).toMatchObject({
-      id: "promoted-explicit.md",
+      id: "inbox/promoted.md",
       removedHistory: true,
     });
-    expect(readFileSync(join(VAULT, "promoted-explicit.md"), "utf-8")).toContain(
+    expect(readFileSync(join(VAULT, "inbox/promoted.md"), "utf-8")).toContain(
       "# Saved body",
     );
     expect(
       (await request(app).get(`/api/document/${created.body.id}`)).status,
     ).toBe(404);
-  });
-
-
-  it("retains the working document when promotion fails", async () => {
-    const token = await sessionToken(app);
-    const created = await request(app)
-      .post("/api/document")
-      .set("x-sinapso-token", token)
-      .send({ title: "Promotion failure", content: "keep me" });
-    const promoted = await request(app)
-      .post(`/api/document/${created.body.id}/promote`)
-      .set("x-sinapso-token", token)
-      .send({ kind: "note", path: "../../outside.md" });
-
-    expect(promoted.status).toBeGreaterThanOrEqual(400);
-    const retained = await request(app).get(`/api/document/${created.body.id}`);
-    expect(retained.status).toBe(200);
-    expect(retained.body.content).toBe("keep me");
   });
 });

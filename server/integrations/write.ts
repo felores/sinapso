@@ -117,6 +117,8 @@ export interface CreateOptions {
   content: string;
   /** Explicit vault-relative path (wins over title+destination). */
   path?: string;
+  /** Refuse a collision at the explicit path instead of suffixing it. */
+  exact?: boolean;
   /** Title used as filename when no explicit path is given. */
   title?: string;
   /** Verbatim filename prefix (e.g. "2026-07-03_") kept out of the kebab slug. */
@@ -130,7 +132,7 @@ export interface CreateOptions {
 export function guardedCreate(
   deps: WriteDeps,
   opts: CreateOptions,
-): { id: string } {
+): { id: string; unchanged?: boolean } {
   requireVault(deps.vaultRoot);
   const rel =
     opts.path ??
@@ -139,8 +141,15 @@ export function guardedCreate(
       (opts.prefix ?? "") + safeName(opts.title ?? "") + ".md",
     );
   let full = confine(deps.vaultRoot, rel);
-  // Never overwrite on create: filename collisions get a numeric suffix.
+  // Exact creates are idempotent for the same content; all other creates keep
+  // the existing suffix behavior.
   if (existsSync(full)) {
+    if (opts.exact) {
+      const id = relative(resolve(deps.vaultRoot), full);
+      if (readFileSync(full, "utf-8") === opts.content)
+        return { id, unchanged: true };
+      throw new WriteError(409, "exact note path already exists");
+    }
     const stem = full.slice(0, -3);
     let n = 2;
     while (existsSync(`${stem}-${n}.md`)) n++;
@@ -236,23 +245,44 @@ export function guardedEdit(
 export interface MoveOptions {
   id: string;
   /** Vault-relative destination folder, e.g. "archive". */
-  destination: string;
+  destination?: string;
+  /** Exact vault-relative target path. */
+  target?: string;
+  /** Refuse a collision at target instead of suffixing it. */
+  exact?: boolean;
+  /** Allow an already-completed exact move only when target matches this. */
+  expectedContent?: string;
   actor: ChangeLogEntry["actor"];
 }
 
 export function guardedMove(
   deps: WriteDeps,
   opts: MoveOptions,
-): { id: string } {
+): { id: string; unchanged?: boolean } {
   requireVault(deps.vaultRoot);
   const full = confine(deps.vaultRoot, opts.id);
-  if (!existsSync(full)) throw new WriteError(404, "note not found");
-
+  if (!opts.target && !opts.destination)
+    throw new WriteError(400, "move destination required");
   let destFull = confine(
     deps.vaultRoot,
-    join(opts.destination, basename(full)),
+    opts.target ?? join(opts.destination!, basename(full)),
   );
+  if (!existsSync(full)) {
+    if (
+      opts.exact &&
+      opts.expectedContent !== undefined &&
+      existsSync(destFull) &&
+      readFileSync(destFull, "utf-8") === opts.expectedContent
+    ) {
+      return {
+        id: relative(resolve(deps.vaultRoot), destFull),
+        unchanged: true,
+      };
+    }
+    throw new WriteError(404, "note not found");
+  }
   if (destFull !== full && existsSync(destFull)) {
+    if (opts.exact) throw new WriteError(409, "exact note path already exists");
     const stem = destFull.slice(0, -3);
     let n = 2;
     while (existsSync(`${stem}-${n}.md`)) n++;
