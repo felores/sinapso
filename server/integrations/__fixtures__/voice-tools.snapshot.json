@@ -22,9 +22,7 @@
           "description": "Optional folder prefix to scope results (e.g. 'felo/wiki' or 'saas/climatia'). Omit to search the whole vault."
         }
       },
-      "required": [
-        "query"
-      ]
+      "required": ["query"]
     }
   },
   {
@@ -46,9 +44,7 @@
           "description": "Match the query literally instead of by meaning (requires 'note'). Default false."
         }
       },
-      "required": [
-        "query"
-      ]
+      "required": ["query"]
     }
   },
   {
@@ -70,10 +66,7 @@
           "description": "How many lines to read (default 60)."
         }
       },
-      "required": [
-        "note",
-        "line"
-      ]
+      "required": ["note", "line"]
     }
   },
   {
@@ -100,9 +93,7 @@
           "description": "Relative path of the note to open."
         }
       },
-      "required": [
-        "note"
-      ]
+      "required": ["note"]
     }
   },
   {
@@ -116,9 +107,7 @@
           "description": "URL, research-history id, or vault-relative .md note path."
         }
       },
-      "required": [
-        "target"
-      ]
+      "required": ["target"]
     }
   },
   {
@@ -156,9 +145,7 @@
           "description": "Wiki id or path from list_wikis."
         }
       },
-      "required": [
-        "wikiId"
-      ]
+      "required": ["wikiId"]
     }
   },
   {
@@ -207,32 +194,63 @@
     }
   },
   {
-    "name": "save_working_document",
-    "description": "Promote the current working document out of temporary history into the vault. Use kind='wiki_note' for a structured note inside the selected wiki, after read_wiki_contract and any needed write_document revision. Use kind='raw_copy' to save the document as a raw source copy in the selected wiki's raw folder. On success it rescans and opens the saved note, and removes the temporary document from history.",
+    "name": "save_research_to_inbox",
+    "description": "Save one persisted web, article, or temporary working-document research entry to the configured Inbox. The history entry is removed only after the guarded write succeeds.",
     "parameters": {
       "type": "OBJECT",
       "properties": {
-        "kind": {
+        "researchId": {
           "type": "STRING",
-          "description": "Either 'wiki_note' or 'raw_copy'. Defaults to wiki_note."
+          "description": "Persisted research id. Voice defaults to its active temporary working document."
+        }
+      }
+    }
+  },
+  {
+    "name": "propose_wiki_ingest",
+    "description": "Build a wiki-ingest preview from a persisted research entry or an existing Inbox note. The server reads the selected wiki contract, plans the exact canonical RAW source path, and requires explicit approval before any write.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "researchId": {
+          "type": "STRING",
+          "description": "Persisted web, article, or working-document research id."
+        },
+        "sourceNote": {
+          "type": "STRING",
+          "description": "Existing Inbox note path to move first to the selected wiki's exact canonical RAW path."
         },
         "wikiId": {
           "type": "STRING",
-          "description": "Wiki id or path from list_wikis. Optional only when exactly one wiki is enabled."
-        },
-        "path": {
-          "type": "STRING",
-          "description": "Optional vault-relative .md path for wiki_note, chosen from the wiki contract. Must stay under the selected wiki."
-        },
-        "title": {
-          "type": "STRING",
-          "description": "Optional title override for the saved note."
-        },
-        "documentId": {
-          "type": "STRING",
-          "description": "Optional id of the temporary document to save. Defaults to the active document."
+          "description": "Target enabled wiki id or path."
         }
       }
+    }
+  },
+  {
+    "name": "apply_wiki_ingest",
+    "description": "Apply a previously shown wiki-ingest proposal only after explicit user approval. RAW source storage or an Inbox-note move runs first at its exact canonical path, then derived create/edit operations.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "wikiId": {
+          "type": "STRING",
+          "description": "Target enabled wiki id or path."
+        },
+        "operations": {
+          "type": "ARRAY",
+          "description": "Operations returned by propose_wiki_ingest without modification."
+        },
+        "researchId": {
+          "type": "STRING",
+          "description": "Research id returned by propose_wiki_ingest."
+        },
+        "sourceNote": {
+          "type": "STRING",
+          "description": "Inbox note path returned by propose_wiki_ingest."
+        }
+      },
+      "required": ["wikiId", "operations"]
     }
   },
   {
@@ -250,10 +268,7 @@
           "description": "The complete new markdown body for the note."
         }
       },
-      "required": [
-        "note",
-        "markdown"
-      ]
+      "required": ["note", "markdown"]
     }
   },
   {
@@ -267,9 +282,7 @@
           "description": "Vault-relative .md path of the note to archive."
         }
       },
-      "required": [
-        "note"
-      ]
+      "required": ["note"]
     }
   },
   {
@@ -283,9 +296,7 @@
           "description": "What to research on the web."
         }
       },
-      "required": [
-        "query"
-      ]
+      "required": ["query"]
     }
   },
   {
@@ -299,9 +310,7 @@
           "description": "The exact http(s) URL to fetch."
         }
       },
-      "required": [
-        "url"
-      ]
+      "required": ["url"]
     }
   },
   {
@@ -333,9 +342,7 @@
           "description": "Title for the resulting document."
         }
       },
-      "required": [
-        "task"
-      ]
+      "required": ["task"]
     }
   }
 ]

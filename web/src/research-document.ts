@@ -11,7 +11,6 @@ export interface ResearchDocumentTransport {
   create(title: string, content: string): Promise<ResearchDocument>;
   read(id: string): Promise<ResearchDocument>;
   save(document: ResearchDocument): Promise<{ revision: string }>;
-  promote(document: ResearchDocument): Promise<{ noteId: string }>;
 }
 
 export interface ResearchDocumentControllerOptions {
@@ -30,7 +29,6 @@ export interface ResearchDocumentController {
   reload(): Promise<void>;
   retry(): Promise<void>;
   overwrite(): Promise<void>;
-  promote(): Promise<{ noteId: string }>;
   close(): Promise<boolean>;
   dispose(): void;
 }
@@ -57,13 +55,22 @@ export function createResearchDocumentController(
   });
 
   autosave = createAutosave({
-    baseContent: JSON.stringify({ title: current.title, content: current.content }),
+    baseContent: JSON.stringify({
+      title: current.title,
+      content: current.content,
+    }),
     getContent: () =>
-      JSON.stringify({ title: options.getTitle(), content: options.getContent() }),
+      JSON.stringify({
+        title: options.getTitle(),
+        content: options.getContent(),
+      }),
     debounceMs: options.debounceMs,
     onState: options.onState,
     save: async (serialized) => {
-      const edited = JSON.parse(serialized) as { title: string; content: string };
+      const edited = JSON.parse(serialized) as {
+        title: string;
+        content: string;
+      };
       const candidate = { ...snapshot(), ...edited };
       try {
         const result = await options.transport.save(candidate);
@@ -78,25 +85,28 @@ export function createResearchDocumentController(
 
   return {
     autosave,
-    document: () => ({ ...current, title: options.getTitle(), content: options.getContent() }),
+    document: () => ({
+      ...current,
+      title: options.getTitle(),
+      content: options.getContent(),
+    }),
     async reload() {
       const fresh = await options.transport.read(current.id);
       current = { ...fresh };
       options.setDocument(fresh);
-      autosave.reset(JSON.stringify({ title: fresh.title, content: fresh.content }));
+      autosave.reset(
+        JSON.stringify({ title: fresh.title, content: fresh.content }),
+      );
     },
     retry: () => autosave.flush(),
     async overwrite() {
       const local = options.getContent();
       const fresh = await options.transport.read(current.id);
       current = { ...fresh, title: options.getTitle(), content: local };
-      autosave.reset(JSON.stringify({ title: fresh.title, content: fresh.content }));
+      autosave.reset(
+        JSON.stringify({ title: fresh.title, content: fresh.content }),
+      );
       await autosave.flush();
-    },
-    async promote() {
-      await autosave.flush();
-      if (autosave.state() !== "clean") throw new Error("document-not-saved");
-      return options.transport.promote({ ...current });
     },
     async close() {
       await autosave.flush();
@@ -124,7 +134,11 @@ export function createResearchDocumentConflictActions(
   };
 }
 
-
 function isConflict(error: unknown): boolean {
-  return !!error && typeof error === "object" && "status" in error && error.status === 409;
+  return (
+    !!error &&
+    typeof error === "object" &&
+    "status" in error &&
+    error.status === 409
+  );
 }

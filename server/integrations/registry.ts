@@ -277,11 +277,13 @@ export const REGISTRY: RegistryEntry[] = [
         },
         documentId: {
           type: "string",
-          description: "Existing temporary document id. Required for update and forbidden for create.",
+          description:
+            "Existing temporary document id. Required for update and forbidden for create.",
         },
         revision: {
           type: "string",
-          description: "Revision returned by read_working_document. Required for update.",
+          description:
+            "Revision returned by read_working_document. Required for update.",
         },
         markdown: {
           type: "string",
@@ -325,49 +327,89 @@ export const REGISTRY: RegistryEntry[] = [
     },
   },
   {
-    name: "save_working_document",
+    name: "save_research_to_inbox",
     description:
-      "Promote the current working document out of temporary history into the vault. Use kind='wiki_note' for a structured note inside the selected wiki, after read_wiki_contract and any needed write_document revision. Use kind='raw_copy' to save the document as a raw source copy in the selected wiki's raw folder. On success it rescans and opens the saved note, and removes the temporary document from history.",
+      "Save one persisted web, article, or temporary working-document research entry to the configured Inbox. The history entry is removed only after the guarded write succeeds.",
     params: {
       type: "object",
       properties: {
-        kind: {
+        researchId: {
           type: "string",
           description:
-            "Either 'wiki_note' or 'raw_copy'. Defaults to wiki_note.",
-        },
-        wikiId: {
-          type: "string",
-          description:
-            "Wiki id or path from list_wikis. Optional only when exactly one wiki is enabled.",
-        },
-        path: {
-          type: "string",
-          description:
-            "Optional vault-relative .md path for wiki_note, chosen from the wiki contract. Must stay under the selected wiki.",
-        },
-        title: {
-          type: "string",
-          description: "Optional title override for the saved note.",
-        },
-        documentId: {
-          type: "string",
-          description:
-            "Optional id of the temporary document to save. Defaults to the active document.",
+            "Persisted research id. Voice defaults to its active temporary working document.",
         },
       },
     },
     surfaces: ["voice", "mcp", "cli"],
     route: {
       method: "POST",
-      path: "/api/document/{documentId}/promote",
+      path: "/api/research/history/{researchId}/save-inbox",
       tokenRequired: true,
-      body: {
-        kind: "kind",
-        wikiId: "wikiId",
-        path: "path",
-        title: "title",
+    },
+  },
+  {
+    name: "propose_wiki_ingest",
+    description:
+      "Build a wiki-ingest preview from a persisted research entry or an existing Inbox note. The server reads the selected wiki contract, plans the exact canonical RAW source path, and requires explicit approval before any write.",
+    params: {
+      type: "object",
+      properties: {
+        researchId: {
+          type: "string",
+          description:
+            "Persisted web, article, or working-document research id.",
+        },
+        sourceNote: {
+          type: "string",
+          description:
+            "Existing Inbox note path to move first to the selected wiki's exact canonical RAW path.",
+        },
+        wikiId: {
+          type: "string",
+          description: "Target enabled wiki id or path.",
+        },
       },
+    },
+    surfaces: ["voice", "mcp", "cli"],
+    tier: "thinker",
+    route: {
+      method: "POST",
+      path: "/api/wiki-ingest/propose",
+      tokenRequired: true,
+    },
+  },
+  {
+    name: "apply_wiki_ingest",
+    description:
+      "Apply a previously shown wiki-ingest proposal only after explicit user approval. RAW source storage or an Inbox-note move runs first at its exact canonical path, then derived create/edit operations.",
+    params: {
+      type: "object",
+      properties: {
+        wikiId: {
+          type: "string",
+          description: "Target enabled wiki id or path.",
+        },
+        operations: {
+          type: "array",
+          description:
+            "Operations returned by propose_wiki_ingest without modification.",
+        },
+        researchId: {
+          type: "string",
+          description: "Research id returned by propose_wiki_ingest.",
+        },
+        sourceNote: {
+          type: "string",
+          description: "Inbox note path returned by propose_wiki_ingest.",
+        },
+      },
+      required: ["wikiId", "operations"],
+    },
+    surfaces: ["voice", "mcp", "cli"],
+    route: {
+      method: "POST",
+      path: "/api/wiki-ingest/apply",
+      tokenRequired: true,
     },
   },
   {

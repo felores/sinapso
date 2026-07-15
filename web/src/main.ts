@@ -3249,9 +3249,6 @@ async function boot() {
         save: async () => {
           throw new Error("unused");
         },
-        promote: async () => {
-          throw new Error("unused");
-        },
       },
       i18n.t("research.newDocument"),
     );
@@ -5604,40 +5601,54 @@ async function boot() {
   }
   $("#research-close").addEventListener("click", () => void closeResearch());
 
-  // ---- research footer: promote working document to inbox or wiki ----
+  // ---- research footer: curate persisted research into Inbox or a wiki ----
   {
     const saveInbox = $("#research-save-inbox") as HTMLButtonElement;
     const ingestWiki = $("#research-ingest-wiki") as HTMLButtonElement;
+    const wikiTarget = $("#research-wiki-target") as HTMLSelectElement;
     saveInbox.textContent = i18n.t("research.saveInbox");
     ingestWiki.textContent = i18n.t("research.ingestWiki");
 
-    async function promoteDoc(kind: "note" | "wiki_note") {
+    async function flushWorkingDocument() {
       const controller = researchDocumentController;
-      if (!controller) throw new Error("document-not-active");
-      const doc = controller.document();
+      if (!controller) return;
       await controller.autosave.flush();
       if (controller.autosave.state() !== "clean")
         throw new Error("document-not-saved");
-      const promoted = await api<{ id: string }>(
-        `/api/document/${encodeURIComponent(doc.id)}/promote`,
-        { json: { title: doc.title, kind } },
-      );
-      return String(promoted.id);
+    }
+
+    async function syncResearchWikiTarget() {
+      const wikis = await loadEnabledWikis();
+      wikiTarget.innerHTML = "";
+      wikiTarget.classList.toggle("hidden", wikis.length < 2);
+      for (const wiki of wikis) {
+        const option = document.createElement("option");
+        option.value = wiki.id;
+        option.textContent = wikiDisplayName(wiki);
+        wikiTarget.appendChild(option);
+      }
+      return wikis;
     }
 
     saveInbox.addEventListener("click", async () => {
       saveInbox.disabled = true;
       try {
-        const controller = researchDocumentController;
-        if (!controller) throw new Error("document-not-active");
-        const docId = controller.document().id;
-        const noteId = await promoteDoc("note");
+        await flushWorkingDocument();
+        if (!currentEntryId) throw new Error("research-not-active");
+        const researchId = currentEntryId;
+        const data = await api<{ id: string }>(
+          `/api/research/history/${encodeURIComponent(researchId)}/save-inbox`,
+          { json: {} },
+        );
         await teardownResearchDocument();
         currentEntryId = null;
-        researchHistory = researchHistory.filter((entry) => entry.id !== docId);
+        researchHistory = researchHistory.filter(
+          (entry) => entry.id !== researchId,
+        );
         historyIdx = Math.min(historyIdx, researchHistory.length - 1);
         updateHistoryNav();
-        await openAfterIngest(noteId);
+        await openAfterIngest(String(data.id));
+        await loadHistory();
       } catch {
         saveInbox.disabled = false;
       }
@@ -5645,16 +5656,21 @@ async function boot() {
     ingestWiki.addEventListener("click", async () => {
       ingestWiki.disabled = true;
       try {
-        const controller = researchDocumentController;
-        if (!controller) throw new Error("document-not-active");
-        const noteId = await promoteDoc("wiki_note");
+        await flushWorkingDocument();
+        if (!currentEntryId) throw new Error("research-not-active");
+        const wikis = await syncResearchWikiTarget();
+        if (!wikis.length) throw new Error("no-enabled-wiki");
+        const researchId = currentEntryId;
         await teardownResearchDocument();
-        currentEntryId = null;
-        await openAfterIngest(noteId);
+        await showWikiProposal(
+          { researchId },
+          wikis.length > 1 ? wikiTarget.value : wikis[0].id,
+        );
       } catch {
         ingestWiki.disabled = false;
       }
     });
+    void syncResearchWikiTarget();
   }
 
   // Research panel: attach (docked right) / detach (floating, draggable window).
@@ -6105,49 +6121,6 @@ async function boot() {
     void Promise.resolve(marked.parse(cleanContent)).then((html) => {
       content.innerHTML = DOMPurify.sanitize(html);
     });
-
-    const save = document.createElement("button");
-    save.className = "web-save";
-    save.textContent = i18n.t("research.saveNote");
-    save.addEventListener("click", async () => {
-      save.disabled = true;
-      save.textContent = i18n.t("research.saving");
-      try {
-        const noteBody = [
-          "---",
-          `source: ${art.url}`,
-          `saved: ${new Date().toISOString().slice(0, 10)}`,
-          ...(art.author ? [`author: "${art.author.replace(/"/g, "'")}"`] : []),
-          "via: sinapso-web-article",
-          "---",
-          "",
-          `# ${art.title}`,
-          "",
-          cleanContent,
-          "",
-          `[Source](${art.url})`,
-          "",
-        ].join("\n");
-        const data = await api<{ id: string }>("/api/notes", {
-          json: { title: art.title, content: noteBody },
-        });
-        save.textContent = i18n.t("research.saved");
-        // Move-on-save: once curated into the vault, drop it from history.
-        if (currentEntryId) {
-          await apiDelete(
-            `/api/research/history/${encodeURIComponent(currentEntryId)}`,
-          );
-          currentEntryId = null;
-          await loadHistory();
-          updateHistoryNav();
-        }
-        await openAfterIngest(String(data.id));
-      } catch {
-        save.disabled = false;
-        save.textContent = i18n.t("research.saveFail");
-      }
-    });
-    body.appendChild(save);
   }
 
   // The "document" category: the voice agent's working note, edited in place
@@ -6290,13 +6263,6 @@ async function boot() {
           };
         return saved;
       },
-      async promote(candidate) {
-        const promoted = await api<{ id: string }>(
-          `/api/document/${encodeURIComponent(candidate.id)}/promote`,
-          { json: { title: candidate.title, kind: "note" } },
-        );
-        return { noteId: String(promoted.id) };
-      },
     };
     const showDocumentConflict = (controller: ResearchDocumentController) => {
       const conflict = createResearchDocumentConflictActions(
@@ -6438,7 +6404,12 @@ async function boot() {
     else if (entry.mode === "keyword")
       renderKeywordInto(body, (entry.results ?? []) as never, entry.query);
     else renderSemanticInto(body, (entry.results ?? []) as never, entry.query);
-    $("#research-footer").classList.toggle("hidden", entry.mode !== "document");
+    $("#research-footer").classList.toggle(
+      "hidden",
+      entry.mode !== "web" &&
+        entry.mode !== "article" &&
+        entry.mode !== "document",
+    );
     updateHistoryNav();
     updateBrandStats();
     syncVoiceContext();
@@ -6450,6 +6421,16 @@ async function boot() {
     currentEntryId = id ?? null;
     await loadHistory();
     historyIdx = 0;
+    const entry = id
+      ? researchHistory.find((item) => item.id === id)
+      : undefined;
+    $("#research-footer").classList.toggle(
+      "hidden",
+      !entry ||
+        (entry.mode !== "web" &&
+          entry.mode !== "article" &&
+          entry.mode !== "document"),
+    );
     updateHistoryNav();
   }
 
@@ -6793,17 +6774,20 @@ async function boot() {
   }
 
   interface WikiIngestOperation {
-    type: "create" | "edit";
+    type: "create" | "edit" | "move";
     path: string;
-    content: string;
+    content?: string;
     title?: string;
     raw?: boolean;
+    sourceNote?: string;
   }
   interface WikiIngestProposal {
     wiki: { id: string; label: string; path: string };
     source: string;
     title: string;
     operations: WikiIngestOperation[];
+    researchId?: string;
+    sourceNote?: string;
   }
   interface IngestPreview {
     source: string;
@@ -6822,19 +6806,21 @@ async function boot() {
     const meta = document.createElement("p");
     meta.className = "muted wiki-proposal-meta";
     const visible = proposal.operations.filter((op) => !op.raw);
-    const hidden = proposal.operations.length - visible.length;
+    const raw = proposal.operations.find((op) => op.raw);
     meta.textContent = visible.length
-      ? `${visible.length} content page proposal(s).${hidden ? " Source copy will also be stored." : ""}`
-      : "Source copy only. No content pages were proposed.";
+      ? `${visible.length} content page proposal(s).${raw ? ` RAW source ${raw.type === "move" ? "will move" : "will be stored"} first at canonical path ${raw.path}.` : ""}`
+      : raw
+        ? `No content pages were proposed. RAW source ${raw.type === "move" ? "will move" : "will be stored"} first at canonical path ${raw.path}.`
+        : "No operations were proposed.";
     body.appendChild(meta);
     for (const op of visible) {
       const row = document.createElement("div");
       row.className = "wiki-proposal-op";
       const title = document.createElement("div");
       title.className = "wiki-proposal-title";
-      title.textContent = `${op.type}${op.raw ? " raw" : ""}: ${op.path}`;
+      title.textContent = `${op.type}: ${op.path}`;
       const pre = document.createElement("pre");
-      pre.textContent = op.content;
+      pre.textContent = op.content ?? "";
       row.append(title, pre);
       body.appendChild(row);
     }
@@ -6859,6 +6845,8 @@ async function boot() {
             json: {
               wikiId: proposal.wiki.id,
               operations: proposal.operations,
+              researchId: proposal.researchId,
+              sourceNote: proposal.sourceNote,
             },
           },
         );
@@ -6877,7 +6865,12 @@ async function boot() {
     body.appendChild(actions);
   }
 
-  async function showWikiProposal(preview: IngestPreview, wikiId?: string) {
+  async function showWikiProposal(
+    input:
+      | (IngestPreview & { sourceNote?: string })
+      | { researchId: string; sourceNote?: string },
+    wikiId?: string,
+  ) {
     openResearch("ingest");
     const body = $("#research-body");
     body.innerHTML = '<p class="muted">building wiki proposal…</p>';
@@ -6885,7 +6878,14 @@ async function boot() {
       const proposal = await api<WikiIngestProposal>(
         "/api/wiki-ingest/propose",
         {
-          json: { converted: preview, wikiId },
+          json:
+            "researchId" in input
+              ? {
+                  researchId: input.researchId,
+                  sourceNote: input.sourceNote,
+                  wikiId,
+                }
+              : { converted: input, sourceNote: input.sourceNote, wikiId },
         },
       );
       renderWikiProposal(body, proposal);
@@ -6941,7 +6941,7 @@ async function boot() {
       btn.addEventListener("click", () => {
         btn.disabled = true;
         void showWikiProposal(
-          preview,
+          { ...preview, sourceNote: preview.source },
           wikis.length > 1 ? select.value : wikis[0].id,
         ).finally(() => {
           btn.disabled = false;

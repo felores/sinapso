@@ -4,7 +4,7 @@
  * Pure tool layer for the voice bridge. Owns the `VOICE_TOOLS`
  * declarations, the loopback-HTTP `callTool` (read-only) and
  * `runTool` (stateful) bodies, and the mutable session state
- * (`activeWorkingDocId`, `contractWikisRead`). `voice.ts` keeps the Gemini
+ * (`activeWorkingDocId`). `voice.ts` keeps the Gemini
  * session, the audio relay, and the prompt assembly — its tool-call
  * loop delegates to a session object built here.
  *
@@ -19,8 +19,7 @@
  * `send` is the browser action side-channel (open_note, show_document,
  * open_research, open_saved_note) — also injected for full unit
  * control. Returning the session's `run` (not the whole state) means
- * a misbehaving caller cannot poke at activeWorkingDocId or the wiki set
- * directly.
+ * a misbehaving caller cannot poke at activeWorkingDocId directly.
  */
 
 import type { FunctionDeclaration, Type } from "@google/genai";
@@ -89,13 +88,16 @@ const clean = (s: unknown): string | undefined =>
   typeof s === "string" && s.trim() ? s.replace(/\s+/g, " ").trim() : undefined;
 const words = (s: string): string[] => s.split(/\s+/).filter(Boolean);
 const count = (n: unknown): number | undefined =>
-  typeof n === "number" && Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+  typeof n === "number" && Number.isFinite(n) && n > 0
+    ? Math.floor(n)
+    : undefined;
 const isHttpUrl = (s: string): boolean => /^https?:\/\//i.test(s.trim());
 
 function normalizeSlot(raw: unknown): SelectedSlot | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
-  const source = r.source === "reader" || r.source === "research" ? r.source : null;
+  const source =
+    r.source === "reader" || r.source === "research" ? r.source : null;
   const text = clean(r.text);
   if (!source || !text) return null;
   return {
@@ -114,7 +116,11 @@ function normalizeSlot(raw: unknown): SelectedSlot | null {
   };
 }
 
-function capSelectedSlot(slot: SelectedSlot, wordLeft: number, charLeft: number): SelectedSlot | null {
+function capSelectedSlot(
+  slot: SelectedSlot,
+  wordLeft: number,
+  charLeft: number,
+): SelectedSlot | null {
   if (wordLeft <= 0 || charLeft <= 0) return null;
   const originalWordCount = slot.originalWordCount ?? words(slot.text).length;
   const originalCharCount = slot.originalCharCount ?? slot.text.length;
@@ -129,7 +135,9 @@ function capSelectedSlot(slot: SelectedSlot, wordLeft: number, charLeft: number)
 
 function capSelectedContext(state: SelectedContextState): SelectedContextState {
   return {
-    current: state.current ? capSelectedSlot(state.current, SELECTED_WORDS, SELECTED_CHARS) : null,
+    current: state.current
+      ? capSelectedSlot(state.current, SELECTED_WORDS, SELECTED_CHARS)
+      : null,
   };
 }
 
@@ -194,16 +202,17 @@ export const VOICE_TOOLS: FunctionDeclaration[] = toolsForSurface("voice").map(
 export function createVoiceToolSession(
   ctx: VoiceToolContext,
 ): VoiceToolSession {
-  const fetchFn: typeof fetch = ctx.fetchFn ?? globalThis.fetch.bind(globalThis);
+  const fetchFn: typeof fetch =
+    ctx.fetchFn ?? globalThis.fetch.bind(globalThis);
   const { base, getSessionToken, send } = ctx;
   const sessionId =
-    ctx.sessionId ?? `voice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    ctx.sessionId ??
+    `voice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   // Mutable session state - one per conversation.
   let activeWorkingDocId: string | null = null;
   const knownDocumentIds = new Set<string>();
   const documentRevisions = new Map<string, string>();
-  const contractWikisRead = new Set<string>();
   let selectedContext = emptySelectedContext();
   let browserView: BrowserViewState | null = null;
   const displayAcks = new Map<
@@ -220,7 +229,9 @@ export function createVoiceToolSession(
     if (!context || typeof context !== "object") return;
     const raw = context as Record<string, unknown>;
     if (Object.prototype.hasOwnProperty.call(raw, "current")) {
-      selectedContext = capSelectedContext({ current: normalizeSlot(raw.current) });
+      selectedContext = capSelectedContext({
+        current: normalizeSlot(raw.current),
+      });
     }
     const view = raw.view;
     if (view && typeof view === "object") {
@@ -307,9 +318,7 @@ export function createVoiceToolSession(
 
   async function readWorkingDocument(id: string): Promise<VoiceResult> {
     if (!DOC_ID_RE.test(id)) return { error: "invalid documentId" };
-    const r = await fetchFn(
-      `${base}/api/document/${encodeURIComponent(id)}`,
-    );
+    const r = await fetchFn(`${base}/api/document/${encodeURIComponent(id)}`);
     const d = (await r.json().catch(() => ({}))) as VoiceResult;
     if (!r.ok) return { error: String(d.error ?? "document not found") };
     if (typeof d.revision === "string") documentRevisions.set(id, d.revision);
@@ -318,19 +327,14 @@ export function createVoiceToolSession(
     return d;
   }
 
-  async function knownDocumentId(id: string): Promise<boolean> {
-    if (!DOC_ID_RE.test(id)) return false;
-    if (knownDocumentIds.has(id)) return true;
-    const found = (await researchEntries()).some(
-      (e) => e.id === id && e.mode === "document" && e.document,
-    );
-    if (found) knownDocumentIds.add(id);
-    return found;
-  }
-
-  function webResults(entry: ResearchHist): Array<{ title?: unknown; url?: unknown }> {
+  function webResults(
+    entry: ResearchHist,
+  ): Array<{ title?: unknown; url?: unknown }> {
     return Array.isArray(entry.results)
-      ? entry.results.filter((r): r is { title?: unknown; url?: unknown } => !!r && typeof r === "object")
+      ? entry.results.filter(
+          (r): r is { title?: unknown; url?: unknown } =>
+            !!r && typeof r === "object",
+        )
       : [];
   }
 
@@ -361,9 +365,9 @@ export function createVoiceToolSession(
 
   async function wikiSummaries(): Promise<VoiceWikiSummary[]> {
     try {
-      const d = (await (
-        await fetchFn(`${base}/api/wikis`)
-      ).json()) as { wikis?: VoiceWikiSummary[] };
+      const d = (await (await fetchFn(`${base}/api/wikis`)).json()) as {
+        wikis?: VoiceWikiSummary[];
+      };
       return d.wikis ?? [];
     } catch {
       return [];
@@ -386,7 +390,8 @@ export function createVoiceToolSession(
       return { error: "target is a web URL; use open_resource or fetch_url" };
     send({ type: "status", key: "voice.status.openingNote", note: path });
     const preview = await notePreview(path);
-    if (!preview.error) send({ type: "action", action: "open_note", note: path });
+    if (!preview.error)
+      send({ type: "action", action: "open_note", note: path });
     return preview;
   }
 
@@ -408,7 +413,8 @@ export function createVoiceToolSession(
       content?: string;
     };
     if (!r.ok) return { error: d.message ?? "web request failed" };
-    if (d.historyId) send({ type: "action", action: "open_research", id: d.historyId });
+    if (d.historyId)
+      send({ type: "action", action: "open_research", id: d.historyId });
     return { title: d.title, text: cap(d.content ?? "") };
   }
 
@@ -438,12 +444,15 @@ export function createVoiceToolSession(
     const d = (await (
       await fetchFn(
         u,
-        writeHistory ? { headers: { "x-sinapso-token": getSessionToken() } } : undefined,
+        writeHistory
+          ? { headers: { "x-sinapso-token": getSessionToken() } }
+          : undefined,
       )
     ).json()) as { results?: unknown[]; historyId?: string } | unknown[];
     const hits = Array.isArray(d) ? d : (d.results ?? []);
     const historyId = Array.isArray(d) ? undefined : d.historyId;
-    if (historyId) send({ type: "action", action: "open_research", id: historyId });
+    if (historyId)
+      send({ type: "action", action: "open_research", id: historyId });
     return {
       historyId,
       results: (hits ?? [])
@@ -475,21 +484,25 @@ export function createVoiceToolSession(
       source: "exact",
       results: (d.matches ?? []).slice(0, 8).map((m) => {
         const x = m as Record<string, unknown>;
-        return { path: note, title: titleFrom(note), snippet: x.snippet ?? x.text, line: x.line };
+        return {
+          path: note,
+          title: titleFrom(note),
+          snippet: x.snippet ?? x.text,
+          line: x.line,
+        };
       }),
     };
   }
 
   // Query tool dispatch: reuse loopback endpoints so guards/history stay shared.
-  async function callTool(
-    name: string,
-    args: VoiceArgs,
-  ): Promise<VoiceResult> {
+  async function callTool(name: string, args: VoiceArgs): Promise<VoiceResult> {
     try {
       if (name === "search_notes") {
         const query = String(args.query ?? "");
         const prefix =
-          typeof args.path === "string" ? args.path.trim().replace(/\/+$/, "") : "";
+          typeof args.path === "string"
+            ? args.path.trim().replace(/\/+$/, "")
+            : "";
         send({ type: "status", key: "voice.status.searchingVault", query });
         // Meaning-based first; keyword full-text covers the rest of the vault
         // (and any semantic-unavailable state) inside this same call (R9).
@@ -501,7 +514,9 @@ export function createVoiceToolSession(
           const hits = r.ok && d.state === "ready" ? (d.results ?? []) : [];
           const scoped = hits.filter((h) => {
             if (!prefix) return true;
-            return String((h as Record<string, unknown>).id ?? "").startsWith(prefix + "/");
+            return String((h as Record<string, unknown>).id ?? "").startsWith(
+              prefix + "/",
+            );
           });
           if (scoped.length) {
             return {
@@ -519,11 +534,15 @@ export function createVoiceToolSession(
       }
       if (name === "search_passages") {
         const query = String(args.query ?? "");
-        const note = typeof args.note === "string" && args.note ? args.note : undefined;
+        const note =
+          typeof args.note === "string" && args.note ? args.note : undefined;
         send({ type: "status", key: "voice.status.searchingPassages", query });
         if (args.exact === true) {
           if (!note)
-            return { error: "exact search needs 'note' (a path from an earlier result)" };
+            return {
+              error:
+                "exact search needs 'note' (a path from an earlier result)",
+            };
           return grepNote(note, query, args.ignore_case === true);
         }
         const u = new URL(`${base}/api/passages`);
@@ -538,7 +557,12 @@ export function createVoiceToolSession(
               source: "semantic",
               results: hits.slice(0, 8).map((h) => {
                 const x = h as Record<string, unknown>;
-                return { path: x.file, title: x.title, snippet: x.snippet, line: x.line };
+                return {
+                  path: x.file,
+                  title: x.title,
+                  snippet: x.snippet,
+                  line: x.line,
+                };
               }),
             };
           }
@@ -551,7 +575,11 @@ export function createVoiceToolSession(
         return { source: "fulltext", ...(await fulltextNotes(query, "")) };
       }
       if (name === "read_passage") {
-        send({ type: "status", key: "voice.status.readingPassage", note: String(args.note ?? "") });
+        send({
+          type: "status",
+          key: "voice.status.readingPassage",
+          note: String(args.note ?? ""),
+        });
         const line = Number(args.line ?? 1);
         const u = new URL(`${base}/api/note-lines`);
         u.searchParams.set("id", String(args.note ?? ""));
@@ -561,7 +589,11 @@ export function createVoiceToolSession(
         return { path: args.note, line: d.from, to: d.to, snippet: d.text };
       }
       if (name === "browse_folder") {
-        send({ type: "status", key: "voice.status.browsingFolder", path: String(args.path ?? "/") });
+        send({
+          type: "status",
+          key: "voice.status.browsingFolder",
+          path: String(args.path ?? "/"),
+        });
         const u = new URL(`${base}/api/tree`);
         if (args.path) u.searchParams.set("path", String(args.path));
         return (await (await fetchFn(u)).json()) as Record<string, unknown>;
@@ -586,18 +618,18 @@ export function createVoiceToolSession(
   }
 
   // Stateful tool dispatch: view/open + write/save/edit + web.
-  async function runTool(
-    name: string,
-    args: VoiceArgs,
-  ): Promise<VoiceResult> {
+  async function runTool(name: string, args: VoiceArgs): Promise<VoiceResult> {
     if (name === "current_view") {
       send({ type: "status", key: "voice.status.currentView" });
-      if (!browserView) return { viewStateKnown: false, selectedContext, recentResearch };
+      if (!browserView)
+        return { viewStateKnown: false, selectedContext, recentResearch };
       const needsResearch =
         browserView.researchPanelOpen || browserView.pinnedResearchId !== null;
       const entries = needsResearch ? await researchEntries() : [];
       const resolveResearch = (id: string | null) => {
-        const entry = id ? entries.find((candidate) => candidate.id === id) : undefined;
+        const entry = id
+          ? entries.find((candidate) => candidate.id === id)
+          : undefined;
         return entry ? researchSummary(entry) : null;
       };
       return {
@@ -647,13 +679,12 @@ export function createVoiceToolSession(
       };
     }
     if (name === "read_wiki_contract") {
-      send({ type: "status", key: "voice.status.readingWiki", wiki: String(args.wikiId ?? "") });
-      const result = await callTool(name, args);
-      const wiki = result.wiki as Record<string, unknown> | undefined;
-      for (const value of [args.wikiId, wiki?.id, wiki?.path]) {
-        if (typeof value === "string" && value) contractWikisRead.add(value);
-      }
-      return result;
+      send({
+        type: "status",
+        key: "voice.status.readingWiki",
+        wiki: String(args.wikiId ?? ""),
+      });
+      return callTool(name, args);
     }
     if (name === "read_working_document") {
       const documentId = clean(args.documentId);
@@ -723,36 +754,19 @@ export function createVoiceToolSession(
         display,
       };
     }
-    if (name === "save_working_document") {
+    if (name === "save_research_to_inbox") {
       send({ type: "status", key: "voice.status.savingDocument" });
-      const requestedId = clean(args.documentId);
-      const documentId = requestedId ?? activeWorkingDocId;
-      if (!documentId) return { error: "no working document to save" };
-      if (!(await knownDocumentId(documentId))) return { error: "unknown documentId" };
-      if (
-        args.kind !== "raw_copy" &&
-        typeof args.wikiId === "string" &&
-        args.wikiId &&
-        !contractWikisRead.has(args.wikiId)
-      ) {
-        return {
-          error: "read_wiki_contract before saving a structured wiki note",
-        };
-      }
+      const researchId = clean(args.researchId) ?? activeWorkingDocId;
+      if (!researchId) return { error: "no research to save" };
       const r = await fetchFn(
-        `${base}/api/document/${encodeURIComponent(documentId)}/promote`,
+        `${base}/api/research/history/${encodeURIComponent(researchId)}/save-inbox`,
         {
           method: "POST",
           headers: {
             "content-type": "application/json",
             "x-sinapso-token": getSessionToken(),
           },
-          body: JSON.stringify({
-            kind: args.kind === "raw_copy" ? "raw_copy" : "wiki_note",
-            wikiId: args.wikiId,
-            path: args.path,
-            title: args.title,
-          }),
+          body: JSON.stringify({}),
         },
       );
       const d = (await r.json().catch(() => ({}))) as {
@@ -761,9 +775,10 @@ export function createVoiceToolSession(
         error?: string;
         removedHistory?: boolean;
       };
-      if (!r.ok || !d.id) return { error: d.error ?? "could not save document" };
-      knownDocumentIds.delete(documentId);
-      if (activeWorkingDocId === documentId) activeWorkingDocId = null;
+      if (!r.ok || !d.id)
+        return { error: d.error ?? "could not save document" };
+      knownDocumentIds.delete(researchId);
+      if (activeWorkingDocId === researchId) activeWorkingDocId = null;
       send({ type: "action", action: "open_saved_note", note: d.id });
       return {
         ok: true,
@@ -771,6 +786,51 @@ export function createVoiceToolSession(
         ids: d.ids,
         removedTemporaryDocument: d.removedHistory === true,
       };
+    }
+    if (name === "propose_wiki_ingest" || name === "apply_wiki_ingest") {
+      const researchId =
+        clean(args.researchId) ??
+        (name === "propose_wiki_ingest" ? activeWorkingDocId : undefined);
+      if (
+        name === "propose_wiki_ingest" &&
+        !researchId &&
+        !clean(args.sourceNote)
+      )
+        return { error: "researchId or Inbox sourceNote required" };
+      if (name === "apply_wiki_ingest" && !Array.isArray(args.operations))
+        return { error: "proposal operations required" };
+      const r = await fetchFn(
+        `${base}/api/wiki-ingest/${name === "propose_wiki_ingest" ? "propose" : "apply"}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-sinapso-token": getSessionToken(),
+          },
+          body: JSON.stringify({
+            wikiId: clean(args.wikiId),
+            researchId,
+            sourceNote: clean(args.sourceNote),
+            ...(name === "apply_wiki_ingest"
+              ? { operations: args.operations }
+              : {}),
+          }),
+        },
+      );
+      const d = (await r.json().catch(() => ({}))) as VoiceResult & {
+        ids?: string[];
+        id?: string;
+        error?: string;
+      };
+      if (!r.ok) return { error: d.error ?? "wiki ingest failed" };
+      if (name === "propose_wiki_ingest") return { ok: true, ...d };
+      const path = d.ids?.[0] ?? d.id;
+      if (researchId) {
+        knownDocumentIds.delete(researchId);
+        if (activeWorkingDocId === researchId) activeWorkingDocId = null;
+      }
+      if (path) send({ type: "action", action: "open_saved_note", note: path });
+      return { ok: true, ...d, path };
     }
     if (name === "edit_vault_note") {
       const note = String(args.note ?? "").trim();
@@ -818,7 +878,9 @@ export function createVoiceToolSession(
       if (!task) return { error: "task required" };
       send({ type: "status", key: "voice.status.delegating", task });
       const strings = (v: unknown): string[] =>
-        Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+        Array.isArray(v)
+          ? v.filter((x): x is string => typeof x === "string")
+          : [];
       const r = await fetchFn(`${base}/api/delegate`, {
         method: "POST",
         headers: {
@@ -840,7 +902,7 @@ export function createVoiceToolSession(
       if (!r.ok || !d.job)
         return { error: d.error ?? "could not start the delegation" };
       // The job writes into this document; adopt it as the session's working
-      // document so save_working_document and revisions target it (R13).
+      // document so later curation and revisions target it (R13).
       knownDocumentIds.add(d.job.documentId);
       activeWorkingDocId = d.job.documentId;
       return {
@@ -850,24 +912,21 @@ export function createVoiceToolSession(
         note: "The reasoner is working in the background. Announce the handoff aloud and keep conversing; the result will arrive in the working document.",
       };
     }
-        // Web tools (Exa): spend-bearing, so the guarded routes need the session
+    // Web tools (Exa): spend-bearing, so the guarded routes need the session
     // token; they cannot go through the token-less callTool path.
     if (name === "fetch_url") return fetchUrl(String(args.url ?? "").trim());
     if (name === "web_research") {
       const query = String(args.query ?? "").trim();
       if (!query) return { error: "empty query" };
       send({ type: "status", key: "voice.status.searchingWeb", query });
-      const r = await fetchFn(
-        `${base}/api/research`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-sinapso-token": getSessionToken(),
-          },
-          body: JSON.stringify({ query, deep: true }),
+      const r = await fetchFn(`${base}/api/research`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-sinapso-token": getSessionToken(),
         },
-      );
+        body: JSON.stringify({ query, deep: true }),
+      });
       const d = (await r.json().catch(() => ({}))) as {
         message?: string;
         historyId?: string;

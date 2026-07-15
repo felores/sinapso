@@ -27,7 +27,7 @@ describe("voice system prompt", () => {
     expect(prompt).toContain("id=agencia/wiki");
     expect(prompt).toContain("raw=../research/");
     expect(prompt).toContain("agencia/wiki/AGENTS.md");
-    expect(prompt).toContain("read that wiki's contract files");
+    expect(prompt).toContain("propose_wiki_ingest reads the selected contract");
     expect(prompt).toContain("selectedContext.current");
     expect(prompt).toContain("Archive destination from Admin: archive");
     expect(prompt).toContain("archive_vault_note");
@@ -73,7 +73,10 @@ describe("voice provider helpers", () => {
     const input = Buffer.alloc(4);
     input.writeInt16LE(-1000, 0);
     input.writeInt16LE(1000, 2);
-    const out = Buffer.from(resamplePcm16Base64(input.toString("base64"), 16000, 24000), "base64");
+    const out = Buffer.from(
+      resamplePcm16Base64(input.toString("base64"), 16000, 24000),
+      "base64",
+    );
     expect(out.length).toBe(6);
   });
 });
