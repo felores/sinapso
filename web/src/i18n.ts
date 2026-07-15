@@ -227,7 +227,8 @@ const EN: Dict = {
   "editor.conflict.message": "This note changed on disk.",
   "editor.conflict.reload": "Reload",
   "editor.conflict.overwrite": "Overwrite",
-  "editor.mirror.message": "Unsaved changes from a previous session were found for this note.",
+  "editor.mirror.message":
+    "Unsaved changes from a previous session were found for this note.",
   "editor.mirror.restore": "Restore",
   "editor.mirror.discard": "Discard",
   "editor.ai.placeholder": "Ask AI…",
@@ -262,8 +263,10 @@ const EN: Dict = {
   "research.unpin": "Unpin current result",
   "research.pinned": "Current research result pinned.",
   "research.unpinned": "Research result unpinned.",
-  "research.pinCleared": "Pin cleared because the result is no longer in history.",
-  "research.refreshConflict": "Agent update not shown because this document has unsaved changes.",
+  "research.pinCleared":
+    "Pin cleared because the result is no longer in history.",
+  "research.refreshConflict":
+    "Agent update not shown because this document has unsaved changes.",
   "research.refreshed": "Agent refreshed the current research result.",
   "research.prev": "Older result",
   "research.next": "Newer result",
@@ -281,6 +284,8 @@ const EN: Dict = {
   "research.documentConflict": "This document changed in another session.",
   "research.retry": "Retry",
   "research.saveNote": "save as note",
+  "research.saveInbox": "Save to Inbox",
+  "research.ingestWiki": "Ingest to Wiki",
   "research.saveResearch": "save research as note",
   "research.saving": "saving…",
   "research.saved": "saved ✓",
@@ -524,7 +529,8 @@ const ES: Dict = {
   "editor.conflict.message": "Esta nota cambió en el disco.",
   "editor.conflict.reload": "Recargar",
   "editor.conflict.overwrite": "Sobrescribir",
-  "editor.mirror.message": "Se encontraron cambios sin guardar de una sesión anterior.",
+  "editor.mirror.message":
+    "Se encontraron cambios sin guardar de una sesión anterior.",
   "editor.mirror.restore": "Restaurar",
   "editor.mirror.discard": "Descartar",
   "editor.ai.placeholder": "Pídele a la IA…",
@@ -559,9 +565,12 @@ const ES: Dict = {
   "research.unpin": "Dejar de fijar el resultado actual",
   "research.pinned": "Resultado de investigación actual fijado.",
   "research.unpinned": "Resultado de investigación liberado.",
-  "research.pinCleared": "Se quitó el fijado porque el resultado ya no está en el historial.",
-  "research.refreshConflict": "La actualización del agente no se mostró porque este documento tiene cambios sin guardar.",
-  "research.refreshed": "El agente actualizó el resultado de investigación actual.",
+  "research.pinCleared":
+    "Se quitó el fijado porque el resultado ya no está en el historial.",
+  "research.refreshConflict":
+    "La actualización del agente no se mostró porque este documento tiene cambios sin guardar.",
+  "research.refreshed":
+    "El agente actualizó el resultado de investigación actual.",
   "research.prev": "Resultado anterior",
   "research.next": "Resultado siguiente",
   "research.trash": "Eliminar este resultado del historial",
@@ -578,6 +587,8 @@ const ES: Dict = {
   "research.documentConflict": "Este documento cambió en otra sesión.",
   "research.retry": "Reintentar",
   "research.saveNote": "guardar como nota",
+  "research.saveInbox": "Guardar en Inbox",
+  "research.ingestWiki": "Ingestar a Wiki",
   "research.saveResearch": "guardar investigación como nota",
   "research.saving": "guardando…",
   "research.saved": "guardado ✓",

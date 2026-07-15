@@ -37,7 +37,8 @@ const syntheticLongEntry = {
       score: 1,
       snippet: Array.from(
         { length: 18 },
-        (_, index) => `Visible snippet line ${index + 1} proves the preview clamp.`,
+        (_, index) =>
+          `Visible snippet line ${index + 1} proves the preview clamp.`,
       ).join("\n"),
     },
   ],
@@ -143,8 +144,12 @@ async function installVoiceHarness(page: Page) {
       audioWorklet = { addModule: async () => undefined };
       resume = async () => undefined;
       close = async () => undefined;
-      createAnalyser() { return { ...analyser }; }
-      createMediaStreamSource() { return { connect() {} }; }
+      createAnalyser() {
+        return { ...analyser };
+      }
+      createMediaStreamSource() {
+        return { connect() {} };
+      }
       createScriptProcessor() {
         return { connect() {}, disconnect() {}, onaudioprocess: null };
       }
@@ -152,9 +157,17 @@ async function installVoiceHarness(page: Page) {
         return { duration: 0, getChannelData: () => new Float32Array(0) };
       }
       createBufferSource() {
-        return { buffer: null, connect() {}, start() {}, stop() {}, onended: null };
+        return {
+          buffer: null,
+          connect() {},
+          start() {},
+          stop() {},
+          onended: null,
+        };
       }
-      createGain() { return { gain: { value: 1 }, connect() {} }; }
+      createGain() {
+        return { gain: { value: 1 }, connect() {} };
+      }
     }
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
@@ -180,7 +193,10 @@ async function installVoiceHarness(page: Page) {
   await page.goto("/");
   await expect(page.locator("#voice-toggle")).toBeEnabled();
   await page.locator("#voice-toggle").click();
-  await expect(page.locator("#voice-toggle")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#voice-toggle")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 
   return {
     show: async (id: string, action = "open_research") => {
@@ -215,7 +231,9 @@ test.beforeEach(async ({ page }) => {
   await clearHistory(page);
 });
 
-test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user navigation", async ({ page }) => {
+test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user navigation", async ({
+  page,
+}) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {
     const resultA = await createEvidence(page, "Alpha", "Persisted result A");
@@ -224,7 +242,10 @@ test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user nav
     await expectVisibleQuery(page, "Persisted result A");
 
     await page.locator("#research-pin").click();
-    await expect(page.locator("#research-pin")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#research-pin")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
     const resultB = await createEvidence(page, "Beta", "Agent result B");
     await harness.show(resultB);
@@ -235,25 +256,48 @@ test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user nav
     await expectVisibleQuery(page, "Agent result B");
     await page.locator("#research-prev").click();
     await expectVisibleQuery(page, "Persisted result A");
-    await expect(page.locator("#research-pin")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#research-pin")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
     await page.locator("#research-pin").click();
 
-    const cleanDoc = await createDocument(page, "Clean pinned draft", "first server version");
+    const cleanDoc = await createDocument(
+      page,
+      "Clean pinned draft",
+      "first server version",
+    );
     await harness.show(cleanDoc.id, "show_document");
-    await expect(page.locator(".research-document-title")).toHaveValue("Clean pinned draft");
+    await expect(page.locator(".research-document-title")).toHaveValue(
+      "Clean pinned draft",
+    );
     await page.locator("#research-pin").click();
-    const refreshed = await updateDocument(page, cleanDoc, "Clean pinned draft", "same-id refreshed version");
+    const refreshed = await updateDocument(
+      page,
+      cleanDoc,
+      "Clean pinned draft",
+      "same-id refreshed version",
+    );
     await harness.show(cleanDoc.id, "show_document");
-    await expect(page.locator(".research-document-editor")).toContainText("same-id refreshed version");
+    await expect(page.locator(".research-document-editor")).toContainText(
+      "same-id refreshed version",
+    );
 
     const editor = page.locator(".research-document-editor .cm-content");
     await editor.click();
     await page.keyboard.press("End");
     await page.keyboard.type(" local unsaved words");
-    const external = await updateDocument(page, refreshed, "Clean pinned draft", "external competing version");
+    const external = await updateDocument(
+      page,
+      refreshed,
+      "Clean pinned draft",
+      "external competing version",
+    );
     await harness.show(cleanDoc.id, "show_document");
-    await expect(page.locator("#research-error")).toContainText("unsaved changes");
+    await expect(page.locator("#research-error")).toContainText(
+      "unsaved changes",
+    );
     await expect(editor).toContainText("local unsaved words");
     const disk = await page.request.get(`/api/document/${external.id}`);
     const diskBody: DocumentResponse = await disk.json();
@@ -273,7 +317,10 @@ test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user nav
     await page.keyboard.type("same-id refreshed version");
 
     await page.locator("#research-pin").click();
-    await expect(page.locator("#research-pin")).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator("#research-pin")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
     await harness.show(resultB);
     await expectVisibleQuery(page, "Agent result B");
   } finally {
@@ -281,21 +328,34 @@ test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user nav
   }
 });
 
-test("working document creation, editing, and autosave persist through the real API", async ({ page }) => {
+test("working document creation, editing, and autosave persist through the real API", async ({
+  page,
+}) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {
     const harness = await installVoiceHarness(page);
-    const resultA = await createEvidence(page, "Alpha", "Open panel for document creation");
+    const resultA = await createEvidence(
+      page,
+      "Alpha",
+      "Open panel for document creation",
+    );
     await harness.show(resultA);
-    await page.locator("#research-create-document").click();
+    await page.locator("#new-doc-btn").click();
     await expect(page.locator(".research-document-title")).toBeVisible();
-    await page.locator(".research-document-title").fill("Browser-authored working document");
+    await page
+      .locator(".research-document-title")
+      .fill("Browser-authored working document");
     const editor = page.locator(".research-document-editor .cm-content");
     await editor.click();
-    await page.keyboard.type("A complete editable draft created in the browser.");
-    await expect(page.locator(".research-document-save-state")).toHaveText("saved", {
-      timeout: 10_000,
-    });
+    await page.keyboard.type(
+      "A complete editable draft created in the browser.",
+    );
+    await expect(page.locator(".research-document-save-state")).toHaveText(
+      "saved",
+      {
+        timeout: 10_000,
+      },
+    );
 
     const history = await page.request.get("/api/research/history");
     const body: HistoryResponse = await history.json();
@@ -310,33 +370,52 @@ test("working document creation, editing, and autosave persist through the real 
   }
 });
 
-test("evidence is immutable and long snippets expand without opening the note", async ({ page }) => {
+test("evidence is immutable and long snippets expand without opening the note", async ({
+  page,
+}) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {
-    const evidenceId = await createEvidence(page, "Alpha", "Immutable evidence");
+    const evidenceId = await createEvidence(
+      page,
+      "Alpha",
+      "Immutable evidence",
+    );
     const overwrite = await page.request.post("/api/document", {
       headers: { "x-sinapso-token": await token(page) },
-      data: { id: evidenceId, revision: "stale", title: "No", content: "overwrite" },
+      data: {
+        id: evidenceId,
+        revision: "stale",
+        title: "No",
+        content: "overwrite",
+      },
     });
     expect(overwrite.status()).toBe(409);
     const evidence = await page.request.get("/api/research/history");
     const evidenceBody: HistoryResponse = await evidence.json();
-    expect(evidenceBody.entries.find((entry) => entry.id === evidenceId)?.mode).toBe("keyword");
+    expect(
+      evidenceBody.entries.find((entry) => entry.id === evidenceId)?.mode,
+    ).toBe("keyword");
 
     const harness = await installVoiceHarness(page);
     harness.includeLongEntry();
     await harness.show(syntheticLongEntry.id);
-    const snippet = page.locator(".rel-snippet", { hasText: "Visible snippet line 1" });
+    const snippet = page.locator(".rel-snippet", {
+      hasText: "Visible snippet line 1",
+    });
     await expect(snippet).toBeVisible();
     const lineHeight = await snippet.evaluate((element) =>
       Number.parseFloat(getComputedStyle(element).lineHeight),
     );
-    const collapsedHeight = await snippet.evaluate((element) => element.getBoundingClientRect().height);
+    const collapsedHeight = await snippet.evaluate(
+      (element) => element.getBoundingClientRect().height,
+    );
     expect(collapsedHeight).toBeLessThanOrEqual(lineHeight * 7 + 2);
     await page.locator(".expand-btn").click();
     await expect(snippet).toHaveClass(/expanded/);
     await expect(page.locator("#reader")).toHaveClass(/hidden/);
-    const expandedHeight = await snippet.evaluate((element) => element.getBoundingClientRect().height);
+    const expandedHeight = await snippet.evaluate(
+      (element) => element.getBoundingClientRect().height,
+    );
     expect(expandedHeight).toBeGreaterThan(collapsedHeight);
   } finally {
     await assertCleanBrowser();

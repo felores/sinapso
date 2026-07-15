@@ -3224,10 +3224,44 @@ async function boot() {
     prefs.setLabels(labelsOn);
   });
 
-  // ---- filters panel ----
+  // ---- filters panel (left stack) ----
   $("#filters-btn").addEventListener("click", () =>
     $("#filters").classList.toggle("hidden"),
   );
+  // ---- configuration (left stack) → admin modal ----
+  $("#config-btn").addEventListener("click", () => void openAdmin());
+  // ---- new document (right stack) ----
+  $("#new-doc-btn").addEventListener("click", async () => {
+    openResearch("document");
+    if (!(await teardownResearchDocument())) return;
+    const created = await createResearchDocument(
+      {
+        async create(title, content) {
+          const result = await api<{ id: string; revision: string }>(
+            "/api/document",
+            { json: { title, content } },
+          );
+          return { id: result.id, title, content, revision: result.revision };
+        },
+        read: async () => {
+          throw new Error("unused");
+        },
+        save: async () => {
+          throw new Error("unused");
+        },
+        promote: async () => {
+          throw new Error("unused");
+        },
+      },
+      i18n.t("research.newDocument"),
+    );
+    await loadHistory();
+    const entry = researchHistory.find((item) => item.id === created.id);
+    if (entry) {
+      historyIdx = researchHistory.indexOf(entry);
+      await showHistoryEntry(entry);
+    }
+  });
   document.addEventListener("click", (e) => {
     const target = e.target as Node;
     const filtersPanel = $("#filters");
@@ -5561,6 +5595,7 @@ async function boot() {
     researchMode = null;
     hideEvidenceBubble();
     $("#research").classList.add("hidden");
+    $("#research-footer").classList.add("hidden");
     clearSelectionContext("research");
     // reader returns to the right unless the user pinned it left
     if (!readerLeftPinned) setReaderCtxLeft(false);
@@ -5568,38 +5603,59 @@ async function boot() {
     syncVoiceContext();
   }
   $("#research-close").addEventListener("click", () => void closeResearch());
-  $("#research-create-document").addEventListener("click", async () => {
-    if (!(await teardownResearchDocument())) return;
-    const created = await createResearchDocument(
-      {
-        async create(title, content) {
-          const result = await api<{ id: string; revision: string }>(
-            "/api/document",
-            {
-              json: { title, content },
-            },
-          );
-          return { id: result.id, title, content, revision: result.revision };
-        },
-        read: async () => {
-          throw new Error("unused");
-        },
-        save: async () => {
-          throw new Error("unused");
-        },
-        promote: async () => {
-          throw new Error("unused");
-        },
-      },
-      i18n.t("research.newDocument"),
-    );
-    await loadHistory();
-    const entry = researchHistory.find((item) => item.id === created.id);
-    if (entry) {
-      historyIdx = researchHistory.indexOf(entry);
-      await showHistoryEntry(entry);
+
+  // ---- research footer: promote working document to inbox or wiki ----
+  {
+    const saveInbox = $("#research-save-inbox") as HTMLButtonElement;
+    const ingestWiki = $("#research-ingest-wiki") as HTMLButtonElement;
+    saveInbox.textContent = i18n.t("research.saveInbox");
+    ingestWiki.textContent = i18n.t("research.ingestWiki");
+
+    async function promoteDoc(kind: "note" | "wiki_note") {
+      const controller = researchDocumentController;
+      if (!controller) throw new Error("document-not-active");
+      const doc = controller.document();
+      await controller.autosave.flush();
+      if (controller.autosave.state() !== "clean")
+        throw new Error("document-not-saved");
+      const promoted = await api<{ id: string }>(
+        `/api/document/${encodeURIComponent(doc.id)}/promote`,
+        { json: { title: doc.title, kind } },
+      );
+      return String(promoted.id);
     }
-  });
+
+    saveInbox.addEventListener("click", async () => {
+      saveInbox.disabled = true;
+      try {
+        const controller = researchDocumentController;
+        if (!controller) throw new Error("document-not-active");
+        const docId = controller.document().id;
+        const noteId = await promoteDoc("note");
+        await teardownResearchDocument();
+        currentEntryId = null;
+        researchHistory = researchHistory.filter((entry) => entry.id !== docId);
+        historyIdx = Math.min(historyIdx, researchHistory.length - 1);
+        updateHistoryNav();
+        await openAfterIngest(noteId);
+      } catch {
+        saveInbox.disabled = false;
+      }
+    });
+    ingestWiki.addEventListener("click", async () => {
+      ingestWiki.disabled = true;
+      try {
+        const controller = researchDocumentController;
+        if (!controller) throw new Error("document-not-active");
+        const noteId = await promoteDoc("wiki_note");
+        await teardownResearchDocument();
+        currentEntryId = null;
+        await openAfterIngest(noteId);
+      } catch {
+        ingestWiki.disabled = false;
+      }
+    });
+  }
 
   // Research panel: attach (docked right) / detach (floating, draggable window).
   {
@@ -6313,27 +6369,6 @@ async function boot() {
     replace.addEventListener("click", () => apply("replace"));
     insert.addEventListener("click", () => apply("insert"));
     dismiss.addEventListener("click", hidePreview);
-    const save = document.createElement("button");
-    save.className = "web-save";
-    save.textContent = i18n.t("research.saveNote");
-    save.addEventListener("click", async () => {
-      save.disabled = true;
-      try {
-        const controller = researchDocumentController;
-        if (!controller) throw new Error("document-not-active");
-        const { noteId } = await controller.promote();
-        await teardownResearchDocument();
-        currentEntryId = null;
-        researchHistory = researchHistory.filter((entry) => entry.id !== id);
-        historyIdx = Math.min(historyIdx, researchHistory.length - 1);
-        updateHistoryNav();
-        await openAfterIngest(noteId);
-      } catch {
-        save.disabled = false;
-        save.textContent = i18n.t("research.saveFail");
-      }
-    });
-    body.appendChild(save);
   }
 
   async function apiDelete(url: string) {
@@ -6403,6 +6438,7 @@ async function boot() {
     else if (entry.mode === "keyword")
       renderKeywordInto(body, (entry.results ?? []) as never, entry.query);
     else renderSemanticInto(body, (entry.results ?? []) as never, entry.query);
+    $("#research-footer").classList.toggle("hidden", entry.mode !== "document");
     updateHistoryNav();
     updateBrandStats();
     syncVoiceContext();

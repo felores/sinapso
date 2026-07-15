@@ -1025,12 +1025,10 @@ body > :not(#graph) {
 #topbar.topbar-bottom-rail ~ #topbar-rail .rail-divider {
   display: none;
 }
-/* In rail mode the four bottom corner buttons move into the rail (proxies above
-   drive them); hide the originals at the bottom of the screen. */
-#topbar.topbar-rail ~ #reopen-content,
-#topbar.topbar-rail ~ #filters-btn,
-#topbar.topbar-rail ~ #settings-btn,
-#topbar.topbar-rail ~ #reopen-research {
+/* In rail mode the bottom corner stacks move into the rail (proxies above
+    drive them); hide the originals at the bottom of the screen. */
+#topbar.topbar-rail ~ #left-corner-stack,
+#topbar.topbar-rail ~ #right-corner-stack {
   display: none;
 }
 
@@ -1205,16 +1203,29 @@ body > :not(#graph) {
   border-color: var(--accent);
 }
 
-/* ---------- bottom corners (filters / settings + counts) ---------- */
-/* icon-only corner buttons, matching the search-section mode buttons.
-   Outer corners = panel reopen (content left / research right); inner = filters/settings. */
-#filters-btn,
-#settings-btn,
-#reopen-content,
-#reopen-research {
+/* ---------- bottom corners: vertical stacks ---------- */
+/* Left stack (top→bottom): config, filters, toggle reader.
+   Right stack (top→bottom): new doc, settings, toggle research. */
+#left-corner-stack,
+#right-corner-stack {
   position: fixed;
   bottom: 14px;
   z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition:
+    left 0.2s ease,
+    right 0.2s ease;
+}
+#left-corner-stack {
+  left: calc(14px + var(--btn-left-inset, 0px));
+}
+#right-corner-stack {
+  right: calc(14px + var(--btn-right-inset, 0px));
+}
+#left-corner-stack button,
+#right-corner-stack button {
   width: 34px;
   height: 34px;
   display: inline-flex;
@@ -1225,36 +1236,14 @@ body > :not(#graph) {
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
-  /* slide in/out of the way as the docked panels open/close/resize */
-  transition:
-    left 0.2s ease,
-    right 0.2s ease;
 }
-/* --btn-left-inset / --btn-right-inset (set by layoutTopbar) = the width of the
-   panel docked on that side, so the corner buttons stay in the visible gap. */
-#reopen-content {
-  left: calc(18px + var(--btn-left-inset, 0px));
-}
-#filters-btn {
-  left: calc(60px + var(--btn-left-inset, 0px));
-}
-#settings-btn {
-  right: calc(60px + var(--btn-right-inset, 0px));
-}
-#reopen-research {
-  right: calc(18px + var(--btn-right-inset, 0px));
-}
-#filters-btn:hover,
-#settings-btn:hover,
-#reopen-content:hover,
-#reopen-research:hover {
+#left-corner-stack button:hover,
+#right-corner-stack button:hover {
   border-color: var(--accent);
   color: var(--fg);
 }
-#filters-btn svg,
-#settings-btn svg,
-#reopen-content svg,
-#reopen-research svg {
+#left-corner-stack button svg,
+#right-corner-stack button svg {
   display: block;
 }
 #reader-nav {
@@ -1475,12 +1464,12 @@ body > :not(#graph) {
 /* ---------- display settings panel ---------- */
 #settings {
   position: fixed;
-  bottom: 52px;
-  right: calc(18px + var(--btn-right-inset, 0px));
+  bottom: 14px;
+  right: calc(56px + var(--btn-right-inset, 0px));
   box-sizing: border-box;
-  width: min(270px, calc(100vw - 36px - var(--btn-right-inset, 0px)));
-  min-width: min(230px, calc(100vw - 36px - var(--btn-right-inset, 0px)));
-  max-width: calc(100vw - 36px - var(--btn-right-inset, 0px));
+  width: min(270px, calc(100vw - 70px - var(--btn-right-inset, 0px)));
+  min-width: min(230px, calc(100vw - 70px - var(--btn-right-inset, 0px)));
+  max-width: calc(100vw - 70px - var(--btn-right-inset, 0px));
   max-height: calc(
     100vh - 76px - var(--mobile-search-h, 0px) - var(--mobile-nav-h, 0px)
   );
@@ -1533,12 +1522,12 @@ body > :not(#graph) {
 /* ---------- filters panel ---------- */
 #filters {
   position: fixed;
-  bottom: 52px;
-  left: calc(18px + var(--btn-left-inset, 0px));
+  bottom: 14px;
+  left: calc(56px + var(--btn-left-inset, 0px));
   box-sizing: border-box;
-  width: min(280px, calc(100vw - 36px - var(--btn-left-inset, 0px)));
-  min-width: min(240px, calc(100vw - 36px - var(--btn-left-inset, 0px)));
-  max-width: calc(100vw - 36px - var(--btn-left-inset, 0px));
+  width: min(280px, calc(100vw - 70px - var(--btn-left-inset, 0px)));
+  min-width: min(240px, calc(100vw - 70px - var(--btn-left-inset, 0px)));
+  max-width: calc(100vw - 70px - var(--btn-left-inset, 0px));
   max-height: calc(
     100vh - 76px - var(--mobile-search-h, 0px) - var(--mobile-nav-h, 0px)
   );
@@ -3741,6 +3730,35 @@ body > :not(#graph) {
 }
 #research-body.hidden {
   display: none;
+}
+#research-footer {
+  display: flex;
+  gap: 8px;
+  padding: 8px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+#research-footer.hidden {
+  display: none;
+}
+#research-footer button {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+#research-footer button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+#research-footer button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 #research-error {
   margin: 8px 18px;

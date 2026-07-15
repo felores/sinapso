@@ -990,45 +990,65 @@
 
     <!-- legend moved into the Layers menu above -->
 
-    <button
-      id="reopen-content"
-      title="Reopen last note (content history)"
-      aria-label="Reopen last note"
-    >
-      <svg
-        viewBox="0 0 24 24"
-        width="16"
-        height="16"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
+    <div id="left-corner-stack">
+      <button id="config-btn" title="Configuration" aria-label="Configuration">
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path
+            d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"
+          />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      </button>
+      <button
+        id="filters-btn"
+        title="Display Filters"
+        aria-label="Display Filters"
       >
-        <rect width="18" height="18" x="3" y="3" rx="2" />
-        <path d="M9 3v18" />
-      </svg>
-    </button>
-    <button
-      id="filters-btn"
-      title="Display Filters"
-      aria-label="Display Filters"
-    >
-      <svg
-        viewBox="0 0 24 24"
-        width="16"
-        height="16"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+        </svg>
+      </button>
+      <button
+        id="reopen-content"
+        title="Toggle reader pane"
+        aria-label="Toggle reader pane"
       >
-        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-      </svg>
-    </button>
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <rect width="18" height="18" x="3" y="3" rx="2" />
+          <path d="M9 3v18" />
+        </svg>
+      </button>
+    </div>
     <div id="voice-status" aria-live="polite"></div>
     <div id="ops-status" class="hidden" aria-live="polite">
       <span id="ops-label"></span>
@@ -1051,53 +1071,74 @@
         ><span id="bs-left"></span> · <span id="bs-right"></span
       ></span>
     </div>
-    <button
-      id="settings-btn"
-      title="Display Settings"
-      aria-label="Display Settings"
-    >
-      <svg
-        viewBox="0 0 24 24"
-        width="16"
-        height="16"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
+    <div id="right-corner-stack">
+      <button id="new-doc-btn" title="New document" aria-label="New document">
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path
+            d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+          />
+          <path d="M14 2v6h6" />
+          <path d="M12 18v-6M9 15h6" />
+        </svg>
+      </button>
+      <button
+        id="settings-btn"
+        title="Display Settings"
+        aria-label="Display Settings"
       >
-        <line x1="21" x2="14" y1="4" y2="4" />
-        <line x1="10" x2="3" y1="4" y2="4" />
-        <line x1="21" x2="12" y1="12" y2="12" />
-        <line x1="8" x2="3" y1="12" y2="12" />
-        <line x1="21" x2="16" y1="20" y2="20" />
-        <line x1="12" x2="3" y1="20" y2="20" />
-        <line x1="14" x2="14" y1="2" y2="6" />
-        <line x1="8" x2="8" y1="10" y2="14" />
-        <line x1="16" x2="16" y1="18" y2="22" />
-      </svg>
-    </button>
-    <button
-      id="reopen-research"
-      title="Reopen last research (history)"
-      aria-label="Reopen last research"
-    >
-      <svg
-        viewBox="0 0 24 24"
-        width="16"
-        height="16"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <line x1="21" x2="14" y1="4" y2="4" />
+          <line x1="10" x2="3" y1="4" y2="4" />
+          <line x1="21" x2="12" y1="12" y2="12" />
+          <line x1="8" x2="3" y1="12" y2="12" />
+          <line x1="21" x2="16" y1="20" y2="20" />
+          <line x1="12" x2="3" y1="20" y2="20" />
+          <line x1="14" x2="14" y1="2" y2="6" />
+          <line x1="8" x2="8" y1="10" y2="14" />
+          <line x1="16" x2="16" y1="18" y2="22" />
+        </svg>
+      </button>
+      <button
+        id="reopen-research"
+        title="Toggle research pane"
+        aria-label="Toggle research pane"
       >
-        <rect width="18" height="18" x="3" y="3" rx="2" />
-        <path d="M15 3v18" />
-      </svg>
-    </button>
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <rect width="18" height="18" x="3" y="3" rx="2" />
+          <path d="M15 3v18" />
+        </svg>
+      </button>
+    </div>
 
     <aside id="settings" class="hidden">
       <h3 data-i18n="settings.display">Display</h3>
@@ -1301,32 +1342,6 @@
         <h3 id="research-title" data-i18n="research.title">Research</h3>
         <div class="reader-actions-right">
           <button
-            id="research-create-document"
-            class="reader-icon"
-            type="button"
-            title="New working document"
-            data-i18n-title="research.newDocument"
-            aria-label="New working document"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="15"
-              height="15"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path
-                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-              />
-              <path d="M14 2v6h6" />
-              <path d="M12 18v-6M9 15h6" />
-            </svg>
-          </button>
-          <button
             id="research-trash"
             class="reader-icon hidden"
             title="Delete this result from history"
@@ -1381,6 +1396,10 @@
         aria-atomic="true"
       ></div>
       <div id="research-body"></div>
+      <div id="research-footer" class="hidden">
+        <button id="research-save-inbox" type="button"></button>
+        <button id="research-ingest-wiki" type="button"></button>
+      </div>
     </aside>
 
     <aside id="reader" class="hidden">
