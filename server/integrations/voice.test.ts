@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildVoiceSystemPrompt,
+  geminiCloseError,
   realtimeSessionConfig,
   realtimeVoiceTools,
   resamplePcm16Base64,
@@ -78,5 +79,15 @@ describe("voice provider helpers", () => {
       "base64",
     );
     expect(out.length).toBe(6);
+  });
+
+  it("surfaces abnormal Gemini close reasons", () => {
+    expect(
+      geminiCloseError({ code: 1007, reason: "invalid tool schema" }),
+    ).toBe("invalid tool schema");
+    expect(geminiCloseError({ code: 1011, reason: "" })).toBe(
+      "Gemini session closed (code 1011)",
+    );
+    expect(geminiCloseError({ code: 1000, reason: "" })).toBeNull();
   });
 });

@@ -1017,13 +1017,20 @@ describe("createVoiceToolSession — web tools", () => {
         historyId: "hist-article",
       }),
     );
+    fake.on("/api/research/history/hist-article/save-inbox", () =>
+      jsonResponse({ id: "inbox/an-article.md", removedHistory: true }),
+    );
     const session = createVoiceToolSession(ctx);
 
     const out = (await session.run("open_resource", {
       target: "https://example.com/a",
-    })) as { title: string; text: string };
+    })) as { researchId: string; title: string; text: string };
 
-    expect(out).toEqual({ title: "An article", text: "hello" });
+    expect(out).toEqual({
+      researchId: "hist-article",
+      title: "An article",
+      text: "hello",
+    });
     expect(fake.calls[0].url).toBe(`${BASE}/api/article`);
     expect(JSON.parse(fake.calls[0].init?.body as string)).toEqual({
       url: "https://example.com/a",
@@ -1033,6 +1040,12 @@ describe("createVoiceToolSession — web tools", () => {
       action: "open_research",
       id: "hist-article",
     });
+    await expect(
+      session.run("save_research_to_inbox", {}),
+    ).resolves.toMatchObject({ ok: true, path: "inbox/an-article.md" });
+    expect(
+      fake.url("/api/research/history/hist-article/save-inbox"),
+    ).toHaveLength(1);
   });
 
   it("open_resource routes vault note paths to open_note", async () => {
@@ -1107,8 +1120,10 @@ describe("createVoiceToolSession — web tools", () => {
 
     const out = (await session.run("web_research", { query: "what is X" })) as {
       answer: string;
+      researchId: string;
       sources: Array<{ title: string; url: string }>;
     };
+    expect(out.researchId).toBe("hist-1");
     expect(out.answer).toBe("an answer");
     expect(out.sources).toEqual([
       { title: "Result A", url: "https://a.example" },

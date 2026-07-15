@@ -336,7 +336,7 @@ export const REGISTRY: RegistryEntry[] = [
         researchId: {
           type: "string",
           description:
-            "Persisted research id. Voice defaults to its active temporary working document.",
+            "Persisted research id. Voice defaults to the active web research, fetched article, or working document.",
         },
       },
     },
@@ -393,6 +393,18 @@ export const REGISTRY: RegistryEntry[] = [
           type: "array",
           description:
             "Operations returned by propose_wiki_ingest without modification.",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", enum: ["create", "edit", "move"] },
+              path: { type: "string" },
+              content: { type: "string" },
+              title: { type: "string" },
+              raw: { type: "boolean" },
+              sourceNote: { type: "string" },
+            },
+            required: ["type", "path"],
+          },
         },
         researchId: {
           type: "string",

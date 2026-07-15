@@ -451,6 +451,15 @@ describe("wiki ingest proposals", () => {
     expect(getEntry(f.data, entry.id)).not.toBeNull();
   });
 
+  it("reports a missing research id separately from an unsupported mode", async () => {
+    const f = fixture();
+    const res = await request(f.app)
+      .post("/api/research/history/missing-entry/save-inbox")
+      .set(TOKEN_HEADER, await token(f.app));
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("research not found");
+  });
+
   it("builds a contract-aware proposal from persisted research", async () => {
     const f = fixture();
     const entry = saveEntry(f.data, {

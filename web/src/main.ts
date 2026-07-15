@@ -1589,6 +1589,8 @@ async function boot() {
     window.history.replaceState(null, "", url);
   }
 
+  let readerOpenGeneration = 0;
+
   function select(n: GNode, highlightSnippet?: string, logReader = true) {
     selected = n;
     focusSet = bfs(n.id, focusDepth);
@@ -1599,6 +1601,7 @@ async function boot() {
   }
 
   function clearSelection() {
+    readerOpenGeneration++;
     selected = null;
     focusSet = null;
     repaint();
@@ -1991,6 +1994,7 @@ async function boot() {
     fromHistory = false,
     highlightSnippet?: string,
   ) {
+    const generation = ++readerOpenGeneration;
     const reader = $("#reader");
     const nextOpenNodeId = n.phantom ? null : n.id;
     if (openNodeId !== nextOpenNodeId) clearSelectionContext("reader");
@@ -2043,6 +2047,7 @@ async function boot() {
       const { markdown } = await api<{ markdown: string }>(
         `/api/note?id=${encodeURIComponent(n.id)}${fromHistory ? "&nolog=1" : ""}`,
       );
+      if (generation !== readerOpenGeneration) return;
       // The editor owns the note verbatim (frontmatter included, folded by
       // the editor itself). `stripped` is kept only for word count and the
       // wiki-ingest preview, which work over the body text.
@@ -2140,6 +2145,7 @@ async function boot() {
       if (!fromHistory) void refreshReaderHistory();
       void loadNoteVersions(n);
     } catch {
+      if (generation !== readerOpenGeneration) return;
       body.innerHTML = '<p class="muted">could not load note</p>';
       openNoteWords = null;
       updateBrandStats();
@@ -4606,6 +4612,19 @@ async function boot() {
   const voiceToggle = $("#voice-toggle") as HTMLButtonElement;
   let voiceSession: VoiceSession | null = null;
   let restartVoiceAfterClose = false;
+  let voiceLastError: string | null = null;
+
+  function showVoiceStatus(message: string, timeoutMs: number) {
+    const el = $("#voice-status");
+    el.textContent = message;
+    el.classList.add("show");
+    if (voiceStatusTimer != null) clearTimeout(voiceStatusTimer);
+    voiceStatusTimer = window.setTimeout(() => {
+      el.textContent = "";
+      el.classList.remove("show");
+      voiceStatusTimer = null;
+    }, timeoutMs);
+  }
 
   function recentResearchContext() {
     const entry = researchHistory[0];
@@ -4822,11 +4841,13 @@ async function boot() {
     return { accent, complement: spectrumComplement(accent) };
   }
   async function startVoiceSession() {
+    voiceLastError = null;
     voiceToggle.disabled = true;
     voiceToggle.title = i18n.t("voice.connecting");
     try {
       const session = await startVoice(await getApiToken(), {
         onReady: () => {
+          voiceLastError = null;
           voiceToggle.disabled = false;
           setVoiceActive(true);
           syncVoiceContext();
@@ -4837,15 +4858,18 @@ async function boot() {
           voiceSession = null;
           setVoiceActive(false);
           renderVoiceConfig(); // restore enabled/title from config
+          if (voiceLastError) {
+            voiceToggle.title = voiceLastError;
+            showVoiceStatus(voiceLastError, 8000);
+            voiceLastError = null;
+          }
           if (shouldRestart) void startVoiceSession();
         },
         onError: (msg) => {
           console.warn("[voice]", msg);
-          voiceToggle.title = msg;
+          voiceLastError = msg;
         },
         onStatus: (payload) => {
-          const el = $("#voice-status");
-          if (!el) return;
           const key = String(payload.key ?? "");
           const vars: Record<string, string | number> = {};
           for (const [k, v] of Object.entries(payload)) {
@@ -4856,12 +4880,7 @@ async function boot() {
             )
               vars[k] = v;
           }
-          el.textContent = i18n.t(key, vars);
-          if (voiceStatusTimer != null) clearTimeout(voiceStatusTimer);
-          voiceStatusTimer = window.setTimeout(() => {
-            el.textContent = "";
-            voiceStatusTimer = null;
-          }, 4000);
+          showVoiceStatus(i18n.t(key, vars), 4000);
         },
         onAction: async (action, p) => {
           // the agent drives the panels: open a note in the reader, or reopen
@@ -6845,6 +6864,7 @@ async function boot() {
     approve.addEventListener("click", async () => {
       approve.disabled = true;
       approve.textContent = "applying…";
+      researchError(null);
       try {
         const data = await api<{ ids?: string[]; error?: string }>(
           "/api/wiki-ingest/apply",

@@ -211,6 +211,7 @@ export function createVoiceToolSession(
 
   // Mutable session state - one per conversation.
   let activeWorkingDocId: string | null = null;
+  let activeResearchId: string | null = null;
   const knownDocumentIds = new Set<string>();
   const documentRevisions = new Map<string, string>();
   let selectedContext = emptySelectedContext();
@@ -248,6 +249,9 @@ export function createVoiceToolSession(
       };
       if (browserView.recentResearch)
         recentResearch = researchSummary(browserView.recentResearch);
+      activeResearchId = browserView.researchPanelOpen
+        ? browserView.visibleResearchId
+        : browserView.pinnedResearchId;
     }
     const ack = raw.displayAcknowledgment;
     if (ack && typeof ack === "object") {
@@ -324,6 +328,7 @@ export function createVoiceToolSession(
     if (typeof d.revision === "string") documentRevisions.set(id, d.revision);
     knownDocumentIds.add(id);
     activeWorkingDocId = id;
+    activeResearchId = id;
     return d;
   }
 
@@ -413,14 +418,21 @@ export function createVoiceToolSession(
       content?: string;
     };
     if (!r.ok) return { error: d.message ?? "web request failed" };
-    if (d.historyId)
+    if (d.historyId) {
+      activeResearchId = d.historyId;
       send({ type: "action", action: "open_research", id: d.historyId });
-    return { title: d.title, text: cap(d.content ?? "") };
+    }
+    return {
+      researchId: d.historyId,
+      title: d.title,
+      text: cap(d.content ?? ""),
+    };
   }
 
   async function openResearchId(id: string): Promise<VoiceResult | null> {
     const entry = (await researchEntries()).find((e) => e.id === id);
     if (!entry) return null;
+    activeResearchId = entry.id;
     send({ type: "action", action: "open_research", id: entry.id });
     return researchSummary(entry);
   }
@@ -672,6 +684,7 @@ export function createVoiceToolSession(
       send({ type: "status", key: "voice.status.openingLastResearch" });
       const entry = (await researchEntries())[0];
       if (!entry) return { error: "no research yet" };
+      activeResearchId = entry.id;
       const display = await requestResearchDisplay("open_research", entry.id);
       return {
         ...researchSummary(entry),
@@ -741,6 +754,7 @@ export function createVoiceToolSession(
       knownDocumentIds.add(d.id);
       documentRevisions.set(d.id, d.revision);
       activeWorkingDocId = d.id;
+      activeResearchId = d.id;
       const display = await requestResearchDisplay("show_document", d.id, {
         title,
         content,
@@ -756,7 +770,7 @@ export function createVoiceToolSession(
     }
     if (name === "save_research_to_inbox") {
       send({ type: "status", key: "voice.status.savingDocument" });
-      const researchId = clean(args.researchId) ?? activeWorkingDocId;
+      const researchId = clean(args.researchId) ?? activeResearchId;
       if (!researchId) return { error: "no research to save" };
       const r = await fetchFn(
         `${base}/api/research/history/${encodeURIComponent(researchId)}/save-inbox`,
@@ -779,6 +793,7 @@ export function createVoiceToolSession(
         return { error: d.error ?? "could not save document" };
       knownDocumentIds.delete(researchId);
       if (activeWorkingDocId === researchId) activeWorkingDocId = null;
+      if (activeResearchId === researchId) activeResearchId = null;
       send({ type: "action", action: "open_saved_note", note: d.id });
       return {
         ok: true,
@@ -790,7 +805,7 @@ export function createVoiceToolSession(
     if (name === "propose_wiki_ingest" || name === "apply_wiki_ingest") {
       const researchId =
         clean(args.researchId) ??
-        (name === "propose_wiki_ingest" ? activeWorkingDocId : undefined);
+        (name === "propose_wiki_ingest" ? activeResearchId : undefined);
       if (
         name === "propose_wiki_ingest" &&
         !researchId &&
@@ -828,6 +843,7 @@ export function createVoiceToolSession(
       if (researchId) {
         knownDocumentIds.delete(researchId);
         if (activeWorkingDocId === researchId) activeWorkingDocId = null;
+        if (activeResearchId === researchId) activeResearchId = null;
       }
       if (path) send({ type: "action", action: "open_saved_note", note: path });
       return { ok: true, ...d, path };
@@ -934,9 +950,12 @@ export function createVoiceToolSession(
         results?: Array<{ title?: string; url?: string }>;
       };
       if (!r.ok) return { error: d.message ?? "web request failed" };
-      if (d.historyId)
+      if (d.historyId) {
+        activeResearchId = d.historyId;
         send({ type: "action", action: "open_research", id: d.historyId });
+      }
       return {
+        researchId: d.historyId,
         answer: cap(d.answer?.content ?? ""),
         sources: (d.results ?? [])
           .slice(0, 6)

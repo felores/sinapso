@@ -234,7 +234,12 @@ test.beforeEach(async ({ page }) => {
 test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user navigation", async ({
   page,
 }) => {
-  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info(), {
+    allow: (entry) =>
+      entry.kind === "console" &&
+      entry.message.includes("409") &&
+      (entry.url ?? "").endsWith("/api/document"),
+  });
   try {
     const resultA = await createEvidence(page, "Alpha", "Persisted result A");
     const harness = await installVoiceHarness(page);
@@ -302,19 +307,15 @@ test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user nav
     const disk = await page.request.get(`/api/document/${external.id}`);
     const diskBody: DocumentResponse = await disk.json();
     expect(diskBody.content).toBe("external competing version");
-    // Return both disk and editor to the controller's clean base before
-    // navigating away. The conflict assertion above proves the local draft is
-    // preserved; cleanup avoids intentionally issuing a stale autosave request,
-    // which Chromium reports as a console-level failed resource.
-    await updateDocument(
-      page,
-      external,
-      "Clean pinned draft",
-      "same-id refreshed version",
+    await expect(page.locator(".research-document-save-state")).toHaveClass(
+      /save-conflict/,
     );
-    await editor.click();
-    await page.keyboard.press("ControlOrMeta+A");
-    await page.keyboard.type("same-id refreshed version");
+    await page.locator("#research-banner-primary").click();
+    await expect(page.locator("#research-banner")).toHaveClass(/hidden/);
+    await expect(page.locator(".research-document-save-state")).toHaveClass(
+      /save-clean/,
+    );
+    await expect(editor).toContainText("external competing version");
 
     await page.locator("#research-pin").click();
     await expect(page.locator("#research-pin")).toHaveAttribute(

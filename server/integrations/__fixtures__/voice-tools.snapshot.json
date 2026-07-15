@@ -201,7 +201,7 @@
       "properties": {
         "researchId": {
           "type": "STRING",
-          "description": "Persisted research id. Voice defaults to its active temporary working document."
+          "description": "Persisted research id. Voice defaults to the active web research, fetched article, or working document."
         }
       }
     }
@@ -239,7 +239,22 @@
         },
         "operations": {
           "type": "ARRAY",
-          "description": "Operations returned by propose_wiki_ingest without modification."
+          "description": "Operations returned by propose_wiki_ingest without modification.",
+          "items": {
+            "type": "OBJECT",
+            "properties": {
+              "type": {
+                "type": "STRING",
+                "enum": ["create", "edit", "move"]
+              },
+              "path": { "type": "STRING" },
+              "content": { "type": "STRING" },
+              "title": { "type": "STRING" },
+              "raw": { "type": "BOOLEAN" },
+              "sourceNote": { "type": "STRING" }
+            },
+            "required": ["type", "path"]
+          }
         },
         "researchId": {
           "type": "STRING",

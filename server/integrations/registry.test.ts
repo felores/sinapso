@@ -19,7 +19,15 @@ describe("registry → voice derivation (characterization, U4)", () => {
       },
     });
     expect(tools.get("apply_wiki_ingest")).toMatchObject({
-      parameters: { required: ["wikiId", "operations"] },
+      parameters: {
+        required: ["wikiId", "operations"],
+        properties: {
+          operations: {
+            type: "ARRAY",
+            items: { type: "OBJECT", required: ["type", "path"] },
+          },
+        },
+      },
     });
   });
 

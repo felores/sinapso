@@ -130,6 +130,14 @@ function isVoiceProvider(provider: string): provider is VoiceProvider {
   return provider in PROVIDER_VOICES;
 }
 
+export function geminiCloseError(event: unknown): string | null {
+  if (!event || typeof event !== "object") return "Gemini session closed";
+  const { code, reason } = event as { code?: unknown; reason?: unknown };
+  if (typeof reason === "string" && reason.trim()) return reason.trim();
+  if (code === 1000) return null;
+  return `Gemini session closed (code ${typeof code === "number" ? code : "unknown"})`;
+}
+
 function toJsonSchema(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(toJsonSchema);
   if (!value || typeof value !== "object") return value;
@@ -558,7 +566,11 @@ async function bridgeGemini(
           });
           browser.close();
         },
-        onclose: () => browser.close(),
+        onclose: (event) => {
+          const message = geminiCloseError(event);
+          if (message) send({ type: "error", message });
+          browser.close();
+        },
       },
     });
   } catch (e) {

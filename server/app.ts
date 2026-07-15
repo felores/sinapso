@@ -1382,7 +1382,8 @@ export function createApp(
   app.post("/api/research/history/:id/save-inbox", guarded, (req, res) => {
     try {
       const entry = getEntry(dataDir, String(req.params.id));
-      const converted = entry && convertedFromResearchEntry(entry);
+      if (!entry) throw new WriteError(404, "research not found");
+      const converted = convertedFromResearchEntry(entry);
       if (!converted)
         throw new WriteError(
           400,
