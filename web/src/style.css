@@ -96,10 +96,17 @@ body > :not(#graph) {
   }
 }
 #loading-hint {
+  max-width: 440px;
   text-align: center;
   color: var(--muted);
   font-size: 12px;
-  line-height: 2.2;
+  line-height: 1.5;
+}
+#loading-hint > div {
+  display: inline;
+}
+#loading-hint > div:first-child::after {
+  content: ". ";
 }
 #loading-hint kbd {
   background: var(--panel);
@@ -3744,6 +3751,7 @@ body > :not(#graph) {
 }
 #research-footer {
   display: flex;
+  align-items: center;
   gap: 8px;
   padding: 8px 18px;
   border-top: 1px solid var(--border);
@@ -3755,13 +3763,30 @@ body > :not(#graph) {
 }
 #research-footer button {
   flex: 1;
-  padding: 7px 10px;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel);
   color: var(--fg);
   font-size: 12.5px;
   cursor: pointer;
+}
+#research-footer select {
+  flex: 0 1 120px;
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  font-size: 12.5px;
+}
+#research-footer select.hidden {
+  display: none;
 }
 #research-footer button:hover:not(:disabled) {
   border-color: var(--accent);
