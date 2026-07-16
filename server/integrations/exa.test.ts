@@ -268,7 +268,7 @@ describe("POST /api/research", () => {
       .set(TOKEN_HEADER, await token())
       .send({ query: "q" });
     expect(res.status).toBe(400);
-    expect(res.body.message).toContain("Tools");
+    expect(res.body.message).toContain("Settings");
     expect(state.calls).toBe(0);
   });
 
@@ -346,5 +346,49 @@ describe("POST /api/research", () => {
       .send({});
     expect(res.status).toBe(400);
     expect(state.calls).toBe(before);
+  });
+
+  it("routes research through the selected hosted provider without exposing its key", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const { app: hostedApp } = createApp(graphPath, undefined, {
+      configPath: join(VAULT, "hosted-web-config.json"),
+      detectDeps: {
+        fileExists: () => false,
+        run: async () => ({ ok: false, stdout: "", stderr: "" }),
+        home: "/h",
+        env: {},
+      },
+      webResearch: {
+        fetch: (async (url: string, init?: RequestInit) => {
+          calls.push({ url, init });
+          return new Response(
+            JSON.stringify({
+              output: [{ content: [{ text: "Hosted answer" }] }],
+            }),
+            { status: 200 },
+          );
+        }) as typeof fetch,
+      },
+    });
+    const hostedToken = (await request(hostedApp).get("/api/session")).body
+      .token;
+    await request(hostedApp)
+      .post("/api/integrations/config")
+      .set(TOKEN_HEADER, hostedToken)
+      .send({
+        consents: { web: true },
+        webResearchProvider: "openai",
+        voice: { keys: { openai: "hosted-secret" } },
+      });
+
+    const res = await request(hostedApp)
+      .post("/api/research")
+      .set(TOKEN_HEADER, hostedToken)
+      .send({ query: "current topic" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.answer.content).toBe("Hosted answer");
+    expect(calls[0].url).toBe("https://api.openai.com/v1/responses");
+    expect(JSON.stringify(res.body)).not.toContain("hosted-secret");
   });
 });

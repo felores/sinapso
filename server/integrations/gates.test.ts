@@ -78,13 +78,13 @@ describe("requireExaKey", () => {
       requireExaKey(
         { exaKey: null },
         res,
-        "Add your Exa API key in Tools → Integrations.",
+        "Add your Exa API key in Settings → Integrations.",
       ),
     ).toBe(false);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({
       error: "no-exa-key",
-      message: "Add your Exa API key in Tools → Integrations.",
+      message: "Add your Exa API key in Settings → Integrations.",
     });
   });
 

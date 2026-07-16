@@ -72,7 +72,6 @@ import type { GNode, GLink } from "./types";
 import { filterFields, compileMatcher } from "./filters";
 import { computeSemanticClusters as computeSemanticClustersPure } from "./clusters";
 import { api, apiRaw, ApiError, getApiToken, peekApiToken } from "./api";
-import { pickerState } from "./model-picker";
 import { createPrefs } from "./prefs";
 import {
   buildKeywordQuery,
@@ -3930,6 +3929,29 @@ async function boot() {
     | "ingest"
     | "article"
     | "document";
+  interface CatalogProvider {
+    label: string;
+    description: string;
+    keyUrl: string;
+    billingUrl: string;
+    capabilities: string[];
+  }
+  interface CatalogModel {
+    id: string;
+    provider: string;
+    label: string;
+    model: string;
+    roles: string[];
+    efforts?: string[];
+    defaultEffort?: string;
+    recommended?: boolean;
+  }
+  interface ModelCatalog {
+    providers: Record<string, CatalogProvider>;
+    agentModels: CatalogModel[];
+    voiceModels: Record<string, string[]>;
+    voiceNames: Record<string, string[]>;
+  }
   interface IntegrationsStatus {
     tools: {
       qmd: { installed: boolean; version: string | null };
@@ -3939,12 +3961,21 @@ async function boot() {
       deepseek: { configured: boolean };
     };
     consents: { web: boolean };
+    webResearch?: {
+      provider: "exa" | "google" | "openai" | "xai";
+      explicit: boolean;
+      configured: boolean;
+    };
     defaultModel: string | null;
+    catalog: ModelCatalog;
+    providers: Record<string, { configured: boolean }>;
     llm?: {
       workerProvider: string | null;
       workerModel: string | null;
+      workerEffort: string | null;
       thinkerProvider: string | null;
       thinkerModel: string | null;
+      thinkerEffort: string | null;
     };
     writeDestination: string;
     archiveDestination: string;
@@ -3964,6 +3995,7 @@ async function boot() {
       promptDefaults: Record<string, string>;
       prompts: Record<string, string>;
       promptOverrides: Record<string, string | null>;
+      promptFiles: Record<string, { path: string | null; enabled: boolean }>;
     };
     voice?: {
       provider: string | null;
@@ -4033,7 +4065,7 @@ async function boot() {
     return m === "vault"
       ? true
       : m === "web"
-        ? t.exa.configured
+        ? (integrations?.webResearch?.configured ?? t.exa.configured)
         : t.markitdown.installed;
   };
 
@@ -4209,21 +4241,70 @@ async function boot() {
       document.addEventListener(ev, () => cur && hide(), true);
   })();
 
+  // ---- Intelligence Provider / Agent Models / Web Research / Voice ----
+  // The five trusted providers, in display order. `google` maps to the stored
+  // `voice.keys.gemini` field; the others reuse openrouterKey/deepseekKey/
+  // voice.keys.{openai,xai}.
+  const PROVIDER_ORDER = [
+    "google",
+    "openai",
+    "xai",
+    "openrouter",
+    "deepseek",
+  ] as const;
+  // UI voice providers are a subset; `google` is stored as `gemini` backend-side.
+  const VOICE_TO_BACKEND: Record<string, string> = {
+    google: "gemini",
+    openai: "openai",
+    xai: "xai",
+  };
+  const BACKEND_TO_VOICE: Record<string, string> = {
+    gemini: "google",
+    openai: "openai",
+    xai: "xai",
+  };
+  const VOICE_PROVIDER_IDS = ["google", "openai", "xai"] as const;
+  const WEB_PROVIDER_IDS = ["exa", "google", "openai", "xai"] as const;
+  const CAPABILITY_IDS = ["agent", "web", "voice"] as const;
+
+  // Ephemeral UI state: which provider card is being viewed/edited. Defaults to
+  // the first configured provider (else google) until the user picks one.
+  let selectedProvider = "google";
+  let providerTouched = false;
+  let providerCheckId = 0;
+
+  function postProviderKey(provider: string, key: string): Promise<unknown> {
+    switch (provider) {
+      case "google":
+        return postConfig({ voice: { keys: { gemini: key } } });
+      case "openai":
+        return postConfig({ voice: { keys: { openai: key } } });
+      case "xai":
+        return postConfig({ voice: { keys: { xai: key } } });
+      case "openrouter":
+        return postConfig({ openrouterKey: key });
+      case "deepseek":
+        return postConfig({ deepseekKey: key });
+      default:
+        return Promise.resolve();
+    }
+  }
+
+  function providerConfigured(provider: string): boolean {
+    return !!integrations?.providers?.[provider]?.configured;
+  }
+
   function renderIntegrationsPanel() {
     const t = integrations?.tools;
     const st = (id: string, txt: string, ok: boolean) => {
       const el = $(`#integ-${id} .integ-status`);
       el.textContent = txt;
       el.classList.toggle("ok", ok);
-      // per-tool install button appears only while the tool is missing
       const install = document.querySelector<HTMLButtonElement>(
         `#integ-${id} .integ-install`,
       );
       install?.classList.toggle("hidden", !t || ok);
     };
-    // The row label now names only the function (Semantic, Web, …); the engine
-    // and its state live here on the right, accent-colored when active. A CLI
-    // tool's version line already leads with the engine name ("qmd 0.5.0").
     const cliStatus = (
       engine: string,
       s: { installed: boolean; version: string | null } | undefined,
@@ -4233,105 +4314,97 @@ async function boot() {
         : s.installed
           ? (s.version ?? engine)
           : `${engine} · not installed`;
-    const keyStatus = (
-      engine: string,
-      s: { configured: boolean } | undefined,
-    ) =>
-      !s
-        ? "status unavailable"
-        : s.configured
-          ? `${engine} · key set`
-          : `${engine} · no key`;
     st("qmd", cliStatus("qmd", t?.qmd), !!t?.qmd.installed);
-    st("exa", keyStatus("Exa", t?.exa), !!t?.exa.configured);
     st(
       "markitdown",
       cliStatus("markitdown", t?.markitdown),
       !!t?.markitdown.installed,
     );
-    st(
-      "openrouter",
-      keyStatus("OpenRouter", t?.openrouter),
-      !!t?.openrouter.configured,
-    );
-    st(
-      "deepseek",
-      keyStatus("DeepSeek", t?.deepseek),
-      !!t?.deepseek.configured,
-    );
-    if (integrations) {
-      // Keys are stored server-side and never echoed back, so the fields
-      // are always empty — make the placeholders say a key IS configured.
-      const exaKey = $("#exa-key") as HTMLInputElement;
-      if (!exaKey.value) {
-        exaKey.placeholder = t?.exa.configured
-          ? "key configured ✓ — paste + Enter to replace"
-          : "Exa API key — paste + Enter";
-      }
-      const orKey = $("#openrouter-key") as HTMLInputElement;
-      if (!orKey.value) {
-        orKey.placeholder = t?.openrouter.configured
-          ? "key configured ✓ — paste + Enter to replace"
-          : "OpenRouter API key — paste + Enter";
-      }
-      const dsKey = $("#deepseek-key") as HTMLInputElement;
-      if (!dsKey.value) {
-        dsKey.placeholder = t?.deepseek.configured
-          ? "key configured ✓ — paste + Enter to replace"
-          : "DeepSeek API key — paste + Enter";
-      }
-      renderTierSlots();
-      const sel = $("#llm-model-select") as HTMLSelectElement;
-      const model = integrations.defaultModel ?? "";
-      if ([...sel.options].some((o) => o.value === model)) {
-        sel.value = model;
-        ($("#llm-model") as HTMLInputElement).classList.add("hidden");
-      } else if (model) {
-        sel.value = "__custom";
-        const custom = $("#llm-model") as HTMLInputElement;
-        custom.classList.remove("hidden");
-        custom.value = model;
-      } else {
-        sel.value = "";
-        ($("#llm-model") as HTMLInputElement).classList.add("hidden");
-      }
-      // "browse models" link shows only while the custom option is active
-      $("#llm-model-help").classList.toggle("hidden", sel.value !== "__custom");
-    }
-    // Live-validate the OpenRouter key for free (GET /key); Exa has no free
-    // check, so it stays at "key set" until Web mode actually runs.
-    if (t?.openrouter.configured) void testOpenRouter();
-    if (t?.deepseek.configured) void testDeepseek();
+    if (integrations) renderProviderSection();
+    renderAgentModels();
+    renderWebResearch();
   }
 
-  // Free DeepSeek key validation via the models-list endpoint.
-  async function testDeepseek() {
-    const el = $("#integ-deepseek .integ-status");
-    el.textContent = "DeepSeek · testing…";
-    el.classList.remove("ok", "warn");
-    try {
-      const r = await api<{
-        configured: boolean;
-        ok?: boolean;
-        unreachable?: boolean;
-      }>("/api/integrations/test/deepseek");
-      if (!r.configured) el.textContent = "DeepSeek · no key";
-      else if (r.unreachable) el.textContent = "DeepSeek · unreachable";
-      else if (!r.ok) el.textContent = "DeepSeek · invalid key";
-      else {
-        el.textContent = "DeepSeek · ready";
-        el.classList.add("ok");
+  function renderProviderSection() {
+    const cat = integrations?.catalog;
+    const sel = $("#set-provider-select") as HTMLSelectElement;
+    const caps = $("#set-provider-caps");
+    const keyLink = $("#set-provider-keylink") as HTMLAnchorElement;
+    const billingLink = $("#set-provider-billinglink") as HTMLAnchorElement;
+    const status = $("#set-provider-status");
+    const keyInput = $("#set-provider-key") as HTMLInputElement;
+    const checkButton = $("#set-provider-check") as HTMLButtonElement;
+    if (!cat) return;
+    // Default the viewed provider to the first configured one, once, until the
+    // user explicitly picks a provider from the dropdown.
+    if (!providerTouched && !providerConfigured(selectedProvider)) {
+      const firstConfigured = PROVIDER_ORDER.find((p) => providerConfigured(p));
+      if (firstConfigured) selectedProvider = firstConfigured;
+    }
+    // Rebuild options if the set/order changed.
+    const want = PROVIDER_ORDER.join(",");
+    const have = [...sel.options].map((o) => o.value).join(",");
+    if (want !== have) {
+      sel.innerHTML = "";
+      for (const p of PROVIDER_ORDER) {
+        const o = document.createElement("option");
+        o.value = p;
+        o.textContent = cat.providers[p]?.label ?? p;
+        sel.appendChild(o);
       }
-    } catch {
-      el.textContent = "DeepSeek · unreachable";
+    }
+    sel.value = selectedProvider;
+    const pinfo = cat.providers[selectedProvider];
+    caps.replaceChildren(
+      ...CAPABILITY_IDS.map((capability) => {
+        const item = document.createElement("span");
+        item.className = "set-provider-cap";
+        item.classList.toggle(
+          "available",
+          !!pinfo?.capabilities.includes(capability),
+        );
+        item.textContent = i18n.t(`prov.cap.${capability}`);
+        return item;
+      }),
+    );
+    keyLink.href = pinfo?.keyUrl ?? "#";
+    billingLink.href = pinfo?.billingUrl ?? "#";
+    keyInput.value = "";
+    keyInput.classList.toggle(
+      "configured",
+      providerConfigured(selectedProvider),
+    );
+    keyInput.placeholder = i18n.t(
+      providerConfigured(selectedProvider) ? "ph.keySaved" : "ph.providerKey",
+      { provider: pinfo?.label ?? selectedProvider },
+    );
+    // Status: start from configured boolean; live-check below refines it.
+    status.className = "set-provider-status";
+    if (providerConfigured(selectedProvider)) {
+      checkButton.disabled = false;
+      status.classList.add("checking");
+      status.textContent = i18n.t("prov.checking");
+      void testProvider(selectedProvider, status);
+    } else {
+      checkButton.disabled = true;
+      status.classList.add("missing");
+      status.textContent = i18n.t("prov.connectFirst");
     }
   }
 
-  // Free OpenRouter key validation → real status + remaining credit.
-  async function testOpenRouter() {
-    const el = $("#integ-openrouter .integ-status");
-    el.textContent = "OpenRouter · testing…";
-    el.classList.remove("ok", "warn");
+  // Free key validation via the generic /api/integrations/test/:provider route.
+  async function testProvider(provider: string, el: HTMLElement) {
+    const checkId = ++providerCheckId;
+    el.classList.remove(
+      "connected",
+      "invalid",
+      "no-credit",
+      "unreachable",
+      "missing",
+      "checking",
+    );
+    el.classList.add("checking");
+    el.textContent = i18n.t("prov.checking");
     try {
       const r = await api<{
         configured: boolean;
@@ -4339,35 +4412,249 @@ async function boot() {
         usage?: number;
         limit?: number | null;
         unreachable?: boolean;
-      }>("/api/integrations/test/openrouter");
+      }>(`/api/integrations/test/${provider}`);
+      if (checkId !== providerCheckId) return;
+      el.classList.remove("checking");
       if (!r.configured) {
-        el.textContent = "OpenRouter · no key";
+        el.classList.add("missing");
+        el.textContent = i18n.t("prov.connectFirst");
         return;
       }
       if (r.unreachable) {
-        el.textContent = "OpenRouter · unreachable";
+        el.classList.add("unreachable");
+        el.textContent = i18n.t("prov.unreachable");
         return;
       }
       if (!r.ok) {
-        el.textContent = "OpenRouter · invalid key";
+        el.classList.add("invalid");
+        el.textContent = i18n.t("prov.invalid");
         return;
       }
-      const left =
-        r.limit == null ? null : Math.max(0, r.limit - (r.usage ?? 0));
-      if (left != null && left <= 0) {
-        // Valid key but no credit — the "Add credits ↗" link sits right below.
-        el.textContent = "OpenRouter · out of credits";
-        el.classList.add("warn");
+      if (provider === "openrouter" && r.limit != null) {
+        const left = Math.max(0, r.limit - (r.usage ?? 0));
+        if (left <= 0) {
+          el.classList.add("no-credit");
+          el.textContent = i18n.t("prov.noCredit");
+          return;
+        }
+        el.classList.add("connected");
+        el.textContent = i18n.t("prov.connectedCredit", {
+          credit: left.toFixed(2),
+        });
         return;
       }
-      el.textContent =
-        left == null
-          ? "OpenRouter · ready"
-          : `OpenRouter · $${left.toFixed(2)} left`;
-      el.classList.add("ok");
+      el.classList.add("connected");
+      el.textContent = i18n.t("prov.connected");
     } catch {
-      el.textContent = "OpenRouter · unreachable";
+      if (checkId !== providerCheckId) return;
+      el.classList.remove("checking");
+      el.classList.add("unreachable");
+      el.textContent = i18n.t("prov.unreachable");
     }
+  }
+
+  // After a provider key is saved, fill only still-unconfigured compatible
+  // areas. Later providers never overwrite choices the user already made.
+  async function maybeAutoConfigModels(provider: string) {
+    const current = integrations;
+    const cat = current?.catalog;
+    const llm = current?.llm;
+    if (!current || !cat || !llm) return;
+    const patch: Record<string, unknown> = {};
+    const slots = [
+      {
+        role: "fast",
+        prov: "workerProvider",
+        model: "workerModel",
+        eff: "workerEffort",
+      },
+      {
+        role: "reasoning",
+        prov: "thinkerProvider",
+        model: "thinkerModel",
+        eff: "thinkerEffort",
+      },
+    ] as const;
+    for (const s of slots) {
+      const hasProvider = llm[s.prov] != null && llm[s.prov] !== "";
+      const hasModel = llm[s.model] != null && llm[s.model] !== "";
+      if (hasProvider || hasModel) continue; // never overwrite an existing slot
+      const rec = cat.agentModels.find(
+        (m) =>
+          m.provider === provider && m.roles.includes(s.role) && m.recommended,
+      );
+      if (!rec) continue;
+      patch[s.prov] = provider;
+      patch[s.model] = rec.model;
+      patch[s.eff] = rec.efforts?.length
+        ? (rec.defaultEffort ?? "medium")
+        : null;
+    }
+    if (
+      (provider === "google" || provider === "openai" || provider === "xai") &&
+      !current.webResearch?.explicit &&
+      !current.tools.exa.configured
+    ) {
+      patch.webResearchProvider = provider;
+    }
+    if (
+      (provider === "google" || provider === "openai" || provider === "xai") &&
+      !current.voice?.provider
+    ) {
+      patch.voice = {
+        provider: VOICE_TO_BACKEND[provider],
+      };
+    }
+    if (Object.keys(patch).length) {
+      try {
+        await postConfig(patch);
+        await refreshIntegrations();
+      } catch {
+        /* best-effort; user can set manually */
+      }
+    }
+  }
+
+  function configuredProviders(): string[] {
+    return PROVIDER_ORDER.filter((p) => providerConfigured(p));
+  }
+
+  function renderWebResearch() {
+    const current = integrations;
+    if (!current) return;
+    const sel = $("#web-provider-select") as HTMLSelectElement;
+    const status = $("#set-web-status");
+    const exaConfig = $("#exa-config");
+    const exaHelp = $("#exa-help");
+    const exaKey = $("#exa-key") as HTMLInputElement;
+    const selected = current.webResearch?.provider ?? "exa";
+    const want = WEB_PROVIDER_IDS.join(",");
+    const have = [...sel.options].map((option) => option.value).join(",");
+    if (want !== have) {
+      sel.innerHTML = "";
+      for (const provider of WEB_PROVIDER_IDS) {
+        const option = document.createElement("option");
+        option.value = provider;
+        option.textContent =
+          provider === "exa"
+            ? "Exa"
+            : (current.catalog.providers[provider]?.label ?? provider);
+        sel.appendChild(option);
+      }
+    }
+    sel.value = selected;
+    const configured =
+      current.webResearch?.configured ?? current.tools.exa.configured;
+    status.className = `set-web-status ${configured ? "connected" : "missing"}`;
+    status.textContent = i18n.t(
+      configured ? "status.connected" : "status.disconnected",
+    );
+    const exaSelected = selected === "exa";
+    exaConfig.classList.toggle("hidden", !exaSelected);
+    exaHelp.classList.toggle("hidden", !exaSelected);
+    exaConfig.classList.toggle(
+      "configured",
+      exaSelected && current.tools.exa.configured,
+    );
+    if (!exaKey.value) {
+      exaKey.placeholder = i18n.t(
+        current.tools.exa.configured ? "ph.keySaved" : "ph.exaKey",
+      );
+    }
+  }
+
+  function renderAgentModels() {
+    const cat = integrations?.catalog;
+    const hint = $("#set-models-hint");
+    if (!cat) return;
+    const configured = configuredProviders();
+    for (const role of ["fast", "reasoning"] as const) {
+      const tier = role === "fast" ? "worker" : "thinker";
+      const sel = $(`#${tier}-model-select`) as HTMLSelectElement;
+      const custom = $(`#${tier}-model-custom`) as HTMLInputElement;
+      const llm = integrations?.llm;
+      const storedProv =
+        role === "fast" ? llm?.workerProvider : llm?.thinkerProvider;
+      const storedModel =
+        role === "fast" ? llm?.workerModel : llm?.thinkerModel;
+
+      // Build options: catalog models for configured providers + per-provider
+      // custom entries. The stored model is always kept visible even if absent.
+      sel.innerHTML = "";
+      sel.disabled = configured.length === 0;
+      if (!configured.length) {
+        const o = document.createElement("option");
+        o.value = "";
+        o.textContent = i18n.t("set.models.none");
+        sel.appendChild(o);
+      }
+      const catalogForRole = cat.agentModels.filter(
+        (m) => m.roles.includes(role) && configured.includes(m.provider),
+      );
+      let selectedValue = "";
+      let customVisible = false;
+      let customValue = "";
+      for (const m of catalogForRole) {
+        const o = document.createElement("option");
+        o.value = m.id;
+        const base = m.label.replace(/\s*\(OpenRouter\)\s*$/, "");
+        o.textContent = `${cat.providers[m.provider]?.label ?? m.provider} · ${base}`;
+        sel.appendChild(o);
+        if (m.model === storedModel && m.provider === storedProv) {
+          selectedValue = m.id;
+        }
+      }
+      // Per-provider "Custom model…" affordance.
+      for (const p of configured) {
+        const o = document.createElement("option");
+        o.value = `__custom__${p}`;
+        o.textContent = `${cat.providers[p]?.label ?? p} · ${i18n.t("set.models.custom")}`;
+        sel.appendChild(o);
+      }
+      // Stored model absent from catalog → show as custom for its provider.
+      if (!selectedValue && storedModel) {
+        const p =
+          storedProv && configured.includes(storedProv)
+            ? storedProv
+            : configured[0];
+        if (p) {
+          sel.value = `__custom__${p}`;
+          customVisible = true;
+          customValue = storedModel;
+        }
+      } else if (selectedValue) {
+        sel.value = selectedValue;
+      }
+      custom.classList.toggle("hidden", !customVisible);
+      if (customVisible) custom.value = customValue;
+      const status = $(`#${tier}-model-status`);
+      const connected =
+        !!storedProv && providerConfigured(storedProv) && !!storedModel;
+      status.className = `set-model-status ${connected ? "connected" : "missing"}`;
+      status.textContent = i18n.t(
+        connected ? "status.connected" : "status.disconnected",
+      );
+    }
+    hint.classList.toggle("hidden", configured.length > 0);
+  }
+
+  function currentModelRowState(
+    tier: "worker" | "thinker",
+  ): { provider: string; model: string; effort: string | null } | null {
+    const sel = $(`#${tier}-model-select`) as HTMLSelectElement;
+    const custom = $(`#${tier}-model-custom`) as HTMLInputElement;
+    const cat = integrations?.catalog;
+    if (!cat) return null;
+    const val = sel.value;
+    if (!val) return null;
+    if (val.startsWith("__custom__")) {
+      const provider = val.slice("__custom__".length);
+      return { provider, model: custom.value.trim(), effort: null };
+    }
+    const m = cat.agentModels.find((mm) => mm.id === val);
+    if (!m) return null;
+    const effort = m.efforts?.length ? (m.defaultEffort ?? "medium") : null;
+    return { provider: m.provider, model: m.model, effort };
   }
 
   async function refreshIntegrations(recheck = false) {
@@ -4383,6 +4670,17 @@ async function boot() {
     renderVoiceConfig();
   }
 
+  const webProviderSelect = $("#web-provider-select") as HTMLSelectElement;
+  webProviderSelect.addEventListener("change", async () => {
+    webProviderSelect.disabled = true;
+    try {
+      await postConfig({ webResearchProvider: webProviderSelect.value });
+      await refreshIntegrations();
+    } finally {
+      webProviderSelect.disabled = false;
+    }
+  });
+
   const exaKeyInput = $("#exa-key") as HTMLInputElement;
   exaKeyInput.addEventListener("keydown", async (e) => {
     if (e.key !== "Enter") return;
@@ -4392,223 +4690,89 @@ async function boot() {
     try {
       await postConfig({ exaKey: v });
       exaKeyInput.value = "";
-      exaKeyInput.placeholder = "key saved ✓";
+      exaKeyInput.placeholder = i18n.t("ph.keySaved");
       await refreshIntegrations();
     } catch {
-      exaKeyInput.placeholder = "save failed — retry";
+      exaKeyInput.placeholder = i18n.t("ph.keyFail");
     } finally {
       exaKeyInput.disabled = false;
     }
   });
-  // OpenRouter key (BYO) + curated follow-up model picker. The key powers
-  // LLM-generated note questions; the model is saved as defaultModel.
-  const openrouterKeyInput = $("#openrouter-key") as HTMLInputElement;
-  openrouterKeyInput.addEventListener("keydown", async (e) => {
+  // ---- Intelligence Provider: select + key + check connection ----
+  const providerSel = $("#set-provider-select") as HTMLSelectElement;
+  const providerKeyInput = $("#set-provider-key") as HTMLInputElement;
+  const providerCheckBtn = $("#set-provider-check") as HTMLButtonElement;
+  providerSel.addEventListener("change", () => {
+    providerTouched = true;
+    selectedProvider = providerSel.value;
+    renderProviderSection();
+  });
+  providerKeyInput.addEventListener("keydown", async (e) => {
     if (e.key !== "Enter") return;
-    const v = openrouterKeyInput.value.trim();
+    const v = providerKeyInput.value.trim();
     if (!v) return;
-    openrouterKeyInput.disabled = true;
+    const provider = selectedProvider;
+    providerKeyInput.disabled = true;
     try {
-      await postConfig({ openrouterKey: v });
-      openrouterKeyInput.value = "";
-      openrouterKeyInput.placeholder = "key saved ✓";
+      await postProviderKey(provider, v);
+      providerKeyInput.value = "";
       await refreshIntegrations();
+      await maybeAutoConfigModels(provider);
     } catch {
-      openrouterKeyInput.placeholder = "save failed — retry";
+      providerKeyInput.placeholder = i18n.t("ph.keyFail");
     } finally {
-      openrouterKeyInput.disabled = false;
+      providerKeyInput.disabled = false;
     }
   });
-  const llmModelSelect = $("#llm-model-select") as HTMLSelectElement;
-  const llmModelInput = $("#llm-model") as HTMLInputElement;
-  llmModelSelect.addEventListener("change", () => {
-    const custom = llmModelSelect.value === "__custom";
-    $("#llm-model-help").classList.toggle("hidden", !custom);
-    if (custom) {
-      llmModelInput.classList.remove("hidden");
-      llmModelInput.focus();
-      return;
-    }
-    llmModelInput.classList.add("hidden");
-    postConfig({ defaultModel: llmModelSelect.value || null }).catch(() =>
-      refreshIntegrations(),
-    );
+  providerCheckBtn.addEventListener("click", () => {
+    const status = $("#set-provider-status");
+    if (providerConfigured(selectedProvider))
+      void testProvider(selectedProvider, status);
   });
-  llmModelInput.addEventListener("keydown", async (e) => {
-    if (e.key !== "Enter") return;
-    const v = llmModelInput.value.trim();
-    try {
-      await postConfig({ defaultModel: v || null });
-      if ([...llmModelSelect.options].some((o) => o.value === v)) {
-        llmModelSelect.value = v;
-        llmModelInput.classList.add("hidden");
-      }
-      llmModelInput.placeholder = "model saved ✓";
-    } catch {
-      llmModelInput.placeholder = "save failed — retry";
-    }
-  });
-  // DeepSeek key (BYO), mirroring the OpenRouter block. Powers the fixed
-  // v4 pair when a tier slot selects the DeepSeek provider.
-  const deepseekKeyInput = $("#deepseek-key") as HTMLInputElement;
-  deepseekKeyInput.addEventListener("keydown", async (e) => {
-    if (e.key !== "Enter") return;
-    const v = deepseekKeyInput.value.trim();
-    if (!v) return;
-    deepseekKeyInput.disabled = true;
-    try {
-      await postConfig({ deepseekKey: v });
-      deepseekKeyInput.value = "";
-      deepseekKeyInput.placeholder = "key saved ✓";
-      await refreshIntegrations();
-    } catch {
-      deepseekKeyInput.placeholder = "save failed — retry";
-    } finally {
-      deepseekKeyInput.disabled = false;
-    }
-  });
-  // ---- Model tiers (worker/thinker): per-slot provider select plus a
-  // parameterized model picker (KTD8). Option state is computed by the pure
-  // pickerState() helper; DeepSeek slots show the fixed model label (AE1).
-  function wireModelPicker(tier: "worker" | "thinker"): () => void {
-    const provider = $(`#${tier}-provider`) as HTMLSelectElement;
-    const modelCol = $(`#${tier}-model-col`);
-    const model = $(`#${tier}-model`) as HTMLSelectElement;
+  // ---- Agent Models: one model select and an inline custom id when needed. ----
+  function saveModelRow(tier: "worker" | "thinker"): Promise<unknown> {
+    const st = currentModelRowState(tier);
+    if (!st) return Promise.resolve();
+    const patch: Record<string, string | null> =
+      tier === "worker"
+        ? {
+            workerProvider: st.provider,
+            workerModel: st.model || null,
+            workerEffort: st.effort,
+          }
+        : {
+            thinkerProvider: st.provider,
+            thinkerModel: st.model || null,
+            thinkerEffort: st.effort,
+          };
+    return postConfig(patch)
+      .then(() => refreshIntegrations())
+      .catch(() => refreshIntegrations());
+  }
+  for (const tier of ["worker", "thinker"] as const) {
+    const sel = $(`#${tier}-model-select`) as HTMLSelectElement;
     const custom = $(`#${tier}-model-custom`) as HTMLInputElement;
-    const fixed = $(`#${tier}-fixed`);
-    // Clone the curated options from the legacy picker: one list, no drift.
-    for (const o of [...llmModelSelect.options]) {
-      const opt = o.cloneNode(true) as HTMLOptionElement;
-      if (opt.value === "") opt.textContent = "default";
-      model.add(opt);
-    }
-    const curated = [...model.options]
-      .map((o) => o.value)
-      .filter((v) => v && v !== "__custom");
-    const render = () => {
-      const cfg = integrations?.llm;
-      const p = tier === "worker" ? cfg?.workerProvider : cfg?.thinkerProvider;
-      const m = tier === "worker" ? cfg?.workerModel : cfg?.thinkerModel;
-      const st = pickerState(tier, p ?? null, m ?? null, curated);
-      provider.value = st.providerValue;
-      modelCol.classList.toggle("hidden", !st.modelSelectVisible);
-      model.value = st.modelSelectValue;
-      custom.classList.toggle("hidden", !st.customVisible);
-      if (st.customVisible) custom.value = st.customValue;
-      fixed.classList.toggle("hidden", !st.fixedLabel);
-      fixed.textContent = st.fixedLabel ?? "";
-    };
-    const save = (patch: object) =>
-      postConfig(patch)
-        .then(() => refreshIntegrations())
-        .catch(() => refreshIntegrations());
-    provider.addEventListener("change", () => {
-      void save(
-        tier === "worker"
-          ? { workerProvider: provider.value || null }
-          : { thinkerProvider: provider.value || null },
-      );
-    });
-    model.addEventListener("change", () => {
-      if (model.value === "__custom") {
-        custom.classList.remove("hidden");
+    sel.addEventListener("change", () => {
+      const isCustom = sel.value.startsWith("__custom__");
+      custom.classList.toggle("hidden", !isCustom);
+      if (isCustom) {
         custom.focus();
         return;
       }
-      void save(
-        tier === "worker"
-          ? { workerModel: model.value || null }
-          : { thinkerModel: model.value || null },
-      );
+      void saveModelRow(tier);
     });
     custom.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return;
-      const v = custom.value.trim();
-      void save(
-        tier === "worker"
-          ? { workerModel: v || null }
-          : { thinkerModel: v || null },
-      );
+      void saveModelRow(tier);
     });
-    return render;
   }
-  const renderWorkerSlot = wireModelPicker("worker");
-  const renderThinkerSlot = wireModelPicker("thinker");
-  function renderTierSlots() {
-    renderWorkerSlot();
-    renderThinkerSlot();
-  }
-  // ---- Voice Assistant config (Tools menu): provider → voice + per-provider
-  // key. Keys post to the same 0600 config the local voice relay reads; the
-  // browser only ever learns whether a key is present (booleans), never the key.
-  // Voice lists verified from each provider's official docs (Jul 2026).
-  const VOICE_PROVIDERS: Record<
-    string,
-    { label: string; keyUrl: string; voices: string[] }
-  > = {
-    gemini: {
-      label: "Gemini Live",
-      keyUrl: "https://aistudio.google.com/api-keys",
-      // native-audio voices (common 8 first, then the rest of the 30)
-      voices: [
-        "Aoede",
-        "Charon",
-        "Fenrir",
-        "Kore",
-        "Leda",
-        "Orus",
-        "Puck",
-        "Zephyr",
-        "Achernar",
-        "Achird",
-        "Algenib",
-        "Algieba",
-        "Alnilam",
-        "Autonoe",
-        "Callirrhoe",
-        "Despina",
-        "Enceladus",
-        "Erinome",
-        "Gacrux",
-        "Iapetus",
-        "Laomedeia",
-        "Pulcherrima",
-        "Rasalgethi",
-        "Sadachbia",
-        "Sadaltager",
-        "Schedar",
-        "Sulafat",
-        "Umbriel",
-        "Vindemiatrix",
-        "Zubenelgenubi",
-      ],
-    },
-    openai: {
-      label: "OpenAI Realtime",
-      keyUrl: "https://platform.openai.com/settings/organization/api-keys",
-      voices: [
-        "marin",
-        "cedar",
-        "alloy",
-        "ash",
-        "ballad",
-        "coral",
-        "echo",
-        "sage",
-        "shimmer",
-        "verse",
-      ],
-    },
-    xai: {
-      label: "xAI Grok",
-      keyUrl: "https://console.x.ai/",
-      voices: ["eve", "ara", "rex", "sal", "leo"],
-    },
-  };
-  const voiceProviderSel = $("#voice-provider") as HTMLSelectElement;
-  const voiceNameSel = $("#voice-name") as HTMLSelectElement;
-  const voiceModelSel = $("#voice-model") as HTMLSelectElement;
-  const voiceKeyInput = $("#voice-key") as HTMLInputElement;
+  // ---- Voice Assistant config (Settings): provider/model/voice read from
+  // the safe catalog. Provider/model/voice options rebuild on provider change.
+  // The selected provider reuses the key stored in Intelligence Provider
+  // (google→voice.keys.gemini); there is no duplicate voice key input here.
+  const voiceProviderSel = $("#voice-provider-select") as HTMLSelectElement;
+  const voiceNameSel = $("#voice-name-select") as HTMLSelectElement;
+  const voiceModelSel = $("#voice-model-select") as HTMLSelectElement;
   const voiceToggle = $("#voice-toggle") as HTMLButtonElement;
   let voiceSession: VoiceSession | null = null;
   let restartVoiceAfterClose = false;
@@ -4674,36 +4838,60 @@ async function boot() {
 
   function renderVoiceConfig() {
     const v = integrations?.voice;
-    // Provider always resolves to a real backend (Gemini default); the assistant
-    // is turned on/off by the search-bar toggle, not by an "off" provider.
-    const provider = (v?.provider ?? "gemini") as keyof typeof VOICE_PROVIDERS;
-    const spec = VOICE_PROVIDERS[provider];
-    voiceProviderSel.value = provider;
+    const cat = integrations?.catalog;
+    // Backend stores `gemini`; the UI surfaces it as `google`. Default to google.
+    const backendProvider = v?.provider ?? "gemini";
+    const uiProvider = BACKEND_TO_VOICE[backendProvider] ?? "google";
+    const statusEl = $("#set-voice-status");
+    // Build provider options from the safe catalog (google/openai/xai).
+    const wantProviders = VOICE_PROVIDER_IDS.join(",");
+    const haveProviders = [...voiceProviderSel.options]
+      .map((o) => o.value)
+      .join(",");
+    if (wantProviders !== haveProviders) {
+      voiceProviderSel.innerHTML = "";
+      for (const p of VOICE_PROVIDER_IDS) {
+        const o = document.createElement("option");
+        o.value = p;
+        o.textContent = cat?.providers[p]?.label ?? p;
+        voiceProviderSel.appendChild(o);
+      }
+    }
+    voiceProviderSel.value = uiProvider;
+    // Model + voice options rebuild from the catalog for the active provider.
+    const models = cat?.voiceModels[uiProvider] ?? [];
+    const voices = cat?.voiceNames[uiProvider] ?? [];
+    voiceModelSel.innerHTML = "";
+    for (const m of models) {
+      const o = document.createElement("option");
+      o.value = o.textContent = m;
+      voiceModelSel.appendChild(o);
+    }
+    voiceModelSel.value =
+      v?.model && models.includes(v.model) ? v.model : (models[0] ?? "");
     voiceNameSel.innerHTML = "";
-    for (const name of spec.voices) {
+    for (const name of voices) {
       const o = document.createElement("option");
       o.value = o.textContent = name;
       voiceNameSel.appendChild(o);
     }
     voiceNameSel.value =
-      v?.voice && spec.voices.includes(v.voice) ? v.voice : spec.voices[0];
-    // Gemini live model selector (KTD5): only Gemini sessions have one.
-    $("#voice-model-row").classList.toggle("hidden", provider !== "gemini");
-    voiceModelSel.value =
-      v?.model && [...voiceModelSel.options].some((o) => o.value === v.model)
-        ? v.model
-        : "";
-    const keyed = !!v?.keys[provider as "gemini" | "openai" | "xai"];
-    voiceKeyInput.placeholder = i18n.t(
-      keyed ? "ph.voiceKeySaved" : "ph.voiceKey",
-      { provider: spec.label },
-    );
-    ($("#voice-key-link") as HTMLAnchorElement).href = spec.keyUrl;
-    const status = $("#integ-voice .integ-status");
-    status.textContent = i18n.t(keyed ? "voice.ready" : "voice.needsKey");
-    status.classList.toggle("ok", keyed);
-    // The search-bar toggle is enabled only once a key exists (mirrors the mode
-    // buttons); don't touch it while a session is live.
+      v?.voice && voices.includes(v.voice) ? v.voice : (voices[0] ?? "");
+    // The voice provider reuses the Intelligence Provider key; if missing, tell
+    // the user to connect it there. No duplicate key input here.
+    const backendKey = VOICE_TO_BACKEND[uiProvider] ?? uiProvider;
+    const keyed =
+      providerConfigured(uiProvider) ||
+      !!v?.keys[backendKey as "gemini" | "openai" | "xai"];
+    if (keyed) {
+      statusEl.className = "set-voice-status connected";
+      statusEl.textContent = i18n.t("status.connected");
+    } else {
+      statusEl.className = "set-voice-status missing";
+      statusEl.textContent = i18n.t("status.disconnected");
+    }
+    // The search-bar toggle is enabled only once a key exists; don't touch it
+    // while a session is live.
     if (!voiceSession) {
       voiceToggle.disabled = !keyed;
       voiceToggle.title = i18n.t(keyed ? "voice.toggle" : "voice.configure");
@@ -4931,52 +5119,43 @@ async function boot() {
   });
 
   voiceProviderSel.addEventListener("change", async () => {
-    const provider = voiceProviderSel.value;
-    const voice = VOICE_PROVIDERS[provider].voices[0];
+    const uiProvider = voiceProviderSel.value;
+    const backend = VOICE_TO_BACKEND[uiProvider] ?? uiProvider;
+    const cat = integrations?.catalog;
+    const voice = cat?.voiceNames[uiProvider]?.[0] ?? null;
+    const model = cat?.voiceModels[uiProvider]?.[0] ?? null;
     try {
-      await postConfig({ voice: { provider, voice } });
+      await postConfig({ voice: { provider: backend, voice, model } });
       await refreshIntegrations();
-      restartLiveVoiceIfKeyed(provider);
+      restartLiveVoiceIfKeyed(backend);
     } catch {
       await refreshIntegrations();
     }
   });
   voiceNameSel.addEventListener("change", async () => {
-    // commit the provider alongside the voice so config never lags the UI
-    const provider = voiceProviderSel.value;
+    const backend =
+      VOICE_TO_BACKEND[voiceProviderSel.value] ?? voiceProviderSel.value;
     try {
       await postConfig({
-        voice: { provider, voice: voiceNameSel.value },
+        voice: { provider: backend, voice: voiceNameSel.value },
       });
       await refreshIntegrations();
-      restartLiveVoiceIfKeyed(provider);
+      restartLiveVoiceIfKeyed(backend);
     } catch {
       await refreshIntegrations();
     }
   });
   voiceModelSel.addEventListener("change", async () => {
+    const backend =
+      VOICE_TO_BACKEND[voiceProviderSel.value] ?? voiceProviderSel.value;
     try {
-      await postConfig({ voice: { model: voiceModelSel.value || null } });
+      await postConfig({
+        voice: { provider: backend, model: voiceModelSel.value || null },
+      });
       await refreshIntegrations();
-      restartLiveVoiceIfKeyed("gemini");
+      restartLiveVoiceIfKeyed(backend);
     } catch {
       await refreshIntegrations();
-    }
-  });
-  voiceKeyInput.addEventListener("keydown", async (e) => {
-    if (e.key !== "Enter") return;
-    const provider = voiceProviderSel.value;
-    const val = voiceKeyInput.value.trim();
-    if (!val) return;
-    voiceKeyInput.disabled = true;
-    try {
-      await postConfig({ voice: { provider, keys: { [provider]: val } } });
-      voiceKeyInput.value = "";
-      await refreshIntegrations();
-    } catch {
-      voiceKeyInput.placeholder = i18n.t("ph.voiceKeyFail");
-    } finally {
-      voiceKeyInput.disabled = false;
     }
   });
 
@@ -7458,7 +7637,10 @@ async function boot() {
       e.stopPropagation();
       const wasOpen = m.classList.contains("open");
       closeMenus();
-      if (!wasOpen) m.classList.add("open");
+      if (!wasOpen) {
+        m.classList.add("open");
+        if (m.querySelector("#admin-git")) void renderAdminGit();
+      }
     });
     // standard menubar behavior: once one menu is open, hover switches
     label.addEventListener("mouseenter", () => {
@@ -7468,6 +7650,7 @@ async function boot() {
       ) {
         closeMenus();
         m.classList.add("open");
+        if (m.querySelector("#admin-git")) void renderAdminGit();
       }
     });
   }
@@ -7708,9 +7891,11 @@ async function boot() {
     else showModal("No note selected", "<p>Click a node first.</p>");
   });
 
-  // ---- Admin (F045): vault path, wiki checkboxes, per-wiki raw folder,
+  // ---- Settings (F045): vault path, wiki checkboxes, integrations,
+  // per-wiki raw folder,
   // prompt overrides. Reuses showModal() + postConfig(); read-only fetch of
   // discovered wikis via /api/wikis (which already merges with saved state).
+  const adminIntegrations = $("#admin-integrations-source");
   async function openAdmin() {
     const T = (k: string) => i18n.t(k);
     const vaultPath =
@@ -7744,24 +7929,33 @@ async function boot() {
           <button id="admin-rediscover" class="ghost">${T("admin.rediscover")}</button>
         </div>
       </section>
+      <div id="admin-integrations"></div>
       <section class="admin-section">
         <h3>${T("admin.prompts")} <span class="muted admin-section-hint">${T("admin.promptsHint")}</span></h3>
         <div id="admin-prompts"></div>
       </section>
-      <section class="admin-section" id="admin-git" style="display:none"></section>
       <div class="admin-save-row">
         <div class="admin-maint-actions">
           <button id="admin-rescan-full">${T("admin.rescanFull")}</button>
           ${qmdStatus.state === "ready" ? `<button id="admin-reembed-full">${T("admin.reembedFull")}</button>` : ""}
         </div>
         <span id="admin-status" class="muted"></span>
-        <button id="admin-save">${T("admin.save")}</button>
-      </div>`;
-    await renderAdminGit();
+         <button id="admin-save">${T("admin.save")}</button>
+       </div>`;
+    adminIntegrations.classList.remove("hidden");
+    i18n.hydrate(adminIntegrations);
+    $("#admin-integrations").appendChild(adminIntegrations);
+    // Re-read the safe catalog so edits to ~/.sinapso/models.json appear the
+    // next time Settings opens, without rebuilding or reloading the app.
+    await refreshIntegrations();
     await renderAdminWikis();
     renderAdminPrompts();
-    body.oninput = () => (adminDirty = true);
-    body.onchange = () => (adminDirty = true);
+    const markAdminDirty = (e: Event) => {
+      if (!(e.target as Element).closest("#admin-integrations-source"))
+        adminDirty = true;
+    };
+    body.oninput = markAdminDirty;
+    body.onchange = markAdminDirty;
     $("#admin-add-manual").addEventListener("click", () => {
       adminDirty = true;
       appendAdminWikiRow({
@@ -7824,10 +8018,10 @@ async function boot() {
         .join(" ");
       const changeSummary = files.length
         ? `
-          <span class="admin-git-change created">+${created} ${T("admin.gitCreated")}</span>
-          <span class="admin-git-change modified">${modified} ${T("admin.gitModified")}</span>
-          <span class="admin-git-change deleted">-${deleted} ${T("admin.gitDeleted")}</span>
-          ${other ? `<span class="admin-git-change">${other} ${T("admin.gitOther")}</span>` : ""}`
+          <span class="admin-git-change created"><b>+${created}</b> ${T("admin.gitCreated")}</span>
+          <span class="admin-git-change modified"><b>${modified}</b> ${T("admin.gitModified")}</span>
+          <span class="admin-git-change deleted"><b>-${deleted}</b> ${T("admin.gitDeleted")}</span>
+          ${other ? `<span class="admin-git-change"><b>${other}</b> ${T("admin.gitOther")}</span>` : ""}`
         : `<strong class="admin-git-nochanges">${T("admin.gitNoChanges")}</strong>`;
       box.style.display = "";
       box.innerHTML = `
@@ -7838,12 +8032,10 @@ async function boot() {
             <span class="admin-git-state ${clean ? "clean" : "dirty"}">${T(clean ? "admin.gitClean" : "admin.gitDirty")}</span>
           </div>
         </div>
-        <div class="admin-git-action-row">
-          <span class="admin-git-change-summary">${changeSummary}</span>
-          <div class="admin-git-actions">
-            <button id="admin-git-commit" type="button">${T("admin.gitCommit")}</button>
-            <button id="admin-git-sync" type="button" ${clean ? "" : "disabled"}>${T("admin.gitSync")}</button>
-          </div>
+        <div class="admin-git-change-summary">${changeSummary}</div>
+        <div class="admin-git-actions">
+          <button id="admin-git-commit" type="button">${T("admin.gitCommit")}</button>
+          <button id="admin-git-sync" type="button" ${clean ? "" : "disabled"}>${T("admin.gitSync")}</button>
         </div>
         <div id="admin-git-status" class="muted">${escapeHtml(notice)}</div>
         <pre id="admin-git-output" class="admin-git-output ${outputText ? "" : "hidden"}">${escapeHtml(outputText)}</pre>`;
@@ -7952,7 +8144,12 @@ async function boot() {
     shell.append(list, editor);
     box.appendChild(shell);
     for (const key of PROMPT_KEYS) {
-      const effective = admin.prompts[key] ?? admin.promptDefaults[key] ?? "";
+      const inline =
+        admin.promptOverrides[key] ?? admin.promptDefaults[key] ?? "";
+      const source = admin.promptFiles?.[key] ?? {
+        path: null,
+        enabled: false,
+      };
       const tab = document.createElement("button");
       tab.className = "admin-prompt-tab";
       tab.type = "button";
@@ -7964,7 +8161,11 @@ async function boot() {
       row.dataset.key = key;
       row.innerHTML = `
         <div class="admin-prompt-head"><span>${PROMPT_LABELS[key]}</span><button class="ghost admin-reset" data-i18n="admin.reset">${i18n.t("admin.reset")}</button></div>
-        <textarea class="admin-prompt-text" rows="3">${escapeHtml(effective)}</textarea>`;
+        <textarea class="admin-prompt-text" rows="3" ${source.enabled ? "disabled" : ""}>${escapeHtml(inline)}</textarea>
+        <div class="admin-prompt-file">
+          <input class="admin-prompt-path" type="text" value="${escapeHtml(source.path ?? "")}" placeholder="${i18n.t("admin.promptPathPlaceholder")}">
+          <label><span>${i18n.t("admin.promptUseMarkdown")}</span><input class="admin-prompt-file-enabled" type="checkbox" ${source.enabled ? "checked" : ""}></label>
+        </div>`;
       editor.appendChild(row);
     }
     const activate = (key: string) => {
@@ -7981,13 +8182,26 @@ async function boot() {
       });
     });
     activate(PROMPT_KEYS[0]);
+    box
+      .querySelectorAll<HTMLInputElement>(".admin-prompt-file-enabled")
+      .forEach((toggle) => {
+        toggle.addEventListener("change", () => {
+          const row = toggle.closest(".admin-prompt-row");
+          const text =
+            row?.querySelector<HTMLTextAreaElement>(".admin-prompt-text");
+          if (text) text.disabled = toggle.checked;
+        });
+      });
     box.querySelectorAll(".admin-reset").forEach((b) => {
       b.addEventListener("click", async () => {
         const row = b.closest(".admin-prompt-row") as HTMLElement | null;
         const key = row?.dataset.key;
         if (!key) return;
         try {
-          await postConfig({ prompts: { [key]: null } });
+          await postConfig({
+            prompts: { [key]: null },
+            promptFiles: { [key]: { path: null, enabled: false } },
+          });
           await refreshIntegrations();
           renderAdminPrompts();
           flashAdmin(i18n.t("admin.saved"));
@@ -8032,6 +8246,10 @@ async function boot() {
       excludes = replaceExcludes(excludes, previousImagesFolder, imagesFolder);
     }
     const prompts: Record<string, string | null> = {};
+    const promptFiles: Record<
+      string,
+      { path: string | null; enabled: boolean }
+    > = {};
     const defaults = integrations?.admin?.promptDefaults ?? {};
     for (const row of document.querySelectorAll(
       ".admin-prompt-row",
@@ -8041,6 +8259,13 @@ async function boot() {
         row.querySelector(".admin-prompt-text") as HTMLTextAreaElement
       ).value.trim();
       prompts[key] = val && val !== defaults[key] ? val : null;
+      const path = (
+        row.querySelector(".admin-prompt-path") as HTMLInputElement
+      ).value.trim();
+      const enabled = (
+        row.querySelector(".admin-prompt-file-enabled") as HTMLInputElement
+      ).checked;
+      promptFiles[key] = { path: path || null, enabled: enabled && !!path };
     }
 
     try {
@@ -8054,6 +8279,7 @@ async function boot() {
         applyGraphUpdate(body.graph);
         await postConfig({
           prompts,
+          promptFiles,
           writeDestination: inboxFolder,
           archiveDestination: archiveFolder,
           imagesDestination: imagesFolder,
@@ -8070,7 +8296,6 @@ async function boot() {
         }
         ($("#admin-vault-input") as HTMLInputElement).value =
           body.graph.meta.vaultPath;
-        await renderAdminGit();
         await renderAdminWikis();
         adminDirty = false;
         flashAdmin(i18n.t("admin.saved"));
@@ -8115,6 +8340,7 @@ async function boot() {
             }
           : {},
         prompts,
+        promptFiles,
         writeDestination: inboxFolder,
         archiveDestination: archiveFolder,
         imagesDestination: imagesFolder,

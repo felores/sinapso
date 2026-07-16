@@ -17,6 +17,82 @@ test("loads Sinapso shell", async ({ page }) => {
   }
 });
 
+test("keeps local tools in Tools and opens providers in Settings", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  try {
+    await page.goto("/");
+    // The integrations source lives inside the Settings modal and is hidden
+    // until the modal opens (no cards, no wide grid).
+    await expect(page.locator("#admin-integrations-source")).toBeHidden();
+    await expect(page.locator(".admin-integration-card")).toHaveCount(0);
+
+    // Tools menu keeps only the local integrations (markitdown, qmd) + re-check.
+    const toolsMenu = page
+      .locator(".menu")
+      .filter({ has: page.locator("#mi-integrations") });
+    await toolsMenu.locator(".menu-label").click();
+    await expect(toolsMenu.locator("#integ-markitdown")).toBeVisible();
+    await expect(toolsMenu.locator("#integ-qmd")).toBeVisible();
+    await expect(toolsMenu.locator("#admin-git")).toHaveCount(1);
+    await expect(toolsMenu.locator("#mi-rescan")).toBeVisible();
+    await expect(toolsMenu.locator("#mi-export")).toBeVisible();
+    await expect(toolsMenu.locator("#mi-reload")).toBeVisible();
+    await expect(toolsMenu.locator("#integ-exa")).toHaveCount(0);
+    await expect(toolsMenu.locator("#integ-openrouter")).toHaveCount(0);
+    await expect(toolsMenu.locator("#integ-voice")).toHaveCount(0);
+
+    // Settings modal: title, restored narrow width, vertical sections after
+    // Wikis, no card chrome, agent rows, voice three-column row.
+    const fileMenu = page.locator(".menu").first();
+    await expect(
+      fileMenu.locator("#mi-rescan, #mi-export, #mi-reload"),
+    ).toHaveCount(0);
+    await fileMenu.locator(".menu-label").hover();
+    await expect(fileMenu.locator("#mi-admin")).toBeVisible();
+    await page.locator("#mi-admin").click();
+    await expect(page.locator("#modal-title")).toHaveText("Settings");
+    await expect(page.locator("#admin-integrations-source")).toBeVisible();
+    await expect(page.locator("#admin-integrations #admin-git")).toHaveCount(0);
+    await expect(page.locator("#modal")).toHaveCSS("width", /^(\d+)px$/);
+    const width = await page
+      .locator("#modal")
+      .evaluate((el) => el.getBoundingClientRect().width);
+    expect(width).toBeLessThanOrEqual(521);
+    await expect(page.locator(".set-section")).toHaveCount(4);
+    await expect(
+      page.locator("#admin-integrations .set-section").first(),
+    ).toBeVisible();
+    await expect(page.locator("#set-provider-select")).toBeVisible();
+    await expect(page.locator("#set-provider-key")).toBeVisible();
+    await expect(page.locator(".set-provider-cap")).toHaveCount(3);
+    await expect(page.locator(".set-model-status")).toHaveCount(2);
+    await expect(page.locator("#set-voice-status")).toBeVisible();
+    await expect(page.locator(".set-model-row")).toHaveCount(2);
+    await expect(page.locator(".set-effort-select")).toHaveCount(0);
+    await expect(page.locator("#worker-model-select")).toBeVisible();
+    await expect(page.locator("#thinker-model-select")).toBeVisible();
+    await expect(page.locator("#web-provider-select")).toBeVisible();
+    await expect(page.locator(".set-voice-row .voice-col")).toHaveCount(3);
+    await expect(page.locator("#voice-provider-select")).toBeVisible();
+    await expect(page.locator("#voice-model-select")).toBeVisible();
+    await expect(page.locator("#voice-name-select")).toBeVisible();
+    await expect(page.locator(".admin-prompt-path")).toHaveCount(4);
+    await expect(page.locator(".admin-prompt-file-enabled")).toHaveCount(4);
+
+    // Reopening preserves the controls (close + reopen via the config button).
+    await page.locator("#modal-close").click();
+    await page.locator("#config-btn").click();
+    await expect(page.locator("#set-provider-select")).toBeVisible();
+    await expect(page.locator(".set-model-row")).toHaveCount(2);
+    await expect(page.locator("#voice-name-select")).toBeVisible();
+    await expect(page.locator("#web-provider-select")).toBeVisible();
+  } finally {
+    await assertCleanBrowser();
+  }
+});
+
 test("opens a node from the URL", async ({ page }) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {

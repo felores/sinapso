@@ -183,6 +183,30 @@ describe("wiki links", () => {
     ed.destroy();
   });
 
+  it("keeps clicks on wiki and external links out of editing", () => {
+    const onWikiLinkClick = vi.fn();
+    const ed = mount(
+      "See [[Other Note]] and [website](https://example.com)\n",
+      {
+        onWikiLinkClick,
+      },
+    );
+    const wiki = ed.view.dom.querySelector<HTMLElement>(".cm-wikilink")!;
+    const external = ed.view.dom.querySelector<HTMLAnchorElement>(
+      'a[href="https://example.com"]',
+    )!;
+
+    wiki.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    wiki.click();
+
+    expect(onWikiLinkClick).toHaveBeenCalledWith("Other Note");
+    expect(ed.view.state.selection.main.head).toBe(0);
+    expect(external.textContent).toBe("website");
+    expect(external.target).toBe("_blank");
+    expect(external.rel).toBe("noopener noreferrer");
+    ed.destroy();
+  });
+
   it("shows raw syntax when the cursor is inside the link", () => {
     const ed = mount(content);
     const pos = content.indexOf("[[Other Note]]") + 4;

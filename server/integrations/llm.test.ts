@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import { defaultConfig, type SinapsoConfig } from "./config";
 import {
   DEEPSEEK_ENDPOINT,
+  ENDPOINTS,
   resolveTier,
   tierCompletion,
   validateDeepseekKey,
+  validateProviderKey,
 } from "./llm";
 import { DEFAULT_MODEL } from "./openrouter";
 
@@ -25,11 +27,13 @@ describe("resolveTier", () => {
       provider: "openrouter",
       model: "meta/fast",
       key: "or-k",
+      endpoint: ENDPOINTS.openrouter,
     });
     expect(resolveTier("thinker", c)).toEqual({
       provider: "openrouter",
       model: "meta/deep",
       key: "or-k",
+      endpoint: ENDPOINTS.openrouter,
     });
   });
 
@@ -173,5 +177,177 @@ describe("validateDeepseekKey", () => {
     await expect(
       validateDeepseekKey("k", { fetch: fetchFake }),
     ).rejects.toThrow("HTTP 500");
+  });
+});
+
+describe("five-provider resolution (R1 redesign)", () => {
+  it("resolves openai direct with the voice key and code-owned endpoint", () => {
+    const c = cfg({
+      voice: {
+        ...defaultConfig().voice,
+        keys: { ...defaultConfig().voice.keys, openai: "oai-k" },
+      },
+      workerProvider: "openai",
+      workerModel: "gpt-5.6-terra",
+    });
+    const r = resolveTier("worker", c)!;
+    expect(r.provider).toBe("openai");
+    expect(r.model).toBe("gpt-5.6-terra");
+    expect(r.key).toBe("oai-k");
+    expect(r.endpoint).toBe(ENDPOINTS.openai);
+  });
+
+  it("resolves google and xai direct via their voice keys", () => {
+    const google = cfg({
+      voice: {
+        ...defaultConfig().voice,
+        keys: { ...defaultConfig().voice.keys, gemini: "g-k" },
+      },
+      workerProvider: "google",
+      workerModel: "gemini-3.5-flash",
+    });
+    expect(resolveTier("worker", google)!.endpoint).toBe(ENDPOINTS.google);
+    const xai = cfg({
+      voice: {
+        ...defaultConfig().voice,
+        keys: { ...defaultConfig().voice.keys, xai: "x-k" },
+      },
+      thinkerProvider: "xai",
+      thinkerModel: "grok-4.5",
+    });
+    const r = resolveTier("thinker", xai)!;
+    expect(r.provider).toBe("xai");
+    expect(r.endpoint).toBe(ENDPOINTS.xai);
+  });
+
+  it("treats a trusted provider with no stored key as unconfigured", () => {
+    const c = cfg({
+      workerProvider: "openai",
+      workerModel: "gpt-5.6-terra",
+      // no voice.keys.openai
+    });
+    expect(resolveTier("worker", c)).toBeNull();
+  });
+});
+
+describe("effort shaping (R4)", () => {
+  it("applies reasoning_effort on direct OpenAI when effort is set", () => {
+    const c = cfg({
+      voice: {
+        ...defaultConfig().voice,
+        keys: { ...defaultConfig().voice.keys, openai: "oai-k" },
+      },
+      thinkerProvider: "openai",
+      thinkerModel: "gpt-5.6-sol",
+      thinkerEffort: "high",
+    });
+    expect(resolveTier("thinker", c)!.extraBody).toEqual({
+      reasoning_effort: "high",
+    });
+  });
+
+  it("applies the OpenRouter normalized reasoning envelope", () => {
+    const c = cfg({
+      openrouterKey: "or-k",
+      thinkerProvider: "openrouter",
+      thinkerModel: "openai/gpt-5.6-sol",
+      thinkerEffort: "medium",
+    });
+    expect(resolveTier("thinker", c)!.extraBody).toEqual({
+      reasoning: { enabled: true, effort: "medium" },
+    });
+  });
+
+  it("leaves effort unsupported providers (google/xai) alone", () => {
+    const google = cfg({
+      voice: {
+        ...defaultConfig().voice,
+        keys: { ...defaultConfig().voice.keys, gemini: "g-k" },
+      },
+      thinkerProvider: "google",
+      thinkerModel: "gemini-3.1-pro-preview",
+      thinkerEffort: "high",
+    });
+    expect(resolveTier("thinker", google)!.extraBody).toBeUndefined();
+  });
+
+  it("omits effort shaping when effort is null", () => {
+    const c = cfg({
+      voice: {
+        ...defaultConfig().voice,
+        keys: { ...defaultConfig().voice.keys, openai: "oai-k" },
+      },
+      workerProvider: "openai",
+      workerModel: "gpt-5.6-terra",
+      workerEffort: null,
+    });
+    expect(resolveTier("worker", c)!.extraBody).toBeUndefined();
+  });
+
+  it("DeepSeek thinker still gets thinking enabled regardless of effort", () => {
+    const c = cfg({
+      deepseekKey: "ds-k",
+      thinkerProvider: "deepseek",
+      thinkerEffort: "low",
+    });
+    expect(resolveTier("thinker", c)!.extraBody).toEqual({
+      thinking: { type: "enabled" },
+    });
+  });
+});
+
+describe("tierCompletion sends effort bodies through the adapter", () => {
+  it("posts reasoning_effort for an OpenAI thinker", async () => {
+    let body: Record<string, unknown> = {};
+    const fetchFake = (async (_u: string, init: RequestInit) => {
+      body = JSON.parse(String(init.body));
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: "ok" } }] }),
+        { status: 200 },
+      );
+    }) as never;
+    const c = cfg({
+      voice: {
+        ...defaultConfig().voice,
+        keys: { ...defaultConfig().voice.keys, openai: "oai-k" },
+      },
+      thinkerProvider: "openai",
+      thinkerModel: "gpt-5.6-sol",
+      thinkerEffort: "high",
+    });
+    await tierCompletion(resolveTier("thinker", c)!, [], { fetch: fetchFake });
+    expect(body).toMatchObject({
+      model: "gpt-5.6-sol",
+      reasoning_effort: "high",
+    });
+  });
+});
+
+describe("validateProviderKey (generic)", () => {
+  it("returns ok + usage for OpenRouter via GET /key", async () => {
+    let url = "";
+    const f = (async (u: string) => {
+      url = u;
+      return new Response(JSON.stringify({ data: { usage: 2, limit: 10 } }), {
+        status: 200,
+      });
+    }) as never;
+    const s = await validateProviderKey("openrouter", "k", { fetch: f });
+    expect(url).toBe(`${ENDPOINTS.openrouter}/key`);
+    expect(s).toEqual({ ok: true, usage: 2, limit: 10 });
+  });
+
+  it("validates google/openai/xai via GET /models", async () => {
+    let url = "";
+    const f = (async (u: string) => {
+      url = u;
+      return new Response("{}", { status: 200 });
+    }) as never;
+    await validateProviderKey("google", "g-k", { fetch: f });
+    expect(url).toBe(`${ENDPOINTS.google}/models`);
+    const bad = (async () => new Response("", { status: 401 })) as never;
+    await expect(
+      validateProviderKey("xai", "x-k", { fetch: bad }),
+    ).resolves.toEqual({ ok: false });
   });
 });

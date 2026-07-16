@@ -42,7 +42,7 @@ export function requireWebConsent(
 
 /**
  * Exa key gate (400 no-exa-key). All three call sites use the same
- * "Add your Exa API key in Tools → Integrations." message today; we still
+ * "Add your Exa API key in Settings → Integrations." message today; we still
  * take the message in so the seam can absorb a future divergence without
  * another refactor. The return is a type predicate so the caller can use
  * `cfg.exaKey` as a `string` on the success branch.

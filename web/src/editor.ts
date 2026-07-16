@@ -297,6 +297,28 @@ export const livePreviewPlugin = ViewPlugin.fromClass(
 // ---------- wiki links ----------
 
 const WIKI_RE = /\[\[([^\]|\n]+)(?:\|([^\]\n]+))?\]\]/g;
+const EXTERNAL_LINK_RE = /(?<!!)\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g;
+
+class LinkWidget extends WidgetType {
+  constructor(
+    readonly label: string,
+    readonly href: string,
+  ) {
+    super();
+  }
+  toDOM(): HTMLElement {
+    const el = document.createElement("a");
+    el.className = "cm-md-link";
+    el.textContent = this.label;
+    el.href = this.href;
+    el.target = "_blank";
+    el.rel = "noopener noreferrer";
+    return el;
+  }
+  override eq(other: LinkWidget): boolean {
+    return other.label === this.label && other.href === this.href;
+  }
+}
 
 class WikiLinkWidget extends WidgetType {
   constructor(
@@ -318,9 +340,6 @@ class WikiLinkWidget extends WidgetType {
   }
   override eq(other: WikiLinkWidget): boolean {
     return other.target === this.target && other.label === this.label;
-  }
-  override ignoreEvent(): boolean {
-    return false;
   }
 }
 
@@ -361,6 +380,22 @@ function wikiLinkPlugin(onClick?: (target: string) => void) {
               );
             }
             m = WIKI_RE.exec(text);
+          }
+          EXTERNAL_LINK_RE.lastIndex = 0;
+          let external = EXTERNAL_LINK_RE.exec(text);
+          while (external) {
+            const start = from + external.index;
+            const end = start + external[0].length;
+            if (!selectionTouches(view.state, start, end)) {
+              b.add(
+                start,
+                end,
+                Decoration.replace({
+                  widget: new LinkWidget(external[1], external[2]),
+                }),
+              );
+            }
+            external = EXTERNAL_LINK_RE.exec(text);
           }
         }
         return b.finish();

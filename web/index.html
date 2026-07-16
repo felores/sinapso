@@ -21,21 +21,7 @@
           <div class="menu">
             <span class="menu-label" data-i18n="menu.file">File</span>
             <div class="dropdown">
-              <button id="mi-admin" data-i18n="file.admin">Admin…</button>
-              <hr />
-              <button id="mi-rescan" data-i18n="file.rescan">
-                Rescan Vault
-                <span class="mi-hint" data-i18n="hint.incremental"
-                  >incremental</span
-                >
-              </button>
-              <hr />
-              <button id="mi-reload" data-i18n="file.reload">
-                Reload App <span class="mi-hint">F5</span>
-              </button>
-              <button id="mi-export" data-i18n="file.export">
-                Export Image (PNG)
-              </button>
+              <button id="mi-admin" data-i18n="file.admin">Settings…</button>
               <hr />
               <button id="mi-copyfocus" data-i18n="file.copyLink">
                 Copy Link to Selected Note <span class="mi-hint">Ctrl+C</span>
@@ -251,335 +237,6 @@
                   <div id="qmd-maint-status" class="mi-hint"></div>
                 </div>
 
-                <div class="integ-row" id="integ-exa">
-                  <b data-i18n="integ.web">Web Research</b
-                  ><span class="integ-status"></span>
-                </div>
-                <input
-                  type="password"
-                  id="exa-key"
-                  placeholder="Exa API key — paste + Enter"
-                  data-i18n-ph="ph.exaKey"
-                  autocomplete="off"
-                />
-                <div class="integ-help">
-                  <a
-                    href="https://dashboard.exa.ai/api-keys"
-                    target="_blank"
-                    rel="noopener"
-                    data-i18n="integ.getKey"
-                    >Get a key
-                    <svg
-                      class="ext-icon"
-                      viewBox="0 0 24 24"
-                      width="10"
-                      height="10"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2.2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M15 3h6v6" />
-                      <path d="M10 14 21 3" />
-                      <path
-                        d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"
-                      /></svg
-                  ></a>
-                  <a
-                    href="https://dashboard.exa.ai/billing"
-                    target="_blank"
-                    rel="noopener"
-                    data-i18n="integ.billing"
-                    >Billing
-                    <svg
-                      class="ext-icon"
-                      viewBox="0 0 24 24"
-                      width="10"
-                      height="10"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2.2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M15 3h6v6" />
-                      <path d="M10 14 21 3" />
-                      <path
-                        d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"
-                      /></svg
-                  ></a>
-                </div>
-
-                <div class="integ-row" id="integ-openrouter">
-                  <b data-i18n="integ.llm">LLM Provider</b
-                  ><span class="integ-status"></span>
-                </div>
-                <input
-                  type="password"
-                  id="openrouter-key"
-                  placeholder="OpenRouter API key — paste + Enter"
-                  data-i18n-ph="ph.orKey"
-                  autocomplete="off"
-                />
-                <div class="integ-help">
-                  <a
-                    href="https://openrouter.ai/workspaces/default/keys"
-                    target="_blank"
-                    rel="noopener"
-                    data-i18n="integ.getKey"
-                    >Get a key
-                    <svg
-                      class="ext-icon"
-                      viewBox="0 0 24 24"
-                      width="10"
-                      height="10"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2.2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M15 3h6v6" />
-                      <path d="M10 14 21 3" />
-                      <path
-                        d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"
-                      /></svg
-                  ></a>
-                  <a
-                    href="https://openrouter.ai/settings/credits"
-                    target="_blank"
-                    rel="noopener"
-                    data-i18n="integ.addCredits"
-                    >Add credits
-                    <svg
-                      class="ext-icon"
-                      viewBox="0 0 24 24"
-                      width="10"
-                      height="10"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2.2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M15 3h6v6" />
-                      <path d="M10 14 21 3" />
-                      <path
-                        d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"
-                      /></svg
-                  ></a>
-                </div>
-                <label class="integ-row integ-model" data-i18n="integ.model"
-                  >Model
-                  <select id="llm-model-select">
-                    <option value="">DeepSeek V4 Flash · cheapest</option>
-                    <option value="deepseek/deepseek-v4-pro">
-                      DeepSeek V4 Pro · stronger
-                    </option>
-                    <option value="z-ai/glm-5.2">GLM 5.2</option>
-                    <option value="anthropic/claude-opus-4.8">
-                      Claude Opus 4.8
-                    </option>
-                    <option value="openai/gpt-5.5">GPT 5.5</option>
-                    <option value="__custom">custom model…</option>
-                  </select>
-                </label>
-                <input
-                  type="text"
-                  id="llm-model"
-                  class="hidden"
-                  placeholder="provider/model + Enter"
-                  data-i18n-ph="ph.llmModel"
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-                <div class="integ-help hidden" id="llm-model-help">
-                  <a
-                    href="https://openrouter.ai/models"
-                    target="_blank"
-                    rel="noopener"
-                    data-i18n="integ.browseModels"
-                    >Browse models
-                    <svg
-                      class="ext-icon"
-                      viewBox="0 0 24 24"
-                      width="10"
-                      height="10"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2.2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M15 3h6v6" />
-                      <path d="M10 14 21 3" />
-                      <path
-                        d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"
-                      /></svg
-                  ></a>
-                </div>
-                <div class="integ-row" id="integ-deepseek">
-                  <b data-i18n="integ.deepseek">DeepSeek API</b
-                  ><span class="integ-status"></span>
-                </div>
-                <input
-                  type="password"
-                  id="deepseek-key"
-                  placeholder="DeepSeek API key — paste + Enter"
-                  data-i18n-ph="ph.dsKey"
-                  autocomplete="off"
-                />
-                <div class="integ-help">
-                  <a
-                    href="https://platform.deepseek.com/api_keys"
-                    target="_blank"
-                    rel="noopener"
-                    data-i18n="integ.getKey"
-                    >Get a key
-                    <svg
-                      class="ext-icon"
-                      viewBox="0 0 24 24"
-                      width="10"
-                      height="10"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2.2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M15 3h6v6" />
-                      <path d="M10 14 21 3" />
-                      <path
-                        d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"
-                      /></svg
-                  ></a>
-                </div>
-                <div class="integ-row">
-                  <b data-i18n="integ.tiers">Model Tiers</b>
-                </div>
-                <div class="voice-selects tier-slot" data-tier="worker">
-                  <label class="voice-col" data-i18n="tier.worker"
-                    >Worker
-                    <select id="worker-provider">
-                      <option value="">default model</option>
-                      <option value="openrouter">OpenRouter</option>
-                      <option value="deepseek">DeepSeek</option>
-                    </select>
-                  </label>
-                  <label
-                    class="voice-col hidden"
-                    id="worker-model-col"
-                    data-i18n="tier.model"
-                    >Model
-                    <select id="worker-model"></select>
-                  </label>
-                  <span class="tier-fixed hidden" id="worker-fixed"></span>
-                </div>
-                <input
-                  type="text"
-                  id="worker-model-custom"
-                  class="hidden"
-                  placeholder="provider/model + Enter"
-                  data-i18n-ph="ph.llmModel"
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-                <div class="voice-selects tier-slot" data-tier="thinker">
-                  <label class="voice-col" data-i18n="tier.thinker"
-                    >Thinker
-                    <select id="thinker-provider">
-                      <option value="">default model</option>
-                      <option value="openrouter">OpenRouter</option>
-                      <option value="deepseek">DeepSeek</option>
-                    </select>
-                  </label>
-                  <label
-                    class="voice-col hidden"
-                    id="thinker-model-col"
-                    data-i18n="tier.model"
-                    >Model
-                    <select id="thinker-model"></select>
-                  </label>
-                  <span class="tier-fixed hidden" id="thinker-fixed"></span>
-                </div>
-                <input
-                  type="text"
-                  id="thinker-model-custom"
-                  class="hidden"
-                  placeholder="provider/model + Enter"
-                  data-i18n-ph="ph.llmModel"
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-                <div class="integ-row" id="integ-voice">
-                  <b data-i18n="integ.voice">Voice Assistant</b
-                  ><span class="integ-status"></span>
-                </div>
-                <div class="voice-selects">
-                  <label class="voice-col" data-i18n="voice.provider"
-                    >Provider
-                    <select id="voice-provider">
-                      <option value="gemini">Gemini Live</option>
-                      <option value="openai">OpenAI Realtime</option>
-                      <option value="xai">xAI Grok</option>
-                    </select>
-                  </label>
-                  <label class="voice-col" data-i18n="voice.voice"
-                    >Voice
-                    <select id="voice-name"></select>
-                  </label>
-                </div>
-                <div class="voice-selects" id="voice-model-row">
-                  <label class="voice-col" data-i18n="voice.model"
-                    >Model
-                    <select id="voice-model">
-                      <option value="">Gemini 3.1 Flash (default)</option>
-                      <option value="gemini-2.5-flash-native-audio-latest">
-                        Gemini 2.5 Flash Native Audio
-                      </option>
-                    </select>
-                  </label>
-                </div>
-                <input
-                  type="password"
-                  id="voice-key"
-                  placeholder="API key — paste + Enter"
-                  autocomplete="off"
-                />
-                <div class="integ-help" id="voice-help">
-                  <a
-                    id="voice-key-link"
-                    href="#"
-                    target="_blank"
-                    rel="noopener"
-                    data-i18n="integ.getKey"
-                    >Get a key
-                    <svg
-                      class="ext-icon"
-                      viewBox="0 0 24 24"
-                      width="10"
-                      height="10"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2.2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M15 3h6v6" />
-                      <path d="M10 14 21 3" />
-                      <path
-                        d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"
-                      /></svg
-                  ></a>
-                </div>
                 <button
                   id="integ-recheck"
                   title="Re-probe installed tools"
@@ -587,10 +244,194 @@
                 >
                   re-check installed tools
                 </button>
+
+                <section
+                  id="admin-git"
+                  class="tools-git"
+                  style="display: none"
+                ></section>
+
+                <hr />
+                <button id="mi-rescan" data-i18n="file.rescan">
+                  Rescan Vault
+                  <span class="mi-hint" data-i18n="hint.incremental"
+                    >incremental</span
+                  >
+                </button>
+                <button id="mi-export" data-i18n="file.export">
+                  Export Image (PNG)
+                </button>
+                <button id="mi-reload" data-i18n="file.reload">
+                  Reload App <span class="mi-hint">F5</span>
+                </button>
               </div>
             </div>
           </div>
         </nav>
+      </div>
+
+      <div id="admin-integrations-source" class="hidden">
+        <section class="admin-section set-section">
+          <div class="set-section-head">
+            <h3 data-i18n="set.provider.title">Intelligence Provider</h3>
+            <p class="set-provider-status" id="set-provider-status"></p>
+          </div>
+          <div class="set-provider">
+            <div class="set-provider-fields">
+              <select id="set-provider-select"></select>
+              <input
+                type="password"
+                id="set-provider-key"
+                class="set-provider-key"
+                placeholder="API key — paste + Enter"
+                data-i18n-ph="ph.providerKey"
+                autocomplete="off"
+              />
+            </div>
+            <div class="set-provider-caps" id="set-provider-caps"></div>
+            <div class="integ-help">
+              <span class="integ-help-links">
+                <a
+                  id="set-provider-keylink"
+                  href="#"
+                  target="_blank"
+                  rel="noopener"
+                  data-i18n="integ.getKey"
+                  >Get a key
+                  <svg class="ext-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/></svg></a
+                >
+                <a
+                  id="set-provider-billinglink"
+                  href="#"
+                  target="_blank"
+                  rel="noopener"
+                  data-i18n="integ.billing"
+                  >Billing
+                  <svg class="ext-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/></svg></a
+                >
+              </span>
+              <button
+                id="set-provider-check"
+                type="button"
+                data-i18n="set.provider.check"
+              >
+                Check connection
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="admin-section set-section">
+          <h3 data-i18n="set.models.title">Agent Models</h3>
+          <div class="set-model-row" data-role="worker">
+            <div class="set-model-head">
+              <div class="set-model-label" data-i18n="set.models.fast">
+                Fast Model
+              </div>
+              <span class="set-model-status" id="worker-model-status"></span>
+            </div>
+            <div class="set-model-fields">
+              <select class="set-model-select" id="worker-model-select"></select>
+              <input
+                type="text"
+                class="set-model-custom hidden"
+                id="worker-model-custom"
+                placeholder="model id (optional) + Enter"
+                data-i18n-ph="ph.modelId"
+                autocomplete="off"
+                spellcheck="false"
+              />
+            </div>
+          </div>
+          <div class="set-model-row" data-role="thinker">
+            <div class="set-model-head">
+              <div class="set-model-label" data-i18n="set.models.reasoning">
+                Reasoning Model
+              </div>
+              <span class="set-model-status" id="thinker-model-status"></span>
+            </div>
+            <div class="set-model-fields">
+              <select
+                class="set-model-select"
+                id="thinker-model-select"
+              ></select>
+              <input
+                type="text"
+                class="set-model-custom hidden"
+                id="thinker-model-custom"
+                placeholder="model id (optional) + Enter"
+                data-i18n-ph="ph.modelId"
+                autocomplete="off"
+                spellcheck="false"
+              />
+            </div>
+          </div>
+          <p
+            id="set-models-hint"
+            class="set-models-hint muted hidden"
+            data-i18n="set.models.hint"
+          >
+            Connect a provider above to choose models.
+          </p>
+        </section>
+
+        <section class="admin-section set-section">
+          <div class="set-section-head">
+            <h3 data-i18n="set.web.title">Web Research</h3>
+            <span class="set-web-status" id="set-web-status"></span>
+          </div>
+          <div class="set-web-fields">
+            <select id="web-provider-select"></select>
+            <div id="exa-config" class="set-exa-config hidden">
+              <input
+                type="password"
+                id="exa-key"
+                placeholder="Exa API key — paste + Enter"
+                data-i18n-ph="ph.exaKey"
+                autocomplete="off"
+              />
+            </div>
+          </div>
+          <div id="exa-help" class="integ-help hidden">
+            <a
+              href="https://dashboard.exa.ai/api-keys"
+              target="_blank"
+              rel="noopener"
+              data-i18n="integ.getKey"
+              >Get a key
+              <svg class="ext-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/></svg></a
+            >
+            <a
+              href="https://dashboard.exa.ai/billing"
+              target="_blank"
+              rel="noopener"
+              data-i18n="integ.billing"
+              >Billing
+              <svg class="ext-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/></svg></a
+            >
+          </div>
+        </section>
+
+        <section class="admin-section set-section set-voice-section">
+          <div class="set-section-head">
+            <h3 data-i18n="set.voice.title">Voice Assistant</h3>
+            <span class="set-voice-status" id="set-voice-status"></span>
+          </div>
+          <div class="set-voice-row">
+            <label class="voice-col" data-i18n="voice.provider"
+              >Provider
+              <select id="voice-provider-select"></select
+            ></label>
+            <label class="voice-col" data-i18n="voice.model"
+              >Model
+              <select id="voice-model-select"></select
+            ></label>
+            <label class="voice-col" data-i18n="voice.voice"
+              >Voice
+              <select id="voice-name-select"></select
+            ></label>
+          </div>
+        </section>
       </div>
 
       <div id="search-wrap">

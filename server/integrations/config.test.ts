@@ -203,6 +203,27 @@ describe("integrations config", () => {
     expect(effectivePrompts(cfg).wikiIngest).toBe(defaultPrompts().wikiIngest);
   });
 
+  it("reads an enabled prompt from a confined vault-relative Markdown file", () => {
+    const vault = join(DIR, "prompt-vault");
+    const promptsDir = join(vault, "prompts");
+    mkdirSync(promptsDir, { recursive: true });
+    writeFileSync(join(promptsDir, "voice.md"), "Prompt from Markdown\n");
+    const cfg = updateConfig(
+      {
+        activeVaultPath: vault,
+        prompts: { voiceAssistant: "Inline fallback" },
+        promptFiles: {
+          voiceAssistant: { path: "prompts/voice.md", enabled: true },
+        },
+      },
+      join(DIR, "prompt-file.json"),
+    );
+
+    expect(effectivePrompts(cfg).voiceAssistant).toBe("Prompt from Markdown");
+    cfg.promptFiles.voiceAssistant.path = "../outside.md";
+    expect(effectivePrompts(cfg).voiceAssistant).toBe("Inline fallback");
+  });
+
   it("yields defaults plus a warning on a corrupt file, never a crash", () => {
     const p = join(DIR, "corrupt.json");
     writeFileSync(p, "{ not json at all");
@@ -344,5 +365,90 @@ describe("voice model selector round-trip (U7)", () => {
     expect(cfg.voice.keys.gemini).toBe("g-k");
     cfg = updateConfig({ voice: { model: null } }, p);
     expect(cfg.voice.model).toBeNull();
+  });
+});
+
+describe("effort fields and five-provider config (R1 redesign)", () => {
+  it("defaults both efforts to null", () => {
+    expect(defaultConfig().workerEffort).toBeNull();
+    expect(defaultConfig().thinkerEffort).toBeNull();
+  });
+
+  it("persists and reads back low/medium/high/null efforts", () => {
+    const p = join(DIR, "effort.json");
+    let cfg = updateConfig(
+      { workerProvider: "openai", workerEffort: "low" },
+      p,
+    );
+    expect(cfg.workerEffort).toBe("low");
+    cfg = updateConfig({ thinkerProvider: "openai", thinkerEffort: "high" }, p);
+    expect(cfg.thinkerEffort).toBe("high");
+    expect(cfg.workerEffort).toBe("low"); // untouched
+    cfg = updateConfig({ workerEffort: null }, p);
+    expect(cfg.workerEffort).toBeNull();
+    expect(loadConfig(p).thinkerEffort).toBe("high");
+  });
+
+  it("sanitizes invalid effort values to null", () => {
+    const p = join(DIR, "effort-sanitize.json");
+    const cfg = updateConfig(
+      { workerEffort: "ultra" as never, thinkerEffort: 42 as never },
+      p,
+    );
+    expect(cfg.workerEffort).toBeNull();
+    expect(cfg.thinkerEffort).toBeNull();
+  });
+
+  it("accepts all five trusted provider ids on both tiers", () => {
+    const p = join(DIR, "providers.json");
+    for (const provider of [
+      "google",
+      "openai",
+      "xai",
+      "openrouter",
+      "deepseek",
+    ] as const) {
+      const cfg = updateConfig({ workerProvider: provider }, p);
+      expect(cfg.workerProvider).toBe(provider);
+    }
+    // invalid provider ignored
+    const cfg = updateConfig({ workerProvider: "evilcorp" as never }, p);
+    expect(cfg.workerProvider).toBe("deepseek"); // last valid from the loop
+  });
+
+  it("providerApiKey maps all five to the right stored field", async () => {
+    const { providerApiKey } = await import("./config");
+    const cfg = defaultConfig();
+    cfg.openrouterKey = "or-k";
+    cfg.deepseekKey = "ds-k";
+    cfg.voice.keys = { gemini: "g-k", openai: "oai-k", xai: "x-k" };
+    expect(providerApiKey(cfg, "openrouter")).toBe("or-k");
+    expect(providerApiKey(cfg, "deepseek")).toBe("ds-k");
+    expect(providerApiKey(cfg, "google")).toBe("g-k");
+    expect(providerApiKey(cfg, "openai")).toBe("oai-k");
+    expect(providerApiKey(cfg, "xai")).toBe("x-k");
+  });
+
+  it("never echoes key material through effort/provider fields", () => {
+    const p = join(DIR, "no-leak.json");
+    const cfg = updateConfig(
+      {
+        openrouterKey: "or-secret",
+        voice: {
+          keys: { openai: "oai-secret" },
+        },
+      },
+      p,
+    );
+    const blob = JSON.stringify(cfg);
+    // keys live in their dedicated fields only
+    expect(cfg.openrouterKey).toBe("or-secret");
+    expect(cfg.voice.keys.openai).toBe("oai-secret");
+    expect(cfg.workerEffort).toBeNull();
+    expect(cfg.thinkerEffort).toBeNull();
+    expect(cfg.workerProvider).toBeNull();
+    expect(blob).toContain("or-secret"); // the key field itself
+    // effort fields stay clean
+    expect(cfg.workerEffort).not.toBe("or-secret");
   });
 });

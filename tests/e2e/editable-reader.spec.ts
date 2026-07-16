@@ -111,7 +111,12 @@ test("AE1b: opening and closing without edits never touches the file", async ({
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   const file = await createTestNote(page);
   try {
-    await openTestNote(page);
+    await Promise.all([
+      page.waitForResponse((response) =>
+        response.url().includes("/api/note-versions?"),
+      ),
+      openTestNote(page),
+    ]);
     await page.locator("#reader-close").click();
     await page.waitForTimeout(2500);
     expect(readFileSync(file, "utf-8")).toBe(NOTE_CONTENT);

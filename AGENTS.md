@@ -36,6 +36,7 @@ Rescan without restarting: `/api/rescan` (or File → Rescan) re-parses changed 
 - Browser diagnostics fail on unallowlisted console, page, request, or HTTP 500+ errors. Each test writes and attaches its own diagnostic artifact; the most recently completed test is also written to `test-results/browser-diagnostics.json`.
 - The Codebase Memory graph is available for architecture navigation and impact analysis.
 - Future implementation-ready plans enter tracking through `harness-progress init`, then use `harness-progress next` and `harness-progress verify`; historical features remain immutable.
+- codebase-memory-mcp project = Users-felo-Documents-GitHub-sinapso 
 
 ## Architecture
 

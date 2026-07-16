@@ -35,6 +35,7 @@ import {
   updateConfig,
   defaultConfigPath,
   type SinapsoConfig,
+  type WebResearchProvider,
 } from "./integrations/config.js";
 import {
   detectAll,
@@ -66,6 +67,10 @@ import {
   createArticleFetcher,
   type ExaAdapterOptions,
 } from "./integrations/exa.js";
+import {
+  createHostedWebResearchAdapter,
+  type HostedWebResearchOptions,
+} from "./integrations/web-research.js";
 import {
   convertBytes,
   convertDocument,
@@ -102,7 +107,11 @@ import {
   resolveTier,
   tierCompletion,
   validateDeepseekKey,
+  validateProviderKey,
+  type LlmProvider,
 } from "./integrations/llm.js";
+import { safeCatalog, TRUSTED_PROVIDERS } from "./integrations/models.js";
+import { providerApiKey } from "./integrations/config.js";
 import { mcpRouteAllowed, operationTier } from "./integrations/registry.js";
 import {
   createDelegateManager,
@@ -214,10 +223,14 @@ export interface IntegrationsOptions {
   detectDeps?: Partial<DetectDeps>;
   /** Inject a fake Exa client / fast retry backoff (tests). */
   exa?: ExaAdapterOptions;
+  /** Inject hosted web-search fetch (Google/OpenAI/xAI tests). */
+  webResearch?: HostedWebResearchOptions;
   /** Inject a fake fetch for the OpenRouter adapter (tests). */
   openrouter?: OpenRouterOptions;
   /** Inject a fake fetch/endpoint for the DeepSeek key test (tests). */
   deepseek?: OpenRouterOptions;
+  /** Override ~/.sinapso/models.json catalog path (tests). */
+  catalogPath?: string;
   /** Shorten the delegation timeout (tests). */
   delegateTimeoutMs?: number;
   /** Inject a fake stdio child for the warm qmd client (tests). */
@@ -336,21 +349,43 @@ export function createApp(
       if (!toolCache.current || req.query.refresh === "1")
         toolCache.current = await detectAll(detectDeps);
       const cfg = loadConfig(configPath);
+      // Provider configured booleans for all five trusted providers. Keys are
+      // resolved through providerApiKey() so google/openai/xai reuse the voice
+      // key store. Key material itself never leaves the config file.
+      const providers: Record<string, { configured: boolean }> = {};
+      for (const p of TRUSTED_PROVIDERS)
+        providers[p] = { configured: !!providerApiKey(cfg, p) };
       res.json({
         tools: {
           qmd: toolCache.current.qmd,
           markitdown: toolCache.current.markitdown,
           exa: { configured: !!cfg.exaKey },
-          openrouter: { configured: !!cfg.openrouterKey },
-          deepseek: { configured: !!cfg.deepseekKey },
+          // Legacy booleans kept for transition (frontend redesign consumes
+          // `providers` above); mirrored from the same key store.
+          openrouter: providers.openrouter,
+          deepseek: providers.deepseek,
         },
         consents: cfg.consents,
+        webResearch: {
+          provider: cfg.webResearchProvider ?? "exa",
+          explicit: cfg.webResearchProvider !== null,
+          configured:
+            cfg.webResearchProvider && cfg.webResearchProvider !== "exa"
+              ? !!providerApiKey(cfg, cfg.webResearchProvider)
+              : !!cfg.exaKey,
+        },
         defaultModel: cfg.defaultModel,
+        // Safe catalog: provider labels, curated agent models, voice model/
+        // voice choices. No endpoints, no key material, no arbitrary providers.
+        catalog: safeCatalog(integrations?.catalogPath),
+        providers,
         llm: {
           workerProvider: cfg.workerProvider,
           workerModel: cfg.workerModel,
+          workerEffort: cfg.workerEffort,
           thinkerProvider: cfg.thinkerProvider,
           thinkerModel: cfg.thinkerModel,
+          thinkerEffort: cfg.thinkerEffort,
         },
         mcp: { editEnabled: cfg.mcpEditEnabled },
         writeDestination: cfg.writeDestination,
@@ -361,8 +396,9 @@ export function createApp(
           excludes: effectiveExcludes(graph.meta.vaultPath, cfg),
           vaults: cfg.vaults,
           promptDefaults: defaultPrompts(),
-          prompts: effectivePrompts(cfg),
+          prompts: effectivePrompts(cfg, vaultRoot),
           promptOverrides: cfg.prompts,
+          promptFiles: cfg.promptFiles,
         },
         voice: {
           provider: cfg.voice.provider,
@@ -396,9 +432,11 @@ export function createApp(
         activeVaultPath: cfg.activeVaultPath,
         vaults: cfg.vaults,
         promptDefaults: defaultPrompts(),
-        prompts: effectivePrompts(cfg),
+        prompts: effectivePrompts(cfg, vaultRoot),
         promptOverrides: cfg.prompts,
+        promptFiles: cfg.promptFiles,
         exaConfigured: !!cfg.exaKey,
+        webResearchProvider: cfg.webResearchProvider,
       });
     } catch (e) {
       console.error("Config update failed:", e);
@@ -991,8 +1029,11 @@ export function createApp(
     }
   });
 
-  // ---- Web mode: Exa research proxy (U6) ----
+  // ---- Web mode: Exa or provider-hosted search (U6) ----
   const exaResearch = createExaAdapter(integrations?.exa);
+  const hostedWebResearch = createHostedWebResearchAdapter(
+    integrations?.webResearch,
+  );
 
   // POST /api/research: spend-bearing, so token-guarded (KTD12). Rejects
   // without stored Web-mode consent (R18) before any outbound call, and
@@ -1005,13 +1046,21 @@ export function createApp(
           cfg,
           res,
           "Web mode needs your one-time consent first (activate Web mode to review it).",
-        ) ||
-        !requireExaKey(
-          cfg,
-          res,
-          "Add your Exa API key in Tools → Integrations.",
         )
       ) {
+        return;
+      }
+      const provider: WebResearchProvider = cfg.webResearchProvider ?? "exa";
+      const key =
+        provider === "exa" ? cfg.exaKey : providerApiKey(cfg, provider);
+      if (!key) {
+        res.status(400).json({
+          error: "no-web-research-key",
+          message:
+            provider === "exa"
+              ? "Add your Exa API key in Settings → Web Research."
+              : `Add your ${provider} API key in Settings → Intelligence Provider.`,
+        });
         return;
       }
       const query = String(req.body?.query ?? "").trim();
@@ -1027,9 +1076,14 @@ export function createApp(
         openrouter: integrations?.openrouter,
       });
       const displayQuery = String(req.body?.displayQuery ?? "").trim();
-      const r = await exaResearch(cfg.exaKey, contextual.effectiveQuery, {
-        deep: !!req.body?.deep,
-      });
+      const r =
+        provider === "exa"
+          ? await exaResearch(key, contextual.effectiveQuery, {
+              deep: !!req.body?.deep,
+            })
+          : await hostedWebResearch(provider, key, contextual.effectiveQuery, {
+              deep: !!req.body?.deep,
+            });
       const historyId =
         r.results.length || r.answer
           ? saveEntry(dataDir, {
@@ -1052,8 +1106,7 @@ export function createApp(
       console.error("research failed:", e instanceof Error ? e.message : e);
       res.status(502).json({
         error: "research-failed",
-        message:
-          "Exa request failed after retries. Check your key and try again.",
+        message: "Web research failed. Check the selected provider and key.",
       });
     }
   });
@@ -1074,7 +1127,7 @@ export function createApp(
         !requireExaKey(
           cfg,
           res,
-          "Add your Exa API key in Tools → Integrations.",
+          "Add your Exa API key in Settings → Integrations.",
         )
       ) {
         return;
@@ -1862,6 +1915,40 @@ export function createApp(
         cfg.deepseekKey,
         integrations?.deepseek,
       );
+      res.json({ configured: true, ...status });
+    } catch {
+      res.json({ configured: true, ok: false, unreachable: true });
+    }
+  });
+
+  // GET /api/integrations/test/:provider — generic FREE key validation for
+  // any trusted provider (google/openai/xai/openrouter/deepseek). OpenRouter
+  // keeps credit usage via GET /key; the others validate via GET /models and
+  // return configured/ok/unreachable. The legacy /test/openrouter and
+  // /test/deepseek routes above stay for back-compat (same adapter, same shape
+  // minus openrouter's usage/limit which only /key returns).
+  app.get("/api/integrations/test/:provider", async (req, res) => {
+    const provider = String(req.params.provider) as LlmProvider;
+    if (!(TRUSTED_PROVIDERS as readonly string[]).includes(provider)) {
+      res.status(404).json({ error: "unknown-provider" });
+      return;
+    }
+    const cfg = loadConfig(configPath);
+    const key = providerApiKey(cfg, provider);
+    if (!key) {
+      res.json({ configured: false });
+      return;
+    }
+    // Provider-specific fetch injection: openrouter/deepseek options carry
+    // test fakes; google/openai/xai fall through to the real adapter fetch.
+    const opts =
+      provider === "openrouter"
+        ? integrations?.openrouter
+        : provider === "deepseek"
+          ? integrations?.deepseek
+          : {};
+    try {
+      const status = await validateProviderKey(provider, key, opts);
       res.json({ configured: true, ...status });
     } catch {
       res.json({ configured: true, ok: false, unreachable: true });

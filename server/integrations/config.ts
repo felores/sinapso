@@ -18,6 +18,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { confineNoteId } from "./paths.js";
 
 /** Voice assistant: chosen realtime provider + voice, and a per-provider API
  * key (one only reaches the local voice relay, never the browser). */
@@ -36,6 +37,10 @@ export type PromptKey =
   | "webResearch";
 
 export type PromptOverrides = Record<PromptKey, string | null>;
+export type PromptFiles = Record<
+  PromptKey,
+  { path: string | null; enabled: boolean }
+>;
 
 export interface WikiConfig {
   id: string;
@@ -58,12 +63,75 @@ export interface VaultConfig {
   wikis: WikiConfig[];
 }
 
-export type LlmProviderId = "openrouter" | "deepseek";
+export type LlmProviderId =
+  | "google"
+  | "openai"
+  | "xai"
+  | "openrouter"
+  | "deepseek";
+
+export type WebResearchProvider = "exa" | "google" | "openai" | "xai";
+
+/** Reasoning-effort ladder (R1 redesign). Null = provider default / unsupported. */
+export type LlmEffort = "low" | "medium" | "high" | null;
+
+const TRUSTED_PROVIDERS = [
+  "google",
+  "openai",
+  "xai",
+  "openrouter",
+  "deepseek",
+] as const;
+const EFFORTS = ["low", "medium", "high"] as const;
+const WEB_RESEARCH_PROVIDERS = ["exa", "google", "openai", "xai"] as const;
+
+function isProviderId(v: unknown): v is LlmProviderId {
+  return (
+    typeof v === "string" &&
+    (TRUSTED_PROVIDERS as readonly string[]).includes(v)
+  );
+}
+
+function isWebResearchProvider(v: unknown): v is WebResearchProvider {
+  return (
+    typeof v === "string" &&
+    (WEB_RESEARCH_PROVIDERS as readonly string[]).includes(v)
+  );
+}
+
+function sanitizeEffort(v: unknown): LlmEffort {
+  if (v === "low" || v === "medium" || v === "high") return v;
+  return null;
+}
+
+/**
+ * Map a trusted provider id to its stored key. Reuses the existing persisted
+ * fields (openrouterKey, deepseekKey, voice.keys.{gemini,openai,xai}) rather
+ * than migrating secrets. Returns null when no key is stored.
+ */
+export function providerApiKey(
+  cfg: Pick<SinapsoConfig, "openrouterKey" | "deepseekKey" | "voice">,
+  provider: LlmProviderId,
+): string | null {
+  switch (provider) {
+    case "openrouter":
+      return cfg.openrouterKey;
+    case "deepseek":
+      return cfg.deepseekKey;
+    case "google":
+      return cfg.voice.keys.gemini;
+    case "openai":
+      return cfg.voice.keys.openai;
+    case "xai":
+      return cfg.voice.keys.xai;
+  }
+}
 
 export interface SinapsoConfig {
   /** Internal one-time guard after importing ~/.solaris/config.json. */
   legacyConfigMigrated: boolean;
   exaKey: string | null;
+  webResearchProvider: WebResearchProvider | null;
   openrouterKey: string | null;
   deepseekKey: string | null;
   consents: { web: boolean };
@@ -74,6 +142,10 @@ export interface SinapsoConfig {
   workerModel: string | null;
   thinkerProvider: LlmProviderId | null;
   thinkerModel: string | null;
+  /** Reasoning effort per tier (R1 redesign). UI calls these fast/reasoning;
+   *  internal names stay worker/thinker for back-compat. Null = provider default. */
+  workerEffort: LlmEffort;
+  thinkerEffort: LlmEffort;
   /** Allow in-place note editing over MCP (off by default, R15/AE6). */
   mcpEditEnabled: boolean;
   /** Vault-relative destination folder for created notes (R12). */
@@ -89,10 +161,13 @@ export interface SinapsoConfig {
   vaults: Record<string, VaultConfig>;
   /** User prompt overrides. Null means use the built-in default. */
   prompts: PromptOverrides;
+  /** Optional vault-relative Markdown source for each prompt. */
+  promptFiles: PromptFiles;
 }
 
 export interface ConfigPatch {
   exaKey?: string | null;
+  webResearchProvider?: WebResearchProvider | null;
   openrouterKey?: string | null;
   deepseekKey?: string | null;
   consents?: Partial<SinapsoConfig["consents"]>;
@@ -101,6 +176,8 @@ export interface ConfigPatch {
   workerModel?: string | null;
   thinkerProvider?: LlmProviderId | null;
   thinkerModel?: string | null;
+  workerEffort?: LlmEffort;
+  thinkerEffort?: LlmEffort;
   mcpEditEnabled?: boolean;
   writeDestination?: string;
   archiveDestination?: string;
@@ -115,6 +192,7 @@ export interface ConfigPatch {
   activeVaultPath?: string | null;
   vaults?: Record<string, unknown>;
   prompts?: Partial<PromptOverrides>;
+  promptFiles?: Partial<PromptFiles>;
 }
 
 const PROMPT_DEFAULTS: Record<PromptKey, string> = {
@@ -132,22 +210,48 @@ export function defaultPrompts(): Record<PromptKey, string> {
   return { ...PROMPT_DEFAULTS };
 }
 
+function defaultPromptFiles(): PromptFiles {
+  return {
+    wikiIngest: { path: null, enabled: false },
+    noteQuestions: { path: null, enabled: false },
+    voiceAssistant: { path: null, enabled: false },
+    webResearch: { path: null, enabled: false },
+  };
+}
+
 export function effectivePrompts(
-  cfg: Pick<SinapsoConfig, "prompts">,
+  cfg: Pick<SinapsoConfig, "prompts"> &
+    Partial<Pick<SinapsoConfig, "promptFiles" | "activeVaultPath">>,
+  vaultRoot = cfg.activeVaultPath ?? "",
 ): Record<PromptKey, string> {
   const defaults = defaultPrompts();
-  return {
+  const prompts: Record<PromptKey, string> = {
     wikiIngest: cfg.prompts.wikiIngest ?? defaults.wikiIngest,
     noteQuestions: cfg.prompts.noteQuestions ?? defaults.noteQuestions,
     voiceAssistant: cfg.prompts.voiceAssistant ?? defaults.voiceAssistant,
     webResearch: cfg.prompts.webResearch ?? defaults.webResearch,
   };
+  if (!vaultRoot) return prompts;
+  for (const key of Object.keys(prompts) as PromptKey[]) {
+    const source = cfg.promptFiles?.[key];
+    if (!source?.enabled || !source.path) continue;
+    const file = confineNoteId(vaultRoot, source.path);
+    if (!file || !existsSync(file)) continue;
+    try {
+      const content = readFileSync(file, "utf-8").trim();
+      if (content) prompts[key] = content;
+    } catch {
+      // Keep the inline/default prompt when the optional file cannot be read.
+    }
+  }
+  return prompts;
 }
 
 export function defaultConfig(): SinapsoConfig {
   return {
     legacyConfigMigrated: false,
     exaKey: null,
+    webResearchProvider: null,
     openrouterKey: null,
     deepseekKey: null,
     consents: { web: false },
@@ -156,6 +260,8 @@ export function defaultConfig(): SinapsoConfig {
     workerModel: null,
     thinkerProvider: null,
     thinkerModel: null,
+    workerEffort: null,
+    thinkerEffort: null,
     mcpEditEnabled: false,
     writeDestination: "inbox",
     archiveDestination: "archive",
@@ -175,6 +281,7 @@ export function defaultConfig(): SinapsoConfig {
       voiceAssistant: null,
       webResearch: null,
     },
+    promptFiles: defaultPromptFiles(),
   };
 }
 
@@ -195,12 +302,23 @@ function merge(base: SinapsoConfig, patch: unknown): SinapsoConfig {
     voice: { ...base.voice, keys: { ...base.voice.keys } },
     vaults: { ...base.vaults },
     prompts: { ...base.prompts },
+    promptFiles: Object.fromEntries(
+      Object.entries(base.promptFiles).map(([key, value]) => [
+        key,
+        { ...value },
+      ]),
+    ) as PromptFiles,
   };
   if (typeof patch !== "object" || patch === null) return out;
   const p = patch as Record<string, unknown>;
   if (typeof p.legacyConfigMigrated === "boolean")
     out.legacyConfigMigrated = p.legacyConfigMigrated;
   if (typeof p.exaKey === "string" || p.exaKey === null) out.exaKey = p.exaKey;
+  if (
+    isWebResearchProvider(p.webResearchProvider) ||
+    p.webResearchProvider === null
+  )
+    out.webResearchProvider = p.webResearchProvider;
   if (typeof p.openrouterKey === "string" || p.openrouterKey === null)
     out.openrouterKey = p.openrouterKey;
   if (typeof p.consents === "object" && p.consents !== null) {
@@ -214,11 +332,14 @@ function merge(base: SinapsoConfig, patch: unknown): SinapsoConfig {
   // Slot fields merge individually: setting one never clears another.
   for (const k of ["workerProvider", "thinkerProvider"] as const) {
     const v = p[k];
-    if (v === "openrouter" || v === "deepseek" || v === null) out[k] = v;
+    if (isProviderId(v) || v === null) out[k] = v;
   }
   for (const k of ["workerModel", "thinkerModel"] as const) {
     const v = p[k];
     if (typeof v === "string" || v === null) out[k] = v ? v : null;
+  }
+  for (const k of ["workerEffort", "thinkerEffort"] as const) {
+    if (k in p) out[k] = sanitizeEffort((p as Record<string, unknown>)[k]);
   }
   if (typeof p.mcpEditEnabled === "boolean")
     out.mcpEditEnabled = p.mcpEditEnabled;
@@ -267,6 +388,21 @@ function merge(base: SinapsoConfig, patch: unknown): SinapsoConfig {
       const v = prompts[k];
       if (v === null) out.prompts[k] = null;
       else if (typeof v === "string") out.prompts[k] = v.trim() ? v : null;
+    }
+  }
+  if (typeof p.promptFiles === "object" && p.promptFiles !== null) {
+    const files = p.promptFiles as Record<string, unknown>;
+    for (const key of Object.keys(out.promptFiles) as PromptKey[]) {
+      const value = files[key];
+      if (typeof value !== "object" || value === null) continue;
+      const source = value as Record<string, unknown>;
+      out.promptFiles[key] = {
+        path:
+          typeof source.path === "string" && source.path.trim()
+            ? source.path.trim()
+            : null,
+        enabled: source.enabled === true,
+      };
     }
   }
   return out;
@@ -365,6 +501,12 @@ function withLegacyFallback(current: SinapsoConfig, legacy: SinapsoConfig) {
     voice: { ...current.voice, keys: { ...current.voice.keys } },
     vaults: { ...current.vaults },
     prompts: { ...current.prompts },
+    promptFiles: Object.fromEntries(
+      Object.entries(current.promptFiles).map(([key, value]) => [
+        key,
+        { ...value },
+      ]),
+    ) as PromptFiles,
     legacyConfigMigrated: true,
   };
 
@@ -376,6 +518,8 @@ function withLegacyFallback(current: SinapsoConfig, legacy: SinapsoConfig) {
   out.workerModel ??= legacy.workerModel;
   out.thinkerProvider ??= legacy.thinkerProvider;
   out.thinkerModel ??= legacy.thinkerModel;
+  out.workerEffort ??= legacy.workerEffort;
+  out.thinkerEffort ??= legacy.thinkerEffort;
   out.consents.web = current.consents.web || legacy.consents.web;
   out.mcpEditEnabled = current.mcpEditEnabled || legacy.mcpEditEnabled;
   if (current.writeDestination === defaults.writeDestination)

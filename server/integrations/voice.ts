@@ -67,6 +67,25 @@ export function geminiToolDeclarations(model: string): FunctionDeclaration[] {
 }
 const OPENAI_REALTIME_MODEL = "gpt-realtime-2.1";
 const XAI_REALTIME_MODEL = "grok-voice-latest";
+/** Selectable realtime models per provider. When `cfg.voice.model` matches one
+ *  of these it is honored; otherwise the provider default is used. Gemini has
+ *  its own selection logic (geminiLiveModel). Kept in sync with the catalog. */
+const OPENAI_REALTIME_MODELS = ["gpt-realtime-2.1"] as const;
+const XAI_VOICE_MODELS = ["grok-voice-latest"] as const;
+
+/** Resolve the realtime model for OpenAI/xAI: honor a catalog-selected model
+ *  when set, else fall back to the provider default. */
+function realtimeModel(
+  provider: Exclude<VoiceProvider, "gemini">,
+  cfg: SinapsoConfig,
+): string {
+  const m = cfg.voice.model;
+  if (provider === "openai" && m && OPENAI_REALTIME_MODELS.includes(m as never))
+    return m;
+  if (provider === "xai" && m && XAI_VOICE_MODELS.includes(m as never))
+    return m;
+  return provider === "openai" ? OPENAI_REALTIME_MODEL : XAI_REALTIME_MODEL;
+}
 
 const PROVIDER_VOICES = {
   gemini: [
@@ -473,7 +492,7 @@ async function bridgeGemini(
   if (!key) {
     send({
       type: "error",
-      message: "no Gemini API key configured (Tools → Voice Assistant)",
+      message: "no Gemini API key configured (Settings → Voice Assistant)",
     });
     browser.close();
     return;
@@ -623,15 +642,14 @@ function bridgeRealtime(
   if (!key) {
     send({
       type: "error",
-      message: `no ${provider === "openai" ? "OpenAI" : "xAI"} API key configured (Tools → Voice Assistant)`,
+      message: `no ${provider === "openai" ? "OpenAI" : "xAI"} API key configured (Settings → Voice Assistant)`,
     });
     browser.close();
     return;
   }
 
   const voice = voiceNameForProvider(provider, cfg.voice.voice);
-  const model =
-    provider === "openai" ? OPENAI_REALTIME_MODEL : XAI_REALTIME_MODEL;
+  const model = realtimeModel(provider, cfg);
   const url =
     provider === "openai"
       ? `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`
