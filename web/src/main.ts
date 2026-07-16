@@ -5665,7 +5665,7 @@ async function boot() {
     //  - left panel crossing center: menu+search snap to a right-side column,
     //    stacked (menu row 1, search row 2, right-aligned) (.slot-right .stacked).
     //  - both panels open and balanced: centered cluster (.slot-center).
-    //  - center gap too small for either: vertical rail (.topbar-rail).
+    //  - center gap too small for either: compact bottom bar (.topbar-rail).
     const PAD = 18,
       GAP = 18;
     const vw = window.innerWidth;
@@ -5719,13 +5719,18 @@ async function boot() {
         : vw - natLeft - natRight < chromeW + 2 * PAD;
     // Rail offset: a docked right panel shrinks by the rail width (CSS subtracts
     // --rail-w from --dock-w), and the corner buttons clear panel + rail.
+    topbar.classList.toggle("topbar-rail", rail);
+    topbar.classList.remove("topbar-bottom-rail");
+    const compactSearch = $("#compact-search");
     const bottomRail =
-      rail && (vw < 482 || window.matchMedia("(pointer: coarse)").matches);
-    const railW = rail && !bottomRail ? 40 : 0;
-    root.style.setProperty("--rail-w", `${railW}px`);
-    root.style.setProperty("--mobile-search-h", `${rail ? 64 : 0}px`);
-    root.style.setProperty("--mobile-nav-h", `${bottomRail ? 48 : 0}px`);
-    root.style.setProperty("--btn-right-inset", `${rightPanelW + railW}px`);
+      rail && compactSearch.scrollWidth > compactSearch.clientWidth + 1;
+    root.style.setProperty("--rail-w", "0px");
+    root.style.setProperty(
+      "--mobile-search-h",
+      `${rail ? (bottomRail ? 44 : 52) : 0}px`,
+    );
+    root.style.setProperty("--mobile-nav-h", `${bottomRail ? 44 : 0}px`);
+    root.style.setProperty("--btn-right-inset", `${rightPanelW}px`);
     // Search slides with the right panel's left edge (--right-inset).
     topbar.style.setProperty("--right-inset", `${rightPanelW}px`);
     // Search collides with the menu (in its column) → wraps to row 2, aligned

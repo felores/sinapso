@@ -1120,8 +1120,8 @@ body > :not(#graph) {
    (left panel dominates), or left (right panel dominates). When the slot is
    too narrow for both side-by-side, .stacked drops the search to a second row
    below the menu (the side slot aligns the stack to that side). When even the
-   wider of the two won't fit, .topbar-rail hides the horizontal chrome and
-   shows the right-edge rail. */
+   wider of the two won't fit, .topbar-rail moves the chrome into one bottom
+   bar. */
 #search-wrap {
   position: relative;
   pointer-events: auto;
@@ -1172,30 +1172,13 @@ body > :not(#graph) {
   min-width: 0;
 }
 
-/* ---- RAIL state: vertical icon rail on the right edge, shown when #topbar has
-   .topbar-rail (center gap < wider of menu/search). Rail icons proxy-drive the
-   existing menubar menus and panel reopen buttons. The rail OVERLAYS panels
-   (topbar z-index 25 > panels 20) — it does not displace them. ---- */
+/* ---- Compact state: search and navigation share one real grid. At phone
+   width the controls stay above and the search occupies a second row. ---- */
 #topbar-rail {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 40px;
   display: none;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  padding: 10px 0;
-  background: var(--panel);
-  backdrop-filter: blur(8px);
-  border-left: 1px solid var(--border);
-  z-index: 25;
-  pointer-events: auto;
 }
-#topbar.topbar-rail ~ #topbar-rail {
-  display: flex;
-  bottom: var(--mobile-search-h, 0px);
+#topbar.topbar-rail #topbar-rail {
+  display: contents;
 }
 /* Hide the horizontal chrome but keep it in the render tree (visibility, not
     display) so menu dropdowns and the search handler still work from the rail. */
@@ -1203,22 +1186,22 @@ body > :not(#graph) {
   visibility: hidden;
   pointer-events: none;
 }
-/* Open menu dropdowns escape the hidden #nav-group and anchor beside the rail. */
+/* Open menu dropdowns escape the hidden #nav-group and anchor above the bar. */
 #topbar.topbar-rail .menu.open > .dropdown {
   visibility: visible;
   position: fixed;
-  right: calc(var(--rail-w, 40px) + 8px);
-  top: 12px;
-}
-#topbar.topbar-bottom-rail .menu.open > .dropdown {
   left: 8px;
   right: auto;
   top: auto;
-  bottom: calc(var(--mobile-search-h, 64px) + var(--mobile-nav-h, 48px) + 8px);
+  bottom: calc(var(--mobile-search-h, 52px) + 8px);
+  max-height: calc(100vh - var(--mobile-search-h, 52px) - 16px);
+}
+#topbar.topbar-bottom-rail .menu.open > .dropdown {
+  bottom: calc(var(--mobile-search-h, 52px) + var(--mobile-nav-h, 44px) + 8px);
   max-height: calc(
     100vh -
-    var(--mobile-search-h, 64px) -
-    var(--mobile-nav-h, 48px) -
+    var(--mobile-search-h, 52px) -
+    var(--mobile-nav-h, 44px) -
     16px
   );
 }
@@ -1236,17 +1219,34 @@ body > :not(#graph) {
   background: var(--panel);
   backdrop-filter: blur(8px);
   border-top: 1px solid var(--border);
-  min-height: var(--mobile-search-h, 64px);
-  padding: 10px 12px;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 38px 1px minmax(0, 1fr) repeat(4, 38px) 1px 38px 30px;
+  align-items: center;
+  min-height: var(--mobile-search-h, 52px);
+  padding: 6px 8px;
+  gap: 4px;
   z-index: 26;
 }
-#topbar.topbar-rail:not(.topbar-bottom-rail) #search-wrap {
-  padding-right: calc(var(--rail-w, 0px) + 12px);
-}
 #topbar.topbar-bottom-rail #search-wrap {
-  right: 0;
-  bottom: var(--mobile-nav-h, 48px);
+  grid-template-columns: 38px 1px minmax(0, 1fr) repeat(4, 38px) 1px 38px 30px;
+  grid-template-rows: var(--mobile-nav-h, 44px) var(--mobile-search-h, 52px);
+  min-height: calc(var(--mobile-nav-h, 44px) + var(--mobile-search-h, 52px));
+  padding: 0 8px;
+}
+#compact-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  position: relative;
+}
+#topbar.topbar-rail #compact-search {
+  grid-column: 3;
+  grid-row: 1;
+}
+#topbar.topbar-bottom-rail #compact-search {
+  grid-column: 1 / -1;
+  grid-row: 2;
 }
 #topbar.topbar-bottom-rail #modes {
   gap: 4px;
@@ -1261,9 +1261,12 @@ body > :not(#graph) {
   flex: 1;
   min-width: 84px;
   width: auto;
-  height: 40px;
+  height: 34px;
   padding: 0 14px;
   font-size: 16px;
+}
+#topbar.topbar-rail:not(.topbar-bottom-rail) #search {
+  min-width: 220px;
 }
 #topbar.topbar-rail #search-results,
 #topbar.topbar-rail.search-open #search-results {
@@ -1278,9 +1281,8 @@ body > :not(#graph) {
   z-index: 26;
 }
 #topbar-rail .rail-logo {
-  width: 28px;
-  height: 28px;
-  margin-bottom: 8px;
+  width: 30px;
+  height: 30px;
   background-image: url("/sinapso-logo-v1.svg");
   background-size: contain;
   background-repeat: no-repeat;
@@ -1300,8 +1302,8 @@ body > :not(#graph) {
   border-radius: 9px;
 }
 #topbar-rail .rail-icon svg {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
 }
 :root[data-theme="manuscript"] #topbar-rail .rail-logo,
 :root[data-theme="notebook"] #topbar-rail .rail-logo {
@@ -1312,64 +1314,53 @@ body > :not(#graph) {
   color: var(--text);
 }
 #topbar-rail .rail-spacer {
-  flex: 1;
+  display: none;
 }
 #topbar-rail .rail-divider {
-  width: 22px;
-  height: 1px;
+  width: 1px;
+  height: 28px;
   background: var(--border);
   margin: 2px 0;
   opacity: 0.7;
 }
-#topbar.topbar-bottom-rail ~ #topbar-rail {
-  top: auto;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: auto;
-  height: var(--mobile-nav-h, 48px);
-  display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) repeat(6, 38px);
-  justify-content: stretch;
-  padding: 4px 8px;
-  border-left: 0;
-  border-top: 1px solid var(--border);
-}
-#topbar.topbar-bottom-rail ~ #topbar-rail [data-rail="reopen-content"] {
+#topbar.topbar-rail #topbar-rail [data-rail="reopen-content"] {
   grid-column: 1;
   grid-row: 1;
   justify-self: start;
 }
-#topbar.topbar-bottom-rail ~ #topbar-rail [data-idx="0"] {
-  grid-column: 3;
+#topbar.topbar-rail #topbar-rail [data-idx="0"] {
+  grid-column: 7;
   grid-row: 1;
 }
-#topbar.topbar-bottom-rail ~ #topbar-rail [data-idx="1"] {
-  grid-column: 4;
-  grid-row: 1;
-}
-#topbar.topbar-bottom-rail ~ #topbar-rail [data-idx="2"] {
-  grid-column: 5;
-  grid-row: 1;
-}
-#topbar.topbar-bottom-rail ~ #topbar-rail [data-idx="3"] {
+#topbar.topbar-rail #topbar-rail [data-idx="1"] {
   grid-column: 6;
   grid-row: 1;
 }
-#topbar.topbar-bottom-rail ~ #topbar-rail [data-rail="reopen-research"] {
-  grid-column: 7;
+#topbar.topbar-rail #topbar-rail [data-idx="2"] {
+  grid-column: 5;
+  grid-row: 1;
+}
+#topbar.topbar-rail #topbar-rail [data-idx="3"] {
+  grid-column: 4;
+  grid-row: 1;
+}
+#topbar.topbar-rail #topbar-rail [data-rail="reopen-research"] {
+  grid-column: 9;
   grid-row: 1;
   justify-self: end;
 }
-#topbar.topbar-bottom-rail ~ #topbar-rail .rail-logo {
+#topbar.topbar-rail #topbar-rail .rail-logo {
+  grid-column: 10;
+  grid-row: 1;
+  justify-self: end;
+}
+#topbar.topbar-rail #topbar-rail .rail-divider-left {
+  grid-column: 2;
+  grid-row: 1;
+}
+#topbar.topbar-rail #topbar-rail .rail-divider-right {
   grid-column: 8;
   grid-row: 1;
-  justify-self: end;
-  margin-bottom: 0;
-}
-#topbar.topbar-bottom-rail ~ #topbar-rail .rail-spacer,
-#topbar.topbar-bottom-rail ~ #topbar-rail .rail-divider {
-  display: none;
 }
 /* In rail mode the bottom corner stacks move into the rail (proxies above
     drive them); hide the originals at the bottom of the screen. */
@@ -2902,16 +2893,13 @@ body > :not(#graph) {
   right: 44px;
 } /* clear the voice button on the wrap's right */
 #topbar.topbar-rail #ingest-browse {
-  right: 64px;
+  right: 52px;
   height: 32px;
 }
 #topbar.topbar-bottom-rail #ingest-browse {
-  right: 58px;
+  right: 46px;
   width: 72px;
   padding: 0 8px;
-}
-#topbar.topbar-rail:not(.topbar-bottom-rail) #ingest-browse {
-  right: calc(var(--rail-w, 0px) + 64px);
 }
 #topbar.topbar-rail #search.with-browse {
   padding-right: 80px;
@@ -2940,15 +2928,11 @@ body > :not(#graph) {
 }
 #topbar.topbar-rail #web-scope,
 #topbar.topbar-rail #vault-scope {
-  right: 64px;
+  right: 52px;
 }
 #topbar.topbar-bottom-rail #web-scope,
 #topbar.topbar-bottom-rail #vault-scope {
-  right: 58px;
-}
-#topbar.topbar-rail:not(.topbar-bottom-rail) #web-scope,
-#topbar.topbar-rail:not(.topbar-bottom-rail) #vault-scope {
-  right: calc(var(--rail-w, 0px) + 64px);
+  right: 46px;
 }
 #web-scope.hidden,
 #vault-scope.hidden {
