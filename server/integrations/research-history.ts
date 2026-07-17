@@ -50,6 +50,59 @@ export interface ResearchHistoryEntry {
   };
 }
 
+function compactMarkdown(markdown: string): string {
+  return (
+    markdown
+      .replace(/\r\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim() + "\n"
+  );
+}
+
+function stripLeadingTitle(content: string, title: string): string {
+  const t = title.trim().toLowerCase();
+  if (!t) return content;
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === "") i++;
+  if (
+    i < lines.length &&
+    lines[i]
+      .replace(/^#{1,6}\s+/, "")
+      .trim()
+      .toLowerCase() === t
+  ) {
+    return lines
+      .slice(i + 1)
+      .join("\n")
+      .replace(/^\n+/, "");
+  }
+  return content;
+}
+
+function link(title: string, url: string): string {
+  return `[${(title || url).replace(/[\[\]\n]/g, " ").trim()}](${url})`;
+}
+
+function webResultsMarkdown(results: unknown[]): string[] {
+  return results.flatMap((row) => {
+    const r = row as Record<string, unknown>;
+    const title = typeof r.title === "string" ? r.title.trim() : "";
+    const url = typeof r.url === "string" ? r.url.trim() : "";
+    const snippet = typeof r.snippet === "string" ? r.snippet.trim() : "";
+    const publishedDate =
+      typeof r.publishedDate === "string" ? r.publishedDate.slice(0, 10) : "";
+    if (!title && !url && !snippet) return [];
+    return [
+      `### ${url ? link(title || url, url) : title || "Untitled result"}`,
+      ...(publishedDate ? [`Published: ${publishedDate}`] : []),
+      "",
+      snippet,
+      "",
+    ];
+  });
+}
+
 /** Turn persisted curatable research into the common ingestion envelope. */
 export function convertedFromResearchEntry(
   entry: ResearchHistoryEntry,
@@ -59,7 +112,7 @@ export function convertedFromResearchEntry(
       source: `sinapso:research:${entry.id}`,
       sourceLabel: `Sinapso working document: ${entry.document.title}`,
       title: entry.document.title,
-      markdown: entry.document.content,
+      markdown: compactMarkdown(entry.document.content),
       via: "sinapso-working-document",
     };
   }
@@ -71,40 +124,50 @@ export function convertedFromResearchEntry(
         ? `${article.url} (by ${article.author})`
         : article.url,
       title: article.title || entry.query,
-      markdown: [
-        `# ${article.title || entry.query}`,
-        "",
-        `Source: [${article.url}](${article.url})`,
-        ...(article.author ? [`Author: ${article.author}`] : []),
-        ...(article.publishedDate
-          ? [`Published: ${article.publishedDate}`]
-          : []),
-        "",
-        article.content,
-        "",
-      ].join("\n"),
+      markdown: compactMarkdown(
+        [
+          `# ${article.title || entry.query}`,
+          "",
+          `Source: [${article.url}](${article.url})`,
+          ...(article.author ? [`Author: ${article.author}`] : []),
+          ...(article.publishedDate
+            ? [`Published: ${article.publishedDate}`]
+            : []),
+          "",
+          stripLeadingTitle(article.content, article.title || entry.query),
+          "",
+        ].join("\n"),
+      ),
       via: "sinapso-web-article",
     };
   }
   if (entry.mode === "web" && entry.answer?.content) {
-    const citations = entry.answer.citations
-      .map(
-        (citation) => `- [${citation.title || citation.url}](${citation.url})`,
-      )
-      .join("\n");
+    const citations = entry.answer.citations.map(
+      (citation, i) => `${i + 1}. ${link(citation.title, citation.url)}`,
+    );
     return {
       source: `sinapso:research:${entry.id}`,
       sourceLabel: `Sinapso web research: ${entry.query}`,
       title: entry.query,
-      markdown: [
-        `# ${entry.query}`,
-        "",
-        "## Answer",
-        "",
-        entry.answer.content,
-        ...(citations ? ["", "## Sources", "", citations] : []),
-        "",
-      ].join("\n"),
+      markdown: compactMarkdown(
+        [
+          `# ${entry.query}`,
+          "",
+          "## Synthesis",
+          "",
+          entry.answer.content,
+          ...(citations.length ? ["", "## Sources", "", ...citations] : []),
+          ...(entry.results?.length
+            ? [
+                "",
+                "## Result excerpts",
+                "",
+                ...webResultsMarkdown(entry.results),
+              ]
+            : []),
+          "",
+        ].join("\n"),
+      ),
       via: "sinapso-web-research",
     };
   }

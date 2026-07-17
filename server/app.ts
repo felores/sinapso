@@ -83,10 +83,12 @@ import {
 import {
   gitFileAtCommit,
   gitFileHistory,
+  gitInitLocalVersioning,
   gitStageAndCommit,
   gitStatus,
   gitSync,
   gitTopLevel,
+  gitUnavailableStatus,
 } from "./integrations/git.js";
 import {
   clearEntries,
@@ -2300,7 +2302,7 @@ export function createApp(
     try {
       const ctx = await gitContextForVault();
       if (!ctx.available) {
-        res.json({ available: false });
+        res.json(await gitUnavailableStatus(realRunner));
         return;
       }
       res.json({
@@ -2311,6 +2313,20 @@ export function createApp(
       writeFail(res, e, "git status");
     }
   });
+
+  app.post(
+    "/api/git/init",
+    guarded,
+    express.json({ limit: "1kb" }),
+    async (_req, res) => {
+      try {
+        const result = await gitInitLocalVersioning(realRunner, vaultRoot);
+        res.status(result.ok ? 200 : 400).json(result);
+      } catch (e) {
+        writeFail(res, e, "git init");
+      }
+    },
+  );
 
   app.post(
     "/api/git/commit",

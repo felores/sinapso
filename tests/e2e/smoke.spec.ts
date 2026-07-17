@@ -93,6 +93,106 @@ test("keeps local tools in Tools and opens providers in Settings", async ({
   }
 });
 
+test("mobile rail exposes menus and panels above the bottom bar", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(() => localStorage.setItem("sinapso-lang", "es"));
+    await page.goto("/");
+
+    const topbar = page.locator("#topbar");
+    await expect(topbar).toHaveClass(/topbar-rail/);
+    await topbar.evaluate((el) => el.classList.add("menu-center"));
+    const rail = page.locator("#topbar-rail");
+    await expect(rail.locator(".rail-icon")).toHaveCount(10);
+
+    const config = rail.locator('[data-target="config-btn"]');
+    await config.hover();
+    await expect(page.locator("#tooltip")).toHaveText("Configuración");
+
+    const barTop = await page
+      .locator("#search-wrap")
+      .evaluate((el) => el.getBoundingClientRect().top);
+    for (const button of await rail.locator('[data-rail="menu"]').all()) {
+      await button.click();
+      const idx = await button.getAttribute("data-idx");
+      const dropdown = page
+        .locator(".menu")
+        .nth(Number(idx))
+        .locator(".dropdown");
+      await expect(dropdown).toBeVisible();
+      expect(
+        await dropdown.evaluate((el) => el.getBoundingClientRect().bottom),
+      ).toBeLessThanOrEqual(barTop);
+      const [buttonBox, dropdownBox] = await Promise.all([
+        button.boundingBox(),
+        dropdown.boundingBox(),
+      ]);
+      expect(buttonBox).not.toBeNull();
+      expect(dropdownBox).not.toBeNull();
+      const expectedLeft = Math.max(
+        8,
+        Math.min(
+          buttonBox!.x + buttonBox!.width / 2 - dropdownBox!.width / 2,
+          390 - dropdownBox!.width - 8,
+        ),
+      );
+      expect(Math.abs(dropdownBox!.x - expectedLeft)).toBeLessThanOrEqual(2);
+      expect(
+        await dropdown.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return (
+            document
+              .elementFromPoint(r.left + 8, r.top + 8)
+              ?.closest(".dropdown") === el
+          );
+        }),
+      ).toBe(true);
+    }
+
+    await rail.locator('[data-idx="2"]').click();
+    await page.locator("#mi-filters").click();
+    await expect(page.locator("#filters")).toBeVisible();
+    expect(
+      await page
+        .locator("#filters")
+        .evaluate((el) => el.getBoundingClientRect().bottom),
+    ).toBeLessThanOrEqual(barTop);
+    expect(
+      await page.locator("#filters").evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return (
+          document
+            .elementFromPoint(r.left + 8, r.top + 8)
+            ?.closest("#filters") === el
+        );
+      }),
+    ).toBe(true);
+
+    await rail.locator('[data-target="settings-btn"]').click();
+    await expect(page.locator("#settings")).toBeVisible();
+    expect(
+      await page
+        .locator("#settings")
+        .evaluate((el) => el.getBoundingClientRect().bottom),
+    ).toBeLessThanOrEqual(barTop);
+    expect(
+      await page.locator("#settings").evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return (
+          document
+            .elementFromPoint(r.right - 8, r.top + 8)
+            ?.closest("#settings") === el
+        );
+      }),
+    ).toBe(true);
+  } finally {
+    await assertCleanBrowser();
+  }
+});
+
 test("opens a node from the URL", async ({ page }) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {

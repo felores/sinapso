@@ -9,6 +9,7 @@ import {
   getEntry,
   deleteEntry,
   clearEntries,
+  convertedFromResearchEntry,
 } from "./research-history";
 
 let DATA: string;
@@ -117,5 +118,59 @@ describe("research history", () => {
     const byId = new Map(listEntries(DATA).map((e) => [e.id, e]));
     expect(byId.get("doc-a")?.document?.content).toBe("one edited");
     expect(byId.get("doc-b")?.document?.content).toBe("two");
+  });
+
+  it("converts web research into complete, readable markdown", () => {
+    const converted = convertedFromResearchEntry({
+      id: "web-1",
+      ts: "2026-01-01T00:00:00.000Z",
+      mode: "web",
+      query: "Market map",
+      answer: {
+        content: "Short synthesis.\n\n\nMore detail.",
+        citations: [
+          { title: "First", url: "https://example.com/1" },
+          { title: "Second", url: "https://example.com/2" },
+        ],
+      },
+      results: [
+        {
+          title: "Result A",
+          url: "https://example.com/a",
+          snippet: "Useful excerpt.",
+          publishedDate: "2026-01-02T12:00:00Z",
+        },
+      ],
+    });
+
+    expect(converted?.markdown).toContain("## Synthesis\n\nShort synthesis.");
+    expect(converted?.markdown).toContain(
+      "1. [First](https://example.com/1)\n2. [Second](https://example.com/2)",
+    );
+    expect(converted?.markdown).toContain(
+      "## Result excerpts\n\n### [Result A](https://example.com/a)",
+    );
+    expect(converted?.markdown).toContain("Published: 2026-01-02");
+    expect(converted?.markdown).not.toContain("\n\n\n");
+  });
+
+  it("converts articles without duplicating the leading title", () => {
+    const converted = convertedFromResearchEntry({
+      id: "article-1",
+      ts: "2026-01-01T00:00:00.000Z",
+      mode: "article",
+      query: "Fallback",
+      article: {
+        title: "Article Title",
+        url: "https://example.com/article",
+        content: "# Article Title\n\nBody.",
+        author: "Author",
+        publishedDate: "2026-01-02T12:00:00Z",
+      },
+    });
+
+    expect(converted?.markdown.match(/^# Article Title/gm)).toHaveLength(1);
+    expect(converted?.markdown).toContain("Author: Author");
+    expect(converted?.markdown).toContain("Body.");
   });
 });

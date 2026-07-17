@@ -11,7 +11,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Runner } from "./detect";
-import { gitStageAndCommit, gitStatus, gitSync } from "./git";
+import {
+  gitInitLocalVersioning,
+  gitStageAndCommit,
+  gitStatus,
+  gitSync,
+  gitUnavailableStatus,
+} from "./git";
 
 const GIT_ENV = {
   ...process.env,
@@ -259,5 +265,44 @@ describe("git adapter", () => {
     expect(result.error).toContain("Sinapso aborted the merge.");
     expect(git(["status", "--porcelain=v1"], f.local)).toBe("");
     expect(readFileSync(join(f.local, "note.md"), "utf-8")).toBe("local\n");
+  });
+});
+
+describe("git local versioning init", () => {
+  const noGit: Runner = async () => ({ ok: false, stdout: "", stderr: "" });
+
+  it("distinguishes missing git from a vault outside a repo", async () => {
+    const root = tempRoot("sinapso-git-status-");
+    expect(await gitUnavailableStatus(run)).toEqual({
+      available: false,
+      gitInstalled: true,
+      reason: "not_a_repo",
+    });
+    expect(await gitUnavailableStatus(noGit)).toEqual({
+      available: false,
+      gitInstalled: false,
+      reason: "git_missing",
+    });
+    expect(await gitInitLocalVersioning(noGit, root)).toEqual({
+      ok: false,
+      error: "Git is not installed.",
+    });
+  });
+
+  it("initializes a repo with an initial commit and refuses a second init", async () => {
+    const root = tempRoot("sinapso-git-init-");
+    writeFileSync(join(root, "note.md"), "# one\n");
+
+    const result = await gitInitLocalVersioning(run, root);
+
+    expect(result.ok).toBe(true);
+    expect(git(["log", "-1", "--pretty=%s"], root)).toBe(
+      "Initial vault snapshot",
+    );
+    expect(git(["status", "--porcelain=v1"], root)).toBe("");
+
+    const again = await gitInitLocalVersioning(run, root);
+    if (again.ok) throw new Error("expected second init to fail");
+    expect(again.error).toContain("already exists");
   });
 });

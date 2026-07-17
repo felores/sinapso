@@ -621,14 +621,16 @@ const readOnlyCompartment = new Compartment();
 /** Tooltips (the selection toolbar) mount on document.body: inside the
  * editor they can fall back to absolute positioning and widen the note's
  * scrollable area (the phantom right gap), and they get clipped by the
- * panel. tooltipSpace confines flipping to the reader panel's box. */
+ * panel. tooltipSpace confines flipping to the owning panel's box. */
 function tooltipHost(): Extension {
   if (typeof document === "undefined") return [];
   return tooltips({
     position: "fixed",
     parent: document.body,
     tooltipSpace: (view) => {
-      const panel = view.dom.closest("#reader")?.getBoundingClientRect();
+      const panel = view.dom
+        .closest("#reader, #research")
+        ?.getBoundingClientRect();
       const win = {
         top: 0,
         left: 0,
@@ -660,7 +662,7 @@ function buildExtensions(opts: NoteEditorOptions): Extension[] {
     blockPreviewField,
     parseSettleWatcher,
     tooltipHost(),
-    selectionToolbar(opts.toolbarExtras),
+    opts.readOnly ? [] : selectionToolbar(opts.toolbarExtras),
     history(),
     drawSelection(),
     EditorView.lineWrapping,

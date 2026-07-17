@@ -25,6 +25,12 @@ export type GitActionResult =
   | { ok: true; output: string }
   | { ok: false; error: string; output?: string };
 
+export interface GitUnavailableStatus {
+  available: false;
+  gitInstalled: boolean;
+  reason: "git_missing" | "not_a_repo";
+}
+
 export interface NoteVersion {
   commit: string;
   committedAt: string;
@@ -53,6 +59,10 @@ function gitMessage(
   fallback: string,
 ): string {
   return (r.stderr || r.stdout || fallback).trim() || fallback;
+}
+
+export async function gitInstalled(run: Runner): Promise<boolean> {
+  return (await run("git", ["--version"], GIT_TIMEOUT_MS)).ok;
 }
 
 function parsePorcelain(stdout: string): GitStatusFile[] {
@@ -128,6 +138,76 @@ export async function gitTopLevel(
   );
   if (!r.ok) return null;
   return r.stdout.trim() || null;
+}
+
+export async function gitUnavailableStatus(
+  run: Runner,
+): Promise<GitUnavailableStatus> {
+  const installed = await gitInstalled(run);
+  return {
+    available: false,
+    gitInstalled: installed,
+    reason: installed ? "not_a_repo" : "git_missing",
+  };
+}
+
+async function ensureGitIdentity(run: Runner, repoRoot: string) {
+  const [name, email] = await Promise.all([
+    git(run, repoRoot, ["config", "user.name"]),
+    git(run, repoRoot, ["config", "user.email"]),
+  ]);
+  if (!name.ok || !name.stdout.trim())
+    await git(run, repoRoot, ["config", "user.name", "Sinapso"]);
+  if (!email.ok || !email.stdout.trim())
+    await git(run, repoRoot, ["config", "user.email", "sinapso@localhost"]);
+}
+
+export async function gitInitLocalVersioning(
+  run: Runner,
+  vaultRoot: string,
+): Promise<GitActionResult> {
+  if (!(await gitInstalled(run)))
+    return { ok: false, error: "Git is not installed." };
+  if (await gitTopLevel(run, vaultRoot))
+    return { ok: false, error: "Git repository already exists." };
+
+  const init = await git(run, vaultRoot, ["init"], GIT_MUTATION_TIMEOUT_MS);
+  if (!init.ok)
+    return { ok: false, error: gitMessage(init, "git init failed") };
+
+  await ensureGitIdentity(run, vaultRoot);
+
+  const add = await git(
+    run,
+    vaultRoot,
+    ["add", "-A", "--", "."],
+    GIT_MUTATION_TIMEOUT_MS,
+  );
+  if (!add.ok) return { ok: false, error: gitMessage(add, "git add failed") };
+
+  const staged = await git(
+    run,
+    vaultRoot,
+    ["diff", "--cached", "--name-only"],
+    GIT_MUTATION_TIMEOUT_MS,
+  );
+  if (!staged.ok)
+    return { ok: false, error: gitMessage(staged, "staged diff failed") };
+  if (!staged.stdout.trim())
+    return { ok: true, output: "Local versioning enabled." };
+
+  const commit = await git(
+    run,
+    vaultRoot,
+    ["commit", "-m", "Initial vault snapshot"],
+    GIT_MUTATION_TIMEOUT_MS,
+  );
+  if (!commit.ok)
+    return { ok: false, error: gitMessage(commit, "git commit failed") };
+  return {
+    ok: true,
+    output: commit.stdout.trim() || "Local versioning enabled.",
+  };
 }
 
 export async function gitFileHistory(

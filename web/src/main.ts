@@ -252,6 +252,28 @@ async function boot() {
     );
   }
 
+  function normRelPath(path: string): string {
+    const out: string[] = [];
+    for (const part of path.replace(/\\/g, "/").split("/")) {
+      if (!part || part === ".") continue;
+      if (part === "..") out.pop();
+      else out.push(part);
+    }
+    return out.join("/");
+  }
+
+  function wikiRawPath(wiki: AdminWikiConfig): string | null {
+    const raw = wiki.rawDestination?.trim();
+    if (!raw) return null;
+    return normRelPath(`${wiki.path}/${raw}`);
+  }
+
+  function isWikiRawSource(id: string, wiki: AdminWikiConfig): boolean {
+    const raw = wikiRawPath(wiki);
+    const clean = normRelPath(id);
+    return !!raw && (clean === raw || clean.startsWith(`${raw}/`));
+  }
+
   function wikiDisplayName(
     wiki: Pick<AdminWikiConfig, "label" | "path">,
   ): string {
@@ -2063,6 +2085,7 @@ async function boot() {
       }
       const editorHost = document.createElement("div");
       editorHost.id = "reader-editor";
+      editorHost.className = "note-editor";
       body.appendChild(editorHost);
       noteEditor = createNoteEditor(editorHost, {
         content: markdown,
@@ -4017,6 +4040,8 @@ async function boot() {
   }
   interface GitStatus {
     available: boolean;
+    gitInstalled?: boolean;
+    reason?: "git_missing" | "not_a_repo";
     branch?: string;
     upstream?: string | null;
     clean?: boolean;
@@ -4212,7 +4237,17 @@ async function boot() {
         ) ||
         (!!el.closest("#topbar-rail") &&
           !!topbar?.classList.contains("topbar-bottom-rail"));
+      const sideRight = !!el.closest("#left-corner-stack") && !above;
+      const sideLeft = !!el.closest("#right-corner-stack") && !above;
       tip.classList.toggle("above", above);
+      tip.classList.toggle("side-right", sideRight);
+      tip.classList.toggle("side-left", sideLeft);
+      if (sideRight || sideLeft) {
+        tip.style.left = `${sideRight ? r.right + 8 : Math.max(8, r.left - tip.offsetWidth - 8)}px`;
+        tip.style.top = `${Math.max(8, Math.min(r.top + r.height / 2 - tip.offsetHeight / 2, innerHeight - tip.offsetHeight - 8))}px`;
+        tip.style.removeProperty("--arrow-dx");
+        return;
+      }
       const half = tip.offsetWidth / 2;
       const cx = r.left + r.width / 2;
       const clamped = Math.max(8 + half, Math.min(cx, innerWidth - 8 - half));
@@ -5523,11 +5558,18 @@ async function boot() {
   let researchHistory: ResearchEntry[] = [];
   let historyIdx = -1; // position in researchHistory (0 = newest); -1 = none
   let currentEntryId: string | null = null; // id of the shown entry (for move/trash)
+  let researchArticleEditor: NoteEditor | null = null;
   let researchDocumentEditor: NoteEditor | null = null;
   let researchDocumentController: ResearchDocumentController | null = null;
   let pinnedResearchEntryId: string | null = null;
 
+  function teardownResearchArticle() {
+    researchArticleEditor?.destroy();
+    researchArticleEditor = null;
+  }
+
   async function teardownResearchDocument(): Promise<boolean> {
+    teardownResearchArticle();
     const controller = researchDocumentController;
     const editor = researchDocumentEditor;
     if (!controller && !editor) return true;
@@ -5816,7 +5858,7 @@ async function boot() {
     const saveInbox = $("#research-save-inbox") as HTMLButtonElement;
     const ingestWiki = $("#research-ingest-wiki") as HTMLButtonElement;
     const wikiTarget = $("#research-wiki-target") as HTMLSelectElement;
-    saveInbox.textContent = i18n.t("research.saveInbox");
+    saveInbox.textContent = i18n.t("research.saveFullInbox");
     ingestWiki.textContent = i18n.t("research.ingestWiki");
 
     async function flushWorkingDocument() {
@@ -6294,7 +6336,8 @@ async function boot() {
 
   // The "article" category: a full-text page fetched from a web result (Exa
   // /contents), living only in the research history until the user saves it as
-  // a note. Content is sanitized (untrusted web HTML) before innerHTML.
+  // a note. It uses the same live-preview surface as notes, read-only because
+  // article edits are only persisted after saving/ingesting.
   function renderArticleInto(
     body: HTMLElement,
     art: ArticleData | undefined,
@@ -6325,11 +6368,13 @@ async function boot() {
     src.insertAdjacentHTML("beforeend", EXT_ICON);
     body.appendChild(src);
 
-    const content = document.createElement("div");
-    content.className = "article-body";
-    body.appendChild(content);
-    void Promise.resolve(marked.parse(cleanContent)).then((html) => {
-      content.innerHTML = DOMPurify.sanitize(html);
+    const editorHost = document.createElement("div");
+    editorHost.className = "article-body note-editor";
+    body.appendChild(editorHost);
+    researchArticleEditor = createNoteEditor(editorHost, {
+      content: cleanContent,
+      onWikiLinkClick: navigateWikiTarget,
+      readOnly: true,
     });
   }
 
@@ -6356,7 +6401,7 @@ async function boot() {
     state.className = "research-document-save-state";
     body.appendChild(state);
     const editorHost = document.createElement("div");
-    editorHost.className = "research-document-editor";
+    editorHost.className = "research-document-editor note-editor";
     body.appendChild(editorHost);
     const preview = document.createElement("div");
     preview.className = "research-document-ai-preview hidden";
@@ -6945,6 +6990,7 @@ async function boot() {
       promptWebConsent();
       return;
     }
+    if (!(await teardownResearchDocument())) return;
     openResearch("article");
     const body = $("#research-body");
     body.innerHTML = `<p class="muted">${i18n.t("research.fetching")}</p>`;
@@ -7038,16 +7084,16 @@ async function boot() {
     actions.className = "wiki-proposal-actions";
     const approve = document.createElement("button");
     approve.className = "web-save";
-    approve.textContent = "approve writes";
+    approve.textContent = i18n.t("wiki.approveWrites");
     const reject = document.createElement("button");
     reject.className = "web-save";
-    reject.textContent = "reject";
+    reject.textContent = i18n.t("wiki.reject");
     reject.addEventListener("click", () => {
-      body.innerHTML = '<p class="muted">rejected — no files written</p>';
+      body.innerHTML = `<p class="muted">${i18n.t("wiki.rejected")}</p>`;
     });
     approve.addEventListener("click", async () => {
       approve.disabled = true;
-      approve.textContent = "applying…";
+      approve.textContent = i18n.t("wiki.applying");
       researchError(null);
       try {
         const data = await api<{ ids?: string[]; error?: string }>(
@@ -7061,15 +7107,18 @@ async function boot() {
             },
           },
         );
-        if (!data.ids?.length) throw new Error(data.error ?? "apply failed");
+        if (!data.ids?.length)
+          throw new Error(data.error ?? i18n.t("wiki.applyFail"));
         const preferred = proposal.operations.findIndex((op) => !op.raw);
         const id = data.ids[preferred >= 0 ? preferred : 0] ?? data.ids[0];
-        body.innerHTML = '<p class="muted">applied — opening the note…</p>';
+        body.innerHTML = `<p class="muted">${i18n.t("wiki.appliedOpening")}</p>`;
         await openAfterIngest(id);
       } catch (e) {
         approve.disabled = false;
-        approve.textContent = "apply failed — retry";
-        researchError(e instanceof Error ? e.message : "apply failed");
+        approve.textContent = i18n.t("wiki.applyFail");
+        researchError(
+          e instanceof Error ? e.message : i18n.t("wiki.applyFail"),
+        );
       }
     });
     actions.append(approve, reject);
@@ -7084,7 +7133,7 @@ async function boot() {
   ) {
     openResearch("ingest");
     const body = $("#research-body");
-    body.innerHTML = '<p class="muted">building wiki proposal…</p>';
+    body.innerHTML = `<p class="muted">${i18n.t("wiki.buildingProposal")}</p>`;
     try {
       const proposal = await api<WikiIngestProposal>(
         "/api/wiki-ingest/propose",
@@ -7106,9 +7155,11 @@ async function boot() {
         const msg = (
           e.body as { message?: string; error?: string } | null | undefined
         )?.message;
-        researchError(msg ?? "ingest failed");
+        researchError(msg ?? i18n.t("wiki.ingestFailed"));
       } else {
-        researchError(e instanceof Error ? e.message : "ingest failed");
+        researchError(
+          e instanceof Error ? e.message : i18n.t("wiki.ingestFailed"),
+        );
       }
     }
   }
@@ -7125,18 +7176,31 @@ async function boot() {
     btn.className = "web-save";
     btn.textContent = i18n.t("ingest.actionWiki");
     btn.disabled = true;
-    actions.append(select, btn);
+    const status = document.createElement("span");
+    status.className = "reader-wiki-status muted hidden";
+    actions.append(select, btn, status);
+
+    const showStatus = (text: string) => {
+      btn.classList.add("hidden");
+      select.classList.add("hidden");
+      status.textContent = text;
+      status.classList.remove("hidden");
+    };
 
     void loadEnabledWikis().then((wikis) => {
       const currentWiki = wikiForId(preview.source);
       if (currentWiki) {
-        btn.disabled = true;
-        btn.textContent = i18n.t("ingest.alreadyWiki");
+        showStatus(
+          i18n.t(
+            isWikiRawSource(preview.source, currentWiki)
+              ? "ingest.rawInWiki"
+              : "ingest.alreadyWiki",
+          ),
+        );
         return;
       }
       if (!wikis.length) {
-        btn.disabled = true;
-        btn.textContent = i18n.t("ingest.noWiki");
+        showStatus(i18n.t("ingest.noWiki"));
         return;
       }
       if (wikis.length > 1) {
@@ -7305,7 +7369,7 @@ async function boot() {
       const preview = await api<IngestPreview>("/api/ingest/preview", {
         json: { source },
       });
-      body.innerHTML = '<p class="muted">saving to Inbox…</p>';
+      body.innerHTML = `<p class="muted">${i18n.t("research.savingInbox")}</p>`;
       await savePreviewToInbox(preview);
     } catch (e) {
       body.innerHTML = "";
@@ -7313,9 +7377,11 @@ async function boot() {
         const msg = (
           e.body as { message?: string; error?: string } | null | undefined
         )?.message;
-        researchError(msg ?? "ingest failed");
+        researchError(msg ?? i18n.t("wiki.ingestFailed"));
       } else {
-        researchError(e instanceof Error ? e.message : "ingest failed");
+        researchError(
+          e instanceof Error ? e.message : i18n.t("wiki.ingestFailed"),
+        );
       }
     }
   }
@@ -7352,11 +7418,13 @@ async function boot() {
           error?: string;
         };
         if (!res.ok) throw new Error(preview.message ?? preview.error);
-        body.innerHTML = '<p class="muted">saving to Inbox…</p>';
+        body.innerHTML = `<p class="muted">${i18n.t("research.savingInbox")}</p>`;
         await savePreviewToInbox(preview);
       } catch (e) {
         body.innerHTML = "";
-        researchError(e instanceof Error ? e.message : "ingest failed");
+        researchError(
+          e instanceof Error ? e.message : i18n.t("wiki.ingestFailed"),
+        );
       }
     },
   );
@@ -7393,10 +7461,10 @@ async function boot() {
     }
     const save = document.createElement("button");
     save.className = "web-save";
-    save.textContent = i18n.t("research.saveResearch");
+    save.textContent = i18n.t("research.saveSynthesisInbox");
     save.addEventListener("click", async () => {
       save.disabled = true;
-      save.textContent = "saving…";
+      save.textContent = i18n.t("research.saving");
       try {
         const originNode = selected && !selected.phantom ? selected : null;
         const origin = originNode
@@ -7423,22 +7491,13 @@ async function boot() {
         const data = await api<{ id: string }>("/api/notes", {
           json: { title: query, content },
         });
-        save.textContent = "saved ✓";
-        // Move-on-save: once curated into the vault, drop it from history.
-        if (currentEntryId) {
-          await apiDelete(
-            `/api/research/history/${encodeURIComponent(currentEntryId)}`,
-          );
-          currentEntryId = null;
-          await loadHistory();
-          updateHistoryNav();
-        }
+        save.textContent = i18n.t("research.saved");
         // Rescan-diff the vault in place (no reload) and fly to the new note —
         // it joins the graph with its resolved [[links]] to the origin note.
         await openAfterIngest(String(data.id));
       } catch {
         save.disabled = false;
-        save.textContent = "save failed — retry";
+        save.textContent = i18n.t("research.saveFail");
       }
     });
     box.appendChild(save);
@@ -7680,11 +7739,28 @@ async function boot() {
         if (!m) return;
         const wasOpen = m.classList.contains("open");
         closeMenus();
-        if (!wasOpen) m.classList.add("open");
+        if (!wasOpen) {
+          m.classList.add("open");
+          const dropdown = m.querySelector<HTMLElement>(".dropdown");
+          if (dropdown) {
+            const buttonRect = btn.getBoundingClientRect();
+            const width = dropdown.getBoundingClientRect().width;
+            const left = Math.max(
+              8,
+              Math.min(
+                buttonRect.left + buttonRect.width / 2 - width / 2,
+                window.innerWidth - width - 8,
+              ),
+            );
+            dropdown.style.left = `${left}px`;
+          }
+        }
       } else if (kind === "reopen-content") {
         $("#reopen-content")?.click();
       } else if (kind === "reopen-research") {
         $("#reopen-research")?.click();
+      } else if (kind === "action") {
+        document.getElementById(btn.dataset.target ?? "")?.click();
       }
     });
   }
@@ -8003,8 +8079,33 @@ async function boot() {
     try {
       const status = await api<GitStatus>("/api/git/status");
       if (!status.available) {
-        box.style.display = "none";
-        box.innerHTML = "";
+        box.style.display = "";
+        const gitMissing = status.reason === "git_missing";
+        box.innerHTML = `
+          <h3>${T("admin.git")}</h3>
+          <p class="muted">${T(gitMissing ? "admin.gitMissing" : "admin.gitNotRepo")}</p>
+          <div class="admin-git-actions">
+            ${
+              gitMissing
+                ? `<a href="https://desktop.github.com/" target="_blank" rel="noreferrer">${T("admin.gitMissingAction")}</a>`
+                : `<button id="admin-git-init" type="button">${T("admin.gitInit")}</button>`
+            }
+          </div>
+          <div id="admin-git-status" class="muted"></div>`;
+        const init =
+          document.querySelector<HTMLButtonElement>("#admin-git-init");
+        init?.addEventListener("click", async () => {
+          init.disabled = true;
+          const opStatus = document.querySelector("#admin-git-status");
+          if (opStatus) opStatus.textContent = T("admin.gitInitializing");
+          try {
+            await api<GitActionResult>("/api/git/init", { method: "POST" });
+            await renderAdminGit(T("admin.gitInitDone"));
+          } catch (e) {
+            if (opStatus) opStatus.textContent = gitErrorText(e);
+            init.disabled = false;
+          }
+        });
         return;
       }
       const files = status.files ?? [];

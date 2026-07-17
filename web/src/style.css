@@ -826,7 +826,8 @@ body > :not(#graph) {
 .admin-git-change.deleted b {
   color: #ff7b72;
 }
-.mi-group .admin-git-actions button {
+.mi-group .admin-git-actions button,
+.mi-group .admin-git-actions a {
   display: inline-flex;
   justify-content: center;
   width: 100%;
@@ -837,11 +838,18 @@ body > :not(#graph) {
   padding: 5px 4px;
   cursor: pointer;
   font-size: 12px;
+  text-decoration: none;
+}
+.admin-git-actions > :only-child {
+  grid-column: 1 / -1;
 }
 .tools-git {
   margin: 6px 4px 2px;
   padding: 8px 6px;
   border-top: 1px solid var(--border);
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .tools-git h3 {
   margin: 0 0 7px;
@@ -852,7 +860,8 @@ body > :not(#graph) {
   border-radius: 999px;
   padding: 2px 8px;
 }
-.mi-group .admin-git-actions button:hover:not(:disabled) {
+.mi-group .admin-git-actions button:hover:not(:disabled),
+.mi-group .admin-git-actions a:hover {
   border-color: var(--accent);
 }
 .mi-group .admin-git-actions button:disabled {
@@ -861,9 +870,19 @@ body > :not(#graph) {
 }
 #admin-git-status {
   margin-top: 6px;
+  max-width: 100%;
+  max-height: 72px;
+  overflow: auto;
+  font-size: 10px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overscroll-behavior: contain;
 }
 .admin-git-output {
-  max-height: 120px;
+  max-width: 100%;
+  max-height: 96px;
+  box-sizing: border-box;
   overflow: auto;
   margin: 6px 0 0;
   padding: 6px 8px;
@@ -871,8 +890,12 @@ body > :not(#graph) {
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 9.5px;
+  line-height: 1.35;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overscroll-behavior: contain;
 }
 .admin-git-output.hidden {
   display: none;
@@ -1180,15 +1203,25 @@ body > :not(#graph) {
 #topbar.topbar-rail #topbar-rail {
   display: contents;
 }
+#topbar.topbar-rail {
+  z-index: 35;
+}
 /* Hide the horizontal chrome but keep it in the render tree (visibility, not
     display) so menu dropdowns and the search handler still work from the rail. */
 #topbar.topbar-rail #nav-group {
-  visibility: hidden;
+  position: static;
+  transform: none;
+  visibility: visible;
   pointer-events: none;
+}
+#topbar.topbar-rail #brand,
+#topbar.topbar-rail .menu-label {
+  visibility: hidden;
 }
 /* Open menu dropdowns escape the hidden #nav-group and anchor above the bar. */
 #topbar.topbar-rail .menu.open > .dropdown {
   visibility: visible;
+  pointer-events: auto;
   position: fixed;
   left: 8px;
   right: auto;
@@ -1220,7 +1253,10 @@ body > :not(#graph) {
   backdrop-filter: blur(8px);
   border-top: 1px solid var(--border);
   display: grid;
-  grid-template-columns: 38px 1px minmax(0, 1fr) repeat(4, 38px) 1px 38px 30px;
+  grid-template-columns: 38px 1px 38px 38px 1px minmax(0, 1fr) 1px repeat(
+      4,
+      38px
+    ) 1px 38px 38px 1px 38px 30px;
   align-items: center;
   min-height: var(--mobile-search-h, 52px);
   padding: 6px 8px;
@@ -1228,7 +1264,7 @@ body > :not(#graph) {
   z-index: 26;
 }
 #topbar.topbar-bottom-rail #search-wrap {
-  grid-template-columns: 38px 1px minmax(0, 1fr) repeat(4, 38px) 1px 38px 30px;
+  grid-template-columns: 32px 1px repeat(6, 32px) 1px 32px 32px 1px 32px;
   grid-template-rows: var(--mobile-nav-h, 44px) var(--mobile-search-h, 52px);
   min-height: calc(var(--mobile-nav-h, 44px) + var(--mobile-search-h, 52px));
   padding: 0 8px;
@@ -1241,12 +1277,15 @@ body > :not(#graph) {
   position: relative;
 }
 #topbar.topbar-rail #compact-search {
-  grid-column: 3;
+  grid-column: 6;
   grid-row: 1;
 }
 #topbar.topbar-bottom-rail #compact-search {
   grid-column: 1 / -1;
   grid-row: 2;
+}
+#topbar.topbar-bottom-rail #topbar-rail .rail-logo {
+  display: none;
 }
 #topbar.topbar-bottom-rail #modes {
   gap: 4px;
@@ -1329,28 +1368,28 @@ body > :not(#graph) {
   justify-self: start;
 }
 #topbar.topbar-rail #topbar-rail [data-idx="0"] {
-  grid-column: 7;
+  grid-column: 11;
   grid-row: 1;
 }
 #topbar.topbar-rail #topbar-rail [data-idx="1"] {
-  grid-column: 6;
+  grid-column: 10;
   grid-row: 1;
 }
 #topbar.topbar-rail #topbar-rail [data-idx="2"] {
-  grid-column: 5;
+  grid-column: 9;
   grid-row: 1;
 }
 #topbar.topbar-rail #topbar-rail [data-idx="3"] {
-  grid-column: 4;
+  grid-column: 8;
   grid-row: 1;
 }
 #topbar.topbar-rail #topbar-rail [data-rail="reopen-research"] {
-  grid-column: 9;
+  grid-column: 16;
   grid-row: 1;
   justify-self: end;
 }
 #topbar.topbar-rail #topbar-rail .rail-logo {
-  grid-column: 10;
+  grid-column: 17;
   grid-row: 1;
   justify-self: end;
 }
@@ -1359,8 +1398,68 @@ body > :not(#graph) {
   grid-row: 1;
 }
 #topbar.topbar-rail #topbar-rail .rail-divider-right {
-  grid-column: 8;
+  grid-column: 15;
   grid-row: 1;
+}
+#topbar.topbar-rail #topbar-rail [data-target="config-btn"] {
+  grid-column: 3;
+  grid-row: 1;
+}
+#topbar.topbar-rail #topbar-rail [data-target="filters-btn"] {
+  grid-column: 4;
+  grid-row: 1;
+}
+#topbar.topbar-rail #topbar-rail [data-target="new-doc-btn"] {
+  grid-column: 13;
+  grid-row: 1;
+}
+#topbar.topbar-rail #topbar-rail [data-target="settings-btn"] {
+  grid-column: 14;
+  grid-row: 1;
+}
+#topbar.topbar-bottom-rail #topbar-rail [data-idx="3"] {
+  grid-column: 5;
+}
+#topbar.topbar-bottom-rail #topbar-rail [data-idx="2"] {
+  grid-column: 6;
+}
+#topbar.topbar-bottom-rail #topbar-rail [data-idx="1"] {
+  grid-column: 7;
+}
+#topbar.topbar-bottom-rail #topbar-rail [data-idx="0"] {
+  grid-column: 8;
+}
+#topbar.topbar-bottom-rail #topbar-rail [data-target="new-doc-btn"] {
+  grid-column: 10;
+}
+#topbar.topbar-bottom-rail #topbar-rail [data-target="settings-btn"] {
+  grid-column: 11;
+}
+#topbar.topbar-bottom-rail #topbar-rail .rail-divider-right {
+  grid-column: 12;
+}
+#topbar.topbar-bottom-rail #topbar-rail [data-rail="reopen-research"] {
+  grid-column: 13;
+}
+#topbar.topbar-rail #topbar-rail .rail-divider-search-left {
+  grid-column: 5;
+  grid-row: 1;
+}
+#topbar.topbar-rail #topbar-rail .rail-divider-search-right {
+  grid-column: 7;
+  grid-row: 1;
+}
+#topbar.topbar-rail #topbar-rail .rail-divider-file {
+  grid-column: 12;
+  grid-row: 1;
+}
+#topbar.topbar-bottom-rail #topbar-rail .rail-divider-search-left,
+#topbar.topbar-bottom-rail #topbar-rail .rail-divider-search-right {
+  display: none;
+}
+#topbar.topbar-bottom-rail #topbar-rail .rail-divider-file {
+  display: block;
+  grid-column: 9;
 }
 /* In rail mode the bottom corner stacks move into the rail (proxies above
     drive them); hide the originals at the bottom of the screen. */
@@ -1819,12 +1918,19 @@ body > :not(#graph) {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px 14px;
-  z-index: 15;
+  z-index: 30;
   backdrop-filter: blur(6px);
   font-size: 13px;
 }
 #settings.hidden {
   display: none;
+}
+#topbar.topbar-rail ~ #settings {
+  right: 8px;
+  bottom: calc(var(--mobile-search-h, 52px) + var(--mobile-nav-h, 0px) + 8px);
+  width: min(270px, calc(100vw - 16px));
+  min-width: min(230px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
 }
 #settings h3 {
   margin: 0 0 8px;
@@ -1880,12 +1986,19 @@ body > :not(#graph) {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px 14px;
-  z-index: 15;
+  z-index: 30;
   backdrop-filter: blur(6px);
   font-size: 13px;
 }
 #filters.hidden {
   display: none;
+}
+#topbar.topbar-rail ~ #filters {
+  left: 8px;
+  bottom: calc(var(--mobile-search-h, 52px) + var(--mobile-nav-h, 0px) + 8px);
+  width: min(280px, calc(100vw - 16px));
+  min-width: min(240px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
 }
 #filters h3 {
   margin: 0 0 8px;
@@ -2262,7 +2375,7 @@ body > :not(#graph) {
   color: var(--accent);
   cursor: pointer;
   text-decoration: none;
-  border-bottom: 1px dashed rgba(88, 166, 255, 0.4);
+  border-bottom: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
 }
 #reader-body a.wiki:hover {
   border-bottom-style: solid;
@@ -2308,19 +2421,19 @@ body > :not(#graph) {
 
 /* ---------- live-preview editor (plan 018 U2) ----------
    The editor grows naturally; #reader-scroll stays the scroll container. */
-#reader-editor .cm-editor {
+.note-editor .cm-editor {
   background: transparent;
   height: auto;
 }
-#reader-editor .cm-editor.cm-focused {
+.note-editor .cm-editor.cm-focused {
   outline: none;
 }
-#reader-editor .cm-scroller {
+.note-editor .cm-scroller {
   font-family: inherit;
   line-height: 1.65;
   overflow: visible;
 }
-#reader-editor .cm-content {
+.note-editor .cm-content {
   padding: 0;
   font-size: 14.5px;
   caret-color: var(--fg);
@@ -2329,29 +2442,30 @@ body > :not(#graph) {
   white-space: pre-wrap;
   word-break: break-word;
 }
-#reader-editor .cm-line {
+.note-editor .cm-line {
   padding: 0;
 }
 /* The generic #reader-body img rule (block + margins, for note images)
    must not hit CodeMirror's internal inline widget buffers, or every
    widget (wiki links, frontmatter fold) breaks its line. */
-#reader-editor img.cm-widgetBuffer {
+#reader-editor img.cm-widgetBuffer,
+.note-editor img.cm-widgetBuffer {
   display: inline;
   margin: 0;
   max-height: none;
   position: static;
 }
-#reader-editor .cm-selectionBackground {
+.note-editor .cm-selectionBackground {
   background: color-mix(
     in srgb,
     var(--accent) 30%,
     rgba(0, 0, 0, 0.56)
   ) !important;
 }
-#reader-editor .cm-content ::selection {
+.note-editor .cm-content ::selection {
   background: transparent !important;
 }
-#reader-editor .cm-cursor {
+.note-editor .cm-cursor {
   border-left-color: var(--fg);
 }
 .reader-note-title {
@@ -2361,118 +2475,118 @@ body > :not(#graph) {
 }
 /* Heading spans mirror #reader-body h1-h6 (CM styles inline spans, not
    block elements, so the border underlines the text run). */
-#reader-editor .cm-h1 {
+.note-editor .cm-h1 {
   font-size: 2em;
   font-weight: 600;
   line-height: 1.15;
   border-bottom: 1px solid var(--border);
   padding-bottom: 4px;
 }
-#reader-editor .cm-h2 {
+.note-editor .cm-h2 {
   font-size: 1.5em;
   font-weight: 600;
   line-height: 1.3;
   border-bottom: 1px solid var(--border);
   padding-bottom: 3px;
 }
-#reader-editor .cm-h3 {
+.note-editor .cm-h3 {
   font-size: 1.25em;
   font-weight: 600;
   line-height: 1.3;
   border-bottom: 1px solid var(--border);
   padding-bottom: 2px;
 }
-#reader-editor .cm-h4 {
+.note-editor .cm-h4 {
   font-size: 1.1em;
   font-weight: 600;
 }
-#reader-editor .cm-h5 {
+.note-editor .cm-h5 {
   font-size: 1em;
   font-weight: 700;
 }
-#reader-editor .cm-h6 {
+.note-editor .cm-h6 {
   font-size: 0.9em;
   font-weight: 700;
   color: var(--muted);
 }
-#reader-editor .cm-strong {
+.note-editor .cm-strong {
   font-weight: 700;
 }
-#reader-editor .cm-em {
+.note-editor .cm-em {
   font-style: italic;
 }
-#reader-editor .cm-strike {
+.note-editor .cm-strike {
   text-decoration: line-through;
 }
-#reader-editor .cm-quote {
+.note-editor .cm-quote {
   color: var(--muted);
 }
-#reader-editor .cm-inline-code {
+.note-editor .cm-inline-code {
   background: color-mix(in srgb, var(--fg) 9%, transparent);
   padding: 1px 5px;
   border-radius: 4px;
   font-size: 13px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-#reader-editor .cm-md-link {
+.note-editor .cm-md-link {
   color: var(--accent);
 }
-#reader-editor .cm-md-url {
+.note-editor .cm-md-url {
   color: var(--muted);
 }
-#reader-editor .cm-wikilink {
+.note-editor .cm-wikilink {
   color: var(--accent);
   cursor: pointer;
-  border-bottom: 1px dashed rgba(88, 166, 255, 0.4);
+  border-bottom: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
 }
-#reader-editor .cm-wikilink:hover {
+.note-editor .cm-wikilink:hover {
   border-bottom-style: solid;
 }
-#reader-editor .cm-wikilink-raw {
+.note-editor .cm-wikilink-raw {
   color: var(--accent);
 }
-#reader-editor .cm-frontmatter-fold {
+.note-editor .cm-frontmatter-fold {
   color: var(--muted);
   cursor: pointer;
   font-size: 12px;
   padding: 2px 0;
   user-select: none;
 }
-#reader-editor .cm-frontmatter-line {
+.note-editor .cm-frontmatter-line {
   opacity: 0.55;
 }
 /* Clicking a rendered code block reveals its editable source. */
-#reader-editor .cm-codeblock-line {
+.note-editor .cm-codeblock-line {
   background: color-mix(in srgb, var(--fg) 7%, transparent);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
   padding: 0 10px;
 }
-#reader-editor .cm-codeblock-line .cm-inline-code {
+.note-editor .cm-codeblock-line .cm-inline-code {
   background: none;
   border-radius: 0;
   padding: 0;
   font-size: inherit;
 }
-#reader-editor .cm-codeblock-first {
+.note-editor .cm-codeblock-first {
   border-top-left-radius: 6px;
   border-top-right-radius: 6px;
   padding-top: 4px;
 }
-#reader-editor .cm-codeblock-last {
+.note-editor .cm-codeblock-last {
   border-bottom-left-radius: 6px;
   border-bottom-right-radius: 6px;
   padding-bottom: 4px;
 }
-#reader-editor .cm-codeblock-fence-dim {
+.note-editor .cm-codeblock-fence-dim {
   opacity: 0.4;
 }
-#reader-editor .cm-md-codeblock {
+.note-editor .cm-md-codeblock {
   margin: 6px 0;
   max-width: 100%;
   min-width: 0;
 }
-#reader-editor .cm-md-codeblock::before {
+.note-editor .cm-md-codeblock::before {
   content: attr(data-language);
   display: block;
   color: var(--muted);
@@ -2483,37 +2597,37 @@ body > :not(#graph) {
     monospace;
   margin: 0 0 3px 2px;
 }
-#reader-editor .cm-md-codeblock:not([data-language])::before {
+.note-editor .cm-md-codeblock:not([data-language])::before {
   display: none;
 }
-#reader-editor .cm-md-codeblock pre {
+.note-editor .cm-md-codeblock pre {
   box-sizing: border-box;
   margin: 0;
   max-width: 100%;
   white-space: pre;
 }
 /* Rendered table preview (block widget); click to edit the source. */
-#reader-editor .cm-md-table {
+.note-editor .cm-md-table {
   cursor: pointer;
   margin: 6px 0;
   overflow-x: auto;
 }
-#reader-editor .cm-md-table table {
+.note-editor .cm-md-table table {
   border-collapse: collapse;
   font-size: 13.5px;
   width: 100%;
 }
-#reader-editor .cm-md-table th,
-#reader-editor .cm-md-table td {
+.note-editor .cm-md-table th,
+.note-editor .cm-md-table td {
   border: 1px solid var(--border);
   padding: 5px 9px;
   text-align: left;
 }
-#reader-editor .cm-md-table th {
+.note-editor .cm-md-table th {
   background: color-mix(in srgb, var(--fg) 7%, transparent);
   font-weight: 600;
 }
-#reader-editor .cm-md-table:hover table {
+.note-editor .cm-md-table:hover table {
   outline: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
@@ -3062,6 +3176,40 @@ body > :not(#graph) {
   margin-top: -1px;
   margin-bottom: 0;
 }
+#tooltip.side-left,
+#tooltip.side-right {
+  transform: none;
+}
+#tooltip.side-left::before,
+#tooltip.side-left::after,
+#tooltip.side-right::before,
+#tooltip.side-right::after {
+  top: 50%;
+  bottom: auto;
+  left: auto;
+  margin: 0;
+  transform: translateY(-50%);
+}
+#tooltip.side-right::before,
+#tooltip.side-right::after {
+  right: 100%;
+  border-bottom-color: transparent;
+  border-right-color: var(--border);
+}
+#tooltip.side-right::after {
+  border-right-color: var(--panel);
+  margin-right: -1px;
+}
+#tooltip.side-left::before,
+#tooltip.side-left::after {
+  left: 100%;
+  border-bottom-color: transparent;
+  border-left-color: var(--border);
+}
+#tooltip.side-left::after {
+  border-left-color: var(--panel);
+  margin-left: -1px;
+}
 
 /* Integration rows mirror the View menu's .ctl rows: same padding, size,
    centered alignment, name left / status (or control) right. */
@@ -3606,6 +3754,10 @@ body > :not(#graph) {
   height: 26px;
   padding: 3px 12px;
 }
+.reader-wiki-status {
+  font-size: 11px;
+  line-height: 1.2;
+}
 .reader-wiki-action .hidden,
 .reader-wiki-row.hidden {
   display: none;
@@ -4050,7 +4202,7 @@ body > :not(#graph) {
   gap: 8px;
   padding: 8px 18px;
   border-top: 1px solid var(--border);
-  background: var(--panel);
+  background: transparent;
   flex-shrink: 0;
 }
 #research-footer.hidden {
@@ -4463,9 +4615,6 @@ body > :not(#graph) {
   accent-color: var(--accent);
 }
 .answer {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
   margin-bottom: 10px;
 }
 .answer-text {

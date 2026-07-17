@@ -33,6 +33,7 @@ if (!Range.prototype.getClientRects || process.env.VITEST) {
 }
 
 const fixturesDir = resolve(process.cwd(), "web/src/editor-fixtures") + "/";
+const stylePath = resolve(process.cwd(), "web/src/style.css");
 const fixtures = readdirSync(fixturesDir).filter((f) => f.endsWith(".md"));
 
 function mount(
@@ -217,6 +218,16 @@ describe("wiki links", () => {
       ed.view.dom.querySelectorAll(".cm-wikilink-raw").length,
     ).toBeGreaterThan(0);
     ed.destroy();
+  });
+});
+
+describe("editor chrome CSS", () => {
+  it("keeps CodeMirror widget buffers out of generic note image styling", () => {
+    const css = readFileSync(stylePath, "utf8");
+    expect(css).toContain("#reader-editor img.cm-widgetBuffer");
+    expect(css.indexOf("#reader-editor img.cm-widgetBuffer")).toBeGreaterThan(
+      css.indexOf("#reader-body img"),
+    );
   });
 });
 

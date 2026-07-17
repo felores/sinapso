@@ -248,7 +248,7 @@ function selectionToolbarCoords(view: EditorView, dom: HTMLElement): Rect {
     top: Math.min(...rects.map((rect) => rect.top)),
     bottom: Math.max(...rects.map((rect) => rect.bottom)),
   };
-  const panel = view.dom.closest("#reader")?.getBoundingClientRect();
+  const panel = view.dom.closest("#reader, #research")?.getBoundingClientRect();
   const bounds = panel ?? {
     left: 0,
     right: document.documentElement.clientWidth,

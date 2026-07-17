@@ -681,7 +681,81 @@ describe("server: git note versions", () => {
       const { app } = createApp(graphPath);
       const res = await request(app).get("/api/git/status");
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ available: false });
+      let gitPresent = true;
+      try {
+        execFileSync("git", ["--version"], { stdio: "ignore" });
+      } catch {
+        gitPresent = false;
+      }
+      expect(res.body).toEqual(
+        gitPresent
+          ? { available: false, gitInstalled: true, reason: "not_a_repo" }
+          : { available: false, gitInstalled: false, reason: "git_missing" },
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("guards the git init route", async () => {
+    const root = mkdtempSync(join(tmpdir(), "sinapso-git-init-guard-"));
+    try {
+      writeFileSync(join(root, "real.md"), "# x\n");
+      const graphPath = join(root, "graph.json");
+      writeFileSync(
+        graphPath,
+        JSON.stringify({
+          meta: { vaultName: "t", vaultPath: root, notes: 1, excludes: [] },
+          nodes: [{ id: "real.md", title: "R", phantom: false }],
+          links: [],
+        }),
+      );
+      const { app } = createApp(graphPath);
+      const res = await request(app).post("/api/git/init").send({});
+      expect(res.status).toBe(403);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("initializes local versioning for a vault outside a repo", async () => {
+    const root = mkdtempSync(join(tmpdir(), "sinapso-git-init-"));
+    try {
+      writeFileSync(join(root, "real.md"), "# x\n");
+      const graphPath = join(root, "graph.json");
+      writeFileSync(
+        graphPath,
+        JSON.stringify({
+          meta: { vaultName: "t", vaultPath: root, notes: 1, excludes: [] },
+          nodes: [{ id: "real.md", title: "R", phantom: false }],
+          links: [],
+        }),
+      );
+      const { app } = createApp(graphPath);
+      const token = (await request(app).get("/api/session")).body.token;
+
+      const res = await request(app)
+        .post("/api/git/init")
+        .set("x-sinapso-token", token)
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(
+        execFileSync("git", ["log", "-1", "--pretty=%s"], { cwd: root })
+          .toString()
+          .trim(),
+      ).toBe("Initial vault snapshot");
+
+      const status = await request(app).get("/api/git/status");
+      expect(status.body.available).toBe(true);
+
+      const again = await request(app)
+        .post("/api/git/init")
+        .set("x-sinapso-token", token)
+        .send({});
+      expect(again.status).toBe(400);
+      expect(again.body.ok).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
