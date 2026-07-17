@@ -2324,7 +2324,7 @@ body > :not(#graph) {
   overflow-y: auto;
 }
 #reader-body {
-  padding: 4px 18px 30px;
+  padding: 1px 18px 30px;
   font-size: 14.5px;
   line-height: 1.65;
 }
@@ -3778,9 +3778,9 @@ body > :not(#graph) {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
+  height: 36px;
   margin-top: -36px;
-  padding: 5px 10px;
+  padding: 10px 10px 0;
   background: transparent;
   pointer-events: none;
 }
@@ -4344,7 +4344,7 @@ body > :not(#graph) {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
+  padding: 10px 10px 1px;
   /* The row is fully transparent (no fill, no blur) so it leaves no stripe on
      the note — only the input field carries a background (below). A blur here
      frosted the text behind it and read as a dark band, so it's gone. */
@@ -4398,7 +4398,7 @@ body > :not(#graph) {
 }
 #reader-properties-toggle {
   position: absolute;
-  top: 5px;
+  top: 10px;
   left: 42px;
   z-index: 3;
   display: inline-flex;

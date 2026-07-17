@@ -154,6 +154,14 @@ function readOnlyExtensions(readOnly: boolean): Extension[] {
   ];
 }
 
+class HiddenFrontmatterWidget extends WidgetType {
+  toDOM(): HTMLElement {
+    const el = document.createElement("span");
+    el.style.display = "none";
+    return el;
+  }
+}
+
 const fmDecorations = EditorView.decorations.compute(
   [fmField],
   (state): DecorationSet => {
@@ -161,7 +169,14 @@ const fmDecorations = EditorView.decorations.compute(
     if (fm.end <= 0) return Decoration.none;
     const b = new RangeSetBuilder<Decoration>();
     if (!fm.expanded) {
-      b.add(0, fm.end, Decoration.replace({}));
+      b.add(
+        0,
+        fm.end,
+        Decoration.replace({
+          widget: new HiddenFrontmatterWidget(),
+          block: true,
+        }),
+      );
     } else {
       const doc = state.doc;
       const lastLine = doc.lineAt(Math.min(fm.end, doc.length));
