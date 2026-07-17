@@ -154,23 +154,6 @@ function readOnlyExtensions(readOnly: boolean): Extension[] {
   ];
 }
 
-class FrontmatterFoldWidget extends WidgetType {
-  toDOM(view: EditorView): HTMLElement {
-    const el = document.createElement("div");
-    el.className = "cm-frontmatter-fold";
-    el.textContent = "· · · properties · · ·";
-    el.title = "Click to show frontmatter";
-    el.onclick = () => view.dispatch({ effects: setFmExpanded.of(true) });
-    return el;
-  }
-  override eq(): boolean {
-    return true;
-  }
-  override ignoreEvent(): boolean {
-    return false;
-  }
-}
-
 const fmDecorations = EditorView.decorations.compute(
   [fmField],
   (state): DecorationSet => {
@@ -178,14 +161,7 @@ const fmDecorations = EditorView.decorations.compute(
     if (fm.end <= 0) return Decoration.none;
     const b = new RangeSetBuilder<Decoration>();
     if (!fm.expanded) {
-      b.add(
-        0,
-        fm.end,
-        Decoration.replace({
-          widget: new FrontmatterFoldWidget(),
-          block: true,
-        }),
-      );
+      b.add(0, fm.end, Decoration.replace({}));
     } else {
       const doc = state.doc;
       const lastLine = doc.lineAt(Math.min(fm.end, doc.length));

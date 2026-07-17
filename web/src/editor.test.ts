@@ -114,6 +114,14 @@ describe("frontmatter protection (KTD3)", () => {
     ed.destroy();
   });
 
+  it("collapses frontmatter without rendering a placeholder row", () => {
+    const ed = mount(original);
+    expect(document.querySelector(".cm-frontmatter-fold")).toBeNull();
+    ed.expandFrontmatter(true);
+    expect(ed.getContent()).toBe(original);
+    ed.destroy();
+  });
+
   it("expand/collapse alone never changes content", () => {
     const ed = mount(original);
     ed.expandFrontmatter(true);

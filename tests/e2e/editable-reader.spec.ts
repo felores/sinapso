@@ -76,6 +76,41 @@ async function clickIntoParagraph(page: Page, text: string): Promise<void> {
 
 test.describe.configure({ mode: "serial" });
 
+test("note properties toggle without reserving collapsed space", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  const file = await createTestNote(page);
+  try {
+    await openTestNote(page);
+    const bar = page.locator("#reader-find");
+    const properties = page.locator("#reader-properties-toggle");
+    await expect(properties).toBeVisible();
+    await expect(page.locator(".cm-frontmatter-fold")).toHaveCount(0);
+    await expect(
+      page.locator("#reader-editor .cm-line", { hasText: "type: test" }),
+    ).toHaveCount(0);
+
+    await properties.click();
+    await expect(bar).toHaveClass(/properties-expanded/);
+    await expect(properties).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.locator("#reader-editor .cm-line", { hasText: "type: test" }),
+    ).toBeVisible();
+    await expect(page.locator("#reader-wiki-top")).not.toBeVisible();
+
+    await page.locator("#reader-find-toggle").click();
+    await expect(bar).not.toHaveClass(/properties-expanded/);
+    await expect(properties).toHaveAttribute("aria-pressed", "false");
+    await expect(
+      page.locator("#reader-editor .cm-line", { hasText: "type: test" }),
+    ).toHaveCount(0);
+  } finally {
+    await removeTestNote(page, file);
+    await assertCleanBrowser();
+  }
+});
+
 test("AE1: typing autosaves; only the edit differs, frontmatter byte-identical", async ({
   page,
 }) => {

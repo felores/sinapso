@@ -1684,7 +1684,7 @@ body > :not(#graph) {
 }
 #reader-nav {
   display: inline-flex;
-  gap: 2px;
+  gap: 6px;
 }
 #reader-nav.hidden {
   display: none;
@@ -2318,6 +2318,7 @@ body > :not(#graph) {
 }
 
 #reader-scroll {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -2545,15 +2546,24 @@ body > :not(#graph) {
 .note-editor .cm-wikilink-raw {
   color: var(--accent);
 }
-.note-editor .cm-frontmatter-fold {
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 12px;
-  padding: 2px 0;
-  user-select: none;
-}
 .note-editor .cm-frontmatter-line {
-  opacity: 0.55;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0.75;
+}
+.note-editor .cm-frontmatter-line .cm-h1,
+.note-editor .cm-frontmatter-line .cm-h2,
+.note-editor .cm-frontmatter-line .cm-h3,
+.note-editor .cm-frontmatter-line .cm-h4,
+.note-editor .cm-frontmatter-line .cm-h5,
+.note-editor .cm-frontmatter-line .cm-h6 {
+  border: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  line-height: inherit;
+  padding: 0;
 }
 /* Clicking a rendered code block reveals its editable source. */
 .note-editor .cm-codeblock-line {
@@ -3775,7 +3785,8 @@ body > :not(#graph) {
   pointer-events: none;
 }
 #reader-find.expanded + .reader-wiki-row,
-#reader-find.versions-expanded + .reader-wiki-row {
+#reader-find.versions-expanded + .reader-wiki-row,
+#reader-find.properties-expanded + .reader-wiki-row {
   display: none;
 }
 /* ---------- agent chat styles (inside the research column) ---------- */
@@ -4385,9 +4396,28 @@ body > :not(#graph) {
   color: var(--fg);
   padding: 3px;
 }
+#reader-properties-toggle {
+  position: absolute;
+  top: 5px;
+  left: 42px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  padding: 3px;
+  cursor: pointer;
+}
 #reader-find #reader-find-toggle:hover,
 #reader-find.expanded #reader-find-toggle,
 #reader-find.versions-expanded #reader-versions-toggle {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+#reader-properties-toggle:hover,
+#reader-properties-toggle[aria-pressed="true"] {
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -4475,6 +4505,13 @@ body > :not(#graph) {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+}
+#reader-properties-toggle.hidden {
+  display: none !important;
+}
+#reader-scroll:has(#reader-find.expanded, #reader-find.versions-expanded)
+  > #reader-properties-toggle {
+  display: none;
 }
 #reader-find #reader-version-prev,
 #reader-find #reader-version-next,

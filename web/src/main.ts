@@ -2032,6 +2032,10 @@ async function boot() {
     topWikiAction.innerHTML = "";
     topWikiAction.classList.add("hidden");
     $("#reader-find").classList.remove("versions-expanded");
+    $("#reader-find").classList.remove("properties-expanded");
+    const propertiesToggle = $("#reader-properties-toggle");
+    propertiesToggle.classList.add("hidden");
+    propertiesToggle.setAttribute("aria-pressed", "false");
     ($("#reader-versions") as HTMLSelectElement).innerHTML = "";
     $("#reader-version-restore").classList.add("hidden");
     $("#reader-version-status").classList.add("hidden");
@@ -2096,6 +2100,8 @@ async function boot() {
           onEditorDocChanged();
         },
       });
+      if (/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.test(markdown))
+        propertiesToggle.classList.remove("hidden");
       editorNoteId = n.id;
       noteAutosave = createAutosave({
         baseContent: markdown,
@@ -2391,6 +2397,7 @@ async function boot() {
       }
     } else {
       collapseFind();
+      collapseProperties();
       bar.classList.add("versions-expanded");
       showFindBar();
     }
@@ -2526,6 +2533,7 @@ async function boot() {
 
   function expandFind() {
     $("#reader-find").classList.remove("versions-expanded");
+    collapseProperties();
     $("#reader-version-restore").classList.add("hidden");
     ($("#reader-versions") as HTMLSelectElement).value = "";
     $("#reader-find").classList.add("expanded");
@@ -2539,6 +2547,13 @@ async function boot() {
     clearFind();
   }
 
+  function collapseProperties() {
+    $("#reader-find").classList.remove("properties-expanded");
+    const toggle = $("#reader-properties-toggle");
+    toggle.setAttribute("aria-pressed", "false");
+    noteEditor?.expandFrontmatter(false);
+  }
+
   {
     const findInput = $("#reader-find-input") as HTMLInputElement;
     $("#reader-find-toggle").addEventListener("click", () =>
@@ -2546,6 +2561,18 @@ async function boot() {
         ? collapseFind()
         : expandFind(),
     );
+    $("#reader-properties-toggle").addEventListener("click", () => {
+      const bar = $("#reader-find");
+      const expanded = bar.classList.contains("properties-expanded");
+      collapseFind();
+      bar.classList.remove("versions-expanded");
+      bar.classList.toggle("properties-expanded", !expanded);
+      $("#reader-properties-toggle").setAttribute(
+        "aria-pressed",
+        String(!expanded),
+      );
+      noteEditor?.expandFrontmatter(!expanded);
+    });
     findInput.addEventListener("input", () => runFind(findInput.value));
     findInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
