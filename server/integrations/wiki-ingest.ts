@@ -35,6 +35,8 @@ export interface WikiIngestProposal {
   operations: WikiIngestOperation[];
   researchId?: string;
   sourceNote?: string;
+  /** Canonical RAW source path (existing or to-create). */
+  rawPath?: string;
 }
 
 export type WikiIngestChat = (messages: ChatMessage[]) => Promise<string>;
@@ -63,24 +65,32 @@ export async function buildWikiIngestProposal(
   wiki: WikiConfig,
   converted: ConvertedDocument,
   chat: WikiIngestChat,
-  opts: { researchId?: string; sourceNote?: string } = {},
+  opts: {
+    researchId?: string;
+    sourceNote?: string;
+    /** Existing canonical RAW path (source already lives in rawDestination). */
+    existingRawPath?: string;
+  } = {},
 ): Promise<WikiIngestProposal> {
   const contracts = readWikiContracts(deps.vaultRoot, wiki);
   if (!wiki.rawDestination?.trim())
     throw new WriteError(400, "selected wiki requires a RAW destination");
-  const raw = opts.sourceNote
-    ? buildRawMoveOperation(
-        deps.vaultRoot,
-        wiki,
-        opts.sourceNote,
-        converted.markdown,
-      )
-    : buildRawOperation(
-        deps.vaultRoot,
-        wiki,
-        converted,
-        deps.now?.() ?? new Date(),
-      );
+  const raw: WikiIngestOperation | null = opts.existingRawPath
+    ? null
+    : opts.sourceNote
+      ? buildRawMoveOperation(
+          deps.vaultRoot,
+          wiki,
+          opts.sourceNote,
+          converted.markdown,
+        )
+      : buildRawOperation(
+          deps.vaultRoot,
+          wiki,
+          converted,
+          deps.now?.() ?? new Date(),
+        );
+  const rawPath = opts.existingRawPath ?? raw!.path;
   const reply = await chat([
     {
       role: "system",
@@ -89,13 +99,23 @@ export async function buildWikiIngestProposal(
     },
     {
       role: "user",
-      content: proposalPrompt(cfg, wiki, contracts, converted, raw),
+      content: proposalPrompt(cfg, wiki, contracts, converted, {
+        path: rawPath,
+        type: raw?.type ?? "existing",
+      }),
     },
   ]);
-  const operations = validateWikiOperations(deps.vaultRoot, wiki, [
-    raw,
-    ...parseOperations(reply).filter((op) => isContentProposal(wiki, op)),
-  ]);
+  // Generation-time filtering: drop LLM ops that fall outside the wiki tree
+  // (e.g. "elsewhere/page.md") instead of failing the whole proposal. The
+  // apply path keeps strict validation so a tampered approval still rejects.
+  const derived = parseOperations(reply)
+    .filter((op) => isContentProposal(wiki, op))
+    .filter((op) => isInsideWikiTree(deps.vaultRoot, wiki, op.path));
+  const operations = validateWikiOperations(
+    deps.vaultRoot,
+    wiki,
+    raw ? [raw, ...derived] : derived,
+  );
   if (
     !operations.some(
       (op) => !op.raw && (op.type === "create" || op.type === "edit"),
@@ -110,6 +130,7 @@ export async function buildWikiIngestProposal(
     operations,
     researchId: opts.researchId,
     sourceNote: opts.sourceNote,
+    rawPath,
   };
 }
 
@@ -125,17 +146,52 @@ function isContentProposal(wiki: WikiConfig, op: WikiIngestOperation): boolean {
   return !contractPaths.has(path);
 }
 
+/**
+ * Generation-only pre-filter: true when the raw op path resolves under the
+ * wiki tree (wikiBase or its rawDestination). Outside-tree LLM ops are
+ * discarded during proposal building rather than failing the whole synthesis.
+ * Apply-time validation stays strict (validateWikiOperations).
+ */
+function isInsideWikiTree(
+  vaultRoot: string,
+  wiki: WikiConfig,
+  rawPath: string,
+): boolean {
+  const base = resolve(vaultRoot);
+  const wikiBase = resolve(base, wiki.path);
+  const full = resolve(base, rawPath);
+  if (!full.startsWith(base + sep) || !full.toLowerCase().endsWith(".md"))
+    return false;
+  if (full.startsWith(wikiBase + sep)) return true;
+  const rawDestination = wiki.rawDestination?.trim();
+  if (!rawDestination) return false;
+  const rawBase = resolve(wikiBase, rawDestination);
+  return full.startsWith(rawBase + sep);
+}
+
 export function applyWikiIngestOperations(
   writeDeps: WriteDeps,
   vaultRoot: string,
   wiki: WikiConfig,
   operations: unknown,
-  opts: { actor?: "user" | "agent"; sourceNote?: string } = {},
+  opts: {
+    actor?: "user" | "agent";
+    sourceNote?: string;
+    /** Source already lives at its canonical RAW path: no RAW op expected. */
+    existingRaw?: boolean;
+  } = {},
 ): string[] {
   const valid = validateWikiOperations(vaultRoot, wiki, operations);
   const raw = valid.filter((op) => op.raw);
-  if (raw.length !== 1)
+  if (opts.existingRaw) {
+    if (raw.length !== 0)
+      throw new WriteError(
+        400,
+        "existing RAW source must not include a RAW operation",
+      );
+  } else if (raw.length !== 1) {
     throw new WriteError(400, "exactly one RAW operation required");
+  }
   for (const op of valid)
     if (op.type === "move" && op.sourceNote !== opts.sourceNote)
       throw new WriteError(400, "invalid source note move");
@@ -168,6 +224,13 @@ export function applyWikiIngestOperations(
   });
 }
 
+/** Safe relative path for error details (never leaks absolute paths). */
+function safeRelPath(vaultRoot: string, fullPath: string): string {
+  const base = resolve(vaultRoot);
+  if (fullPath === base || !fullPath.startsWith(base + sep)) return "";
+  return relative(base, fullPath).split(sep).join("/");
+}
+
 export function validateWikiOperations(
   vaultRoot: string,
   wiki: WikiConfig,
@@ -177,9 +240,8 @@ export function validateWikiOperations(
     throw new WriteError(400, "operations required");
   const base = resolve(vaultRoot);
   const wikiBase = resolve(base, wiki.path);
-  const rawBase = wiki.rawDestination?.trim()
-    ? resolve(wikiBase, wiki.rawDestination)
-    : null;
+  const rawDestination = wiki.rawDestination?.trim();
+  const rawBase = rawDestination ? resolve(wikiBase, rawDestination) : null;
   if (!rawBase)
     throw new WriteError(400, "selected wiki requires a RAW destination");
   return operations.map((op) => {
@@ -210,8 +272,17 @@ export function validateWikiOperations(
     }
     const inWiki = full.startsWith(wikiBase + sep);
     const inRaw = rawBase ? full.startsWith(rawBase + sep) : false;
-    if (o.raw === true ? !inRaw : !inWiki || inRaw)
-      throw new WriteError(400, "proposal path outside selected wiki");
+    if (o.raw === true ? !inRaw : !inWiki || inRaw) {
+      throw new WriteError(400, "proposal path outside selected wiki", {
+        code: "OUTSIDE_SELECTED_WIKI",
+        details: {
+          rejectedPath: safeRelPath(base, full) || String(rawPath),
+          operationType: type,
+          wikiPath: wiki.path,
+          rawDestination: rawDestination ?? null,
+        },
+      });
+    }
     return {
       type,
       path: relative(base, full).split(sep).join("/"),
@@ -245,16 +316,23 @@ function proposalPrompt(
   wiki: WikiConfig,
   contracts: Array<{ path: string; content: string }>,
   converted: ConvertedDocument,
-  raw: WikiIngestOperation,
+  raw: { path: string; type: WikiIngestOperation["type"] | "existing" },
 ): string {
   const contractText = contracts.length
     ? contracts.map((c) => `## ${c.path}\n${c.content}`).join("\n\n")
     : "No contract files found.";
+  const rawVerb =
+    raw.type === "move"
+      ? "will move"
+      : raw.type === "existing"
+        ? "already exists"
+        : "will be stored";
   return [
     effectivePrompts(cfg).wikiIngest,
     `Selected wiki: ${wiki.label} (${wiki.path})`,
     `All derived create/edit paths must stay under ${wiki.path}/.`,
-    `Canonical RAW source path after approval: ${raw.path}. This is the only canonical source location; do not present the original Inbox or source location as canonical.`,
+    "Derived notes may wikilink any known vault note, including notes outside this wiki. Wikilinks must stay within the vault: never use absolute paths, ../ traversal, file: URLs, or external files. Cite external sources with normal https URLs.",
+    `Canonical RAW source path after approval: ${raw.path}. ${raw.type === "existing" ? "This source already exists at that location; do not recreate or move it." : "This is the only canonical source location; do not present the original Inbox or source location as canonical."}`,
     `Every derived create/edit note must cite or link ${raw.path} according to the wiki contract.`,
     "Contract files:",
     contractText,

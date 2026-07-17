@@ -1271,7 +1271,32 @@
           class="hidden"
           aria-label="Wiki target"
         ></select>
-        <button id="research-ingest-wiki" type="button"></button>
+        <div class="wiki-menu-wrap hidden">
+          <div
+            id="research-wiki-menu"
+            class="wiki-menu hidden"
+            role="menu"
+            aria-label="Wiki actions"
+          >
+            <button
+              id="research-wiki-menu-ingest"
+              type="button"
+              role="menuitem"
+            ></button>
+            <button
+              id="research-wiki-menu-save"
+              type="button"
+              role="menuitem"
+            ></button>
+          </div>
+          <button
+            id="research-ingest-wiki"
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-controls="research-wiki-menu"
+          ></button>
+        </div>
       </div>
     </aside>
 

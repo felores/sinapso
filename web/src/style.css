@@ -4278,6 +4278,56 @@ body > :not(#graph) {
   opacity: 0.5;
   cursor: default;
 }
+/* Split-button: "Ingest into Wiki" trigger reveals a menu above it. */
+#research-footer .wiki-menu-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+#research-footer .wiki-menu-wrap.hidden {
+  display: none;
+}
+#research-footer .wiki-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+}
+#research-footer .wiki-menu.hidden {
+  display: none;
+}
+#research-footer .wiki-menu button {
+  flex: 0 0 auto;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+}
+#research-footer .wiki-menu button:hover:not(:disabled),
+#research-footer .wiki-menu button:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+  outline: none;
+}
+#research-footer .wiki-menu button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 #research-error {
   margin: 8px 18px;
   padding: 7px 9px;

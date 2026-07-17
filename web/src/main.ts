@@ -59,6 +59,7 @@ import {
   decideAgentResearchDisplay,
   type ResearchDisplayAcknowledgment,
 } from "./research-state";
+import { nextIngestMenuOpen, ingestMenuHidden } from "./research-menu";
 import {
   THEMES,
   PALETTE,
@@ -272,6 +273,38 @@ async function boot() {
     const raw = wikiRawPath(wiki);
     const clean = normRelPath(id);
     return !!raw && (clean === raw || clean.startsWith(`${raw}/`));
+  }
+
+  /** Find the wiki whose RAW destination contains this note (may be outside
+   *  wiki.path, e.g. wiki "saas/climatia/wiki" with raw "../research"). */
+  function wikiForRawSource(id: string): AdminWikiConfig | null {
+    const clean = normRelPath(id);
+    return (
+      enabledWikis.find((w) => {
+        const raw = wikiRawPath(w);
+        return !!raw && (clean === raw || clean.startsWith(`${raw}/`));
+      }) ?? null
+    );
+  }
+
+  /** Count distinct non-raw wiki notes linked to/from this RAW source. */
+  function rawSourceLinkCount(rawId: string, wiki: AdminWikiConfig): number {
+    const connected = new Set<string>();
+    for (const l of data.links) {
+      const s = endNode(l.source).id;
+      const t = endNode(l.target).id;
+      const other = s === rawId ? t : t === rawId ? s : null;
+      if (!other || other === rawId) continue;
+      const otherNode = byId.get(other);
+      if (!otherNode || otherNode.phantom) continue;
+      // Other end must be a non-raw note of the SAME wiki (under wiki.path,
+      // not under the raw destination).
+      if (isWikiRawSource(other, wiki)) continue;
+      const ow = wikiForId(other);
+      if (!ow || ow.id !== wiki.id) continue;
+      connected.add(other);
+    }
+    return connected.size;
   }
 
   function wikiDisplayName(
@@ -2163,7 +2196,12 @@ async function boot() {
         markdown: stripped,
         via: "sinapso-vault-note",
       };
-      topWikiAction.appendChild(renderReaderWikiAction(wikiPreview, "top"));
+      const rawSourceWiki = wikiForRawSource(n.id);
+      topWikiAction.appendChild(
+        rawSourceWiki
+          ? renderReaderRawSourceAction(wikiPreview, rawSourceWiki, "top")
+          : renderReaderWikiAction(wikiPreview, "top"),
+      );
       topWikiAction.classList.remove("hidden");
       openNoteWords = countWords(stripped);
       updateBrandStats();
@@ -2180,7 +2218,11 @@ async function boot() {
       const orphanSlot = document.createElement("div");
       const questionsSlot = document.createElement("div");
       if (showBottomWikiAction)
-        wikiSlot.appendChild(renderReaderWikiAction(wikiPreview, "bottom"));
+        wikiSlot.appendChild(
+          rawSourceWiki
+            ? renderReaderRawSourceAction(wikiPreview, rawSourceWiki, "bottom")
+            : renderReaderWikiAction(wikiPreview, "bottom"),
+        );
       body.append(wikiSlot, relatedSlot, orphanSlot, questionsSlot);
       void appendRelated(n, relatedSlot);
       void appendOrphanLink(n, orphanSlot);
@@ -5928,10 +5970,16 @@ async function boot() {
   // ---- research footer: curate persisted research into Inbox or a wiki ----
   {
     const saveInbox = $("#research-save-inbox") as HTMLButtonElement;
-    const ingestWiki = $("#research-ingest-wiki") as HTMLButtonElement;
+    const ingestTrigger = $("#research-ingest-wiki") as HTMLButtonElement;
+    const menuWrap = ingestTrigger.parentElement as HTMLElement;
+    const menu = $("#research-wiki-menu") as HTMLElement;
+    const menuIngest = $("#research-wiki-menu-ingest") as HTMLButtonElement;
+    const menuSave = $("#research-wiki-menu-save") as HTMLButtonElement;
     const wikiTarget = $("#research-wiki-target") as HTMLSelectElement;
     saveInbox.textContent = i18n.t("research.saveFullInbox");
-    ingestWiki.textContent = i18n.t("research.ingestWiki");
+    ingestTrigger.textContent = i18n.t("research.ingestWiki");
+    menuIngest.textContent = i18n.t("research.saveAndIngest");
+    menuSave.textContent = i18n.t("research.saveRawSource");
 
     async function flushWorkingDocument() {
       const controller = researchDocumentController;
@@ -5944,7 +5992,10 @@ async function boot() {
     async function syncResearchWikiTarget() {
       const wikis = await loadEnabledWikis();
       wikiTarget.innerHTML = "";
-      wikiTarget.classList.toggle("hidden", wikis.length < 2);
+      const multi = wikis.length > 1;
+      wikiTarget.classList.toggle("hidden", !multi);
+      // Trigger + menu need an enabled wiki (RAW destination) to act on.
+      menuWrap.classList.toggle("hidden", ingestMenuHidden(wikis.length));
       for (const wiki of wikis) {
         const option = document.createElement("option");
         option.value = wiki.id;
@@ -5953,6 +6004,87 @@ async function boot() {
       }
       return wikis;
     }
+
+    // After a footer action removes the current entry, advance history to the
+    // newest remaining entry (or close the panel if empty).
+    async function advanceResearchAfterRemoval() {
+      await teardownResearchDocument();
+      currentEntryId = null;
+      await loadHistory();
+      if (researchHistory.length) {
+        historyIdx = 0;
+        await showHistoryEntry(researchHistory[0]);
+      } else {
+        historyIdx = -1;
+        updateHistoryNav();
+        await closeResearch();
+      }
+    }
+
+    function footerFail(e: unknown, btn?: HTMLButtonElement) {
+      if (btn) btn.disabled = false;
+      const msg =
+        e instanceof ApiError
+          ? (((e.body as { message?: string; error?: string } | null) ?? {})
+              ?.message ?? ((e.body as { error?: string } | null) ?? {})?.error)
+          : e instanceof Error
+            ? e.message
+            : null;
+      researchError(msg ?? i18n.t("research.footerFail"));
+    }
+
+    // --- split-button menu: trigger only reveals; items do the work. ---
+    function applyMenuOpen(open: boolean) {
+      menu.classList.toggle("hidden", !open);
+      ingestTrigger.setAttribute("aria-expanded", String(open));
+      if (open) menuIngest.focus();
+    }
+    const menuIsOpen = () => !menu.classList.contains("hidden");
+    const menuItems = () => [menuIngest, menuSave];
+
+    ingestTrigger.addEventListener("click", () => {
+      applyMenuOpen(nextIngestMenuOpen(menuIsOpen(), "toggle"));
+    });
+    // Keyboard: ArrowDown/Up open + cycle; Escape closes and returns focus.
+    menuWrap.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if (menuIsOpen()) {
+          e.preventDefault();
+          applyMenuOpen(false);
+          ingestTrigger.focus();
+        }
+        return;
+      }
+      const items = menuItems();
+      const idx = items.indexOf(document.activeElement as HTMLButtonElement);
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (!menuIsOpen()) {
+          applyMenuOpen(true);
+          return;
+        }
+        items[(idx + 1) % items.length].focus();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (!menuIsOpen()) {
+          applyMenuOpen(true);
+          menuSave.focus();
+          return;
+        }
+        items[(idx - 1 + items.length) % items.length].focus();
+      }
+    });
+    // Outside pointer closes (capture phase so it runs before the trigger
+    // toggle when clicking the trigger itself is handled by contains()).
+    document.addEventListener(
+      "click",
+      (e) => {
+        if (!menuIsOpen()) return;
+        if (menuWrap.contains(e.target as Node)) return;
+        applyMenuOpen(nextIngestMenuOpen(true, "outside"));
+      },
+      true,
+    );
 
     saveInbox.addEventListener("click", async () => {
       saveInbox.disabled = true;
@@ -5964,21 +6096,41 @@ async function boot() {
           `/api/research/history/${encodeURIComponent(researchId)}/save-inbox`,
           { json: {} },
         );
-        await teardownResearchDocument();
-        currentEntryId = null;
-        researchHistory = researchHistory.filter(
-          (entry) => entry.id !== researchId,
-        );
-        historyIdx = Math.min(historyIdx, researchHistory.length - 1);
-        updateHistoryNav();
         await openAfterIngest(String(data.id));
-        await loadHistory();
-      } catch {
-        saveInbox.disabled = false;
+        await advanceResearchAfterRemoval();
+      } catch (e) {
+        footerFail(e, saveInbox);
       }
     });
-    ingestWiki.addEventListener("click", async () => {
-      ingestWiki.disabled = true;
+    // Menu item: Save RAW source only (no derived wiki pages).
+    menuSave.addEventListener("click", async () => {
+      applyMenuOpen(false);
+      menuSave.disabled = true;
+      researchError(null);
+      try {
+        await flushWorkingDocument();
+        if (!currentEntryId) throw new Error("research-not-active");
+        const researchId = currentEntryId;
+        const wikis = await syncResearchWikiTarget();
+        if (!wikis.length) throw new Error("no-enabled-wiki");
+        const wikiId = wikis.length > 1 ? wikiTarget.value : wikis[0].id;
+        const data = await api<{ id: string }>(
+          `/api/research/history/${encodeURIComponent(researchId)}/save-raw-source`,
+          { json: { wikiId } },
+        );
+        await openAfterIngest(String(data.id));
+        await advanceResearchAfterRemoval();
+      } catch (e) {
+        footerFail(e, menuSave);
+      } finally {
+        menuSave.disabled = false;
+      }
+    });
+    // Menu item: Save source + generate derived wiki pages (proposal flow).
+    menuIngest.addEventListener("click", async () => {
+      applyMenuOpen(false);
+      menuIngest.disabled = true;
+      researchError(null);
       try {
         await flushWorkingDocument();
         if (!currentEntryId) throw new Error("research-not-active");
@@ -5990,8 +6142,10 @@ async function boot() {
           { researchId },
           wikis.length > 1 ? wikiTarget.value : wikis[0].id,
         );
-      } catch {
-        ingestWiki.disabled = false;
+      } catch (e) {
+        footerFail(e, menuIngest);
+      } finally {
+        menuIngest.disabled = false;
       }
     });
     void syncResearchWikiTarget();
@@ -7236,6 +7390,68 @@ async function boot() {
         );
       }
     }
+  }
+
+  /**
+   * RAW source state panel: when the open note is a wiki's canonical RAW
+   * source (even outside wiki.path, e.g. raw "../research"), compute its graph
+   * state. No links from non-raw wiki notes -> pending, offer Ingest. Linked ->
+   * ingested, count connected notes. Ingest generates ONLY derived pages (the
+   * source already exists; the server re-confirms this at propose/apply time).
+   */
+  function renderReaderRawSourceAction(
+    preview: IngestPreview,
+    wiki: AdminWikiConfig,
+    placement: "top" | "bottom",
+  ): HTMLElement {
+    const actions = document.createElement("div");
+    actions.className = `reader-wiki-action reader-wiki-action-${placement}`;
+    const status = document.createElement("span");
+    status.className = "reader-wiki-status muted";
+    const select = document.createElement("select");
+    select.className = "hidden";
+    const btn = document.createElement("button");
+    btn.className = "web-save";
+    actions.append(status, select, btn);
+
+    const connected = rawSourceLinkCount(preview.source, wiki);
+    if (connected > 0) {
+      btn.classList.add("hidden");
+      status.textContent = i18n.t("ingest.rawIngested", { count: connected });
+      return actions;
+    }
+    // Pending: offer to generate derived wiki pages from this source.
+    status.textContent = i18n.t("ingest.rawPending");
+    btn.textContent = i18n.t("ingest.rawIngest");
+    btn.title = i18n.t("ingest.rawPendingHint");
+    // If other enabled wikis exist, let the user pick — but default to the
+    // wiki this RAW source belongs to.
+    void loadEnabledWikis().then((wikis) => {
+      const others = wikis.filter((w) => w.id !== wiki.id);
+      if (others.length) {
+        select.classList.remove("hidden");
+        const def = document.createElement("option");
+        def.value = wiki.id;
+        def.textContent = wikiDisplayName(wiki);
+        select.appendChild(def);
+        for (const w of others) {
+          const o = document.createElement("option");
+          o.value = w.id;
+          o.textContent = wikiDisplayName(w);
+          select.appendChild(o);
+        }
+      }
+      btn.addEventListener("click", () => {
+        btn.disabled = true;
+        void showWikiProposal(
+          { ...preview, sourceNote: preview.source },
+          select.classList.contains("hidden") ? wiki.id : select.value,
+        ).finally(() => {
+          btn.disabled = false;
+        });
+      });
+    });
+    return actions;
   }
 
   function renderReaderWikiAction(

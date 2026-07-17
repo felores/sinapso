@@ -32,6 +32,8 @@ describe("voice system prompt", () => {
     expect(prompt).toContain("selectedContext.current");
     expect(prompt).toContain("Archive destination from Admin: archive");
     expect(prompt).toContain("archive_vault_note");
+    expect(prompt).toContain("any known note anywhere in the vault");
+    expect(prompt).toContain("never use absolute paths, ../ traversal");
   });
 });
 

@@ -21,11 +21,21 @@ import { resolve, sep } from "node:path";
 // without a circular import: write.ts re-exports WriteError below the import
 // line, and all existing import sites (`import { WriteError } from "./write"`)
 // keep working through that re-export.
+export interface WriteErrorDetails {
+  /** Stable machine code (e.g. OUTSIDE_SELECTED_WIKI) for in-panel routing. */
+  code?: string;
+  /** Serializable, safe-to-show context (no content, no absolute paths). */
+  details?: unknown;
+}
 export class WriteError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  code?: string;
+  details?: unknown;
+  constructor(status: number, message: string, extra?: WriteErrorDetails) {
     super(message);
     this.status = status;
+    if (extra?.code) this.code = extra.code;
+    if (extra?.details !== undefined) this.details = extra.details;
   }
 }
 

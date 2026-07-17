@@ -228,6 +228,10 @@ describe("wiki ingest proposals", () => {
     expect(prompt).toContain(
       `Canonical RAW source path after approval: ${rawPath}`,
     );
+    expect(prompt).toContain(
+      "any known vault note, including notes outside this wiki",
+    );
+    expect(prompt).toContain("never use absolute paths, ../ traversal");
     expect(prompt).toContain(`must cite or link ${rawPath}`);
     expect(res.body.contracts.map((c: { path: string }) => c.path)).toEqual([
       "wiki/AGENTS.md",
@@ -361,7 +365,7 @@ describe("wiki ingest proposals", () => {
     expect(readChangeLog(f.data)).toHaveLength(beforeLog);
   });
 
-  it("rejects LLM proposal paths outside the selected wiki", async () => {
+  it("discards LLM ops outside the wiki tree and fails when none remain", async () => {
     const f = fixture({
       llm: '{"operations":[{"type":"create","path":"elsewhere/page.md","content":"x"}]}',
     });
@@ -369,8 +373,65 @@ describe("wiki ingest proposals", () => {
       .post("/api/wiki-ingest/propose")
       .set(TOKEN_HEADER, await token(f.app))
       .send({ source: f.doc, wikiId: "wiki" });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toContain("no wiki proposals");
+  });
+
+  it("keeps the valid op when the LLM also proposes an outside-wiki path", async () => {
+    const f = fixture({
+      llm: JSON.stringify({
+        operations: [
+          { type: "create", path: "elsewhere/bad.md", content: "bad" },
+          {
+            type: "create",
+            path: "wiki/good.md",
+            content: "# Good\n",
+          },
+        ],
+      }),
+    });
+    const res = await request(f.app)
+      .post("/api/wiki-ingest/propose")
+      .set(TOKEN_HEADER, await token(f.app))
+      .send({ source: f.doc, wikiId: "wiki" });
+    expect(res.status).toBe(200);
+    expect(res.body.operations.map((op: { path: string }) => op.path)).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^raw\//), "wiki/good.md"]),
+    );
+    expect(
+      res.body.operations.some(
+        (op: { path: string }) => op.path === "elsewhere/bad.md",
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects a tampered apply path outside the wiki with a rich error", async () => {
+    const f = fixture();
+    const res = await request(f.app)
+      .post("/api/wiki-ingest/apply")
+      .set(TOKEN_HEADER, await token(f.app))
+      .send({
+        wikiId: "wiki",
+        operations: [
+          {
+            type: "create",
+            path: "raw/2026-01-01_x.md",
+            content: "raw",
+            raw: true,
+          },
+          { type: "create", path: "elsewhere/page.md", content: "x" },
+        ],
+      });
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain("outside selected wiki");
+    expect(res.body.code).toBe("OUTSIDE_SELECTED_WIKI");
+    expect(res.body.details).toMatchObject({
+      rejectedPath: "elsewhere/page.md",
+      operationType: "create",
+      wikiPath: "wiki",
+    });
+    expect(typeof res.body.details.rawDestination).toBe("string");
+    expect(res.body.details.rawDestination).not.toBe("");
+    expect(existsSync(join(f.vault, "elsewhere", "page.md"))).toBe(false);
   });
 
   it("rejects tampered approval paths outside the vault", async () => {
@@ -600,4 +661,173 @@ describe("wiki ingest proposals", () => {
     expect(getEntry(f.data, entry.id)).not.toBeNull();
     expect(readChangeLog(f.data)).toEqual(before);
   });
+
+  it("saves research as a wiki RAW source via the single writer", async () => {
+    const f = fixture();
+    const entry = saveEntry(f.data, {
+      mode: "article",
+      query: "Article",
+      article: {
+        url: "https://example.com/article",
+        title: "Article",
+        content: "Article body.",
+        publishedDate: null,
+        author: "Author",
+      },
+    });
+    const before = readChangeLog(f.data).length;
+    const res = await request(f.app)
+      .post(`/api/research/history/${entry.id}/save-raw-source`)
+      .set(TOKEN_HEADER, await token(f.app))
+      .send({ wikiId: "wiki" });
+    expect(res.status).toBe(200);
+    expect(res.body.removedHistory).toBe(true);
+    expect(res.body.id).toMatch(/^raw\//);
+    expect(getEntry(f.data, entry.id)).toBeNull();
+    const written = readFileSync(join(f.vault, res.body.id), "utf-8");
+    expect(written).toContain("source: https://example.com/article");
+    expect(written).toContain("Article body.");
+    const log = readChangeLog(f.data);
+    expect(log.length).toBe(before + 1);
+    expect(log[0]).toMatchObject({ action: "create" });
+    expect(log[0].path).toMatch(/^raw\//);
+  });
+
+  it("saves research as a RAW source under an external ../research destination", async () => {
+    const f = fixture({ rawDestination: "../research/" });
+    const entry = saveEntry(f.data, {
+      mode: "web",
+      query: "External raw",
+      answer: {
+        content: "Body.",
+        citations: [{ title: "S", url: "https://example.com/s" }],
+      },
+    });
+    const res = await request(f.app)
+      .post(`/api/research/history/${entry.id}/save-raw-source`)
+      .set(TOKEN_HEADER, await token(f.app))
+      .send({ wikiId: "wiki" });
+    expect(res.status).toBe(200);
+    expect(res.body.id).toMatch(/^research\//);
+    expect(existsSync(join(f.vault, res.body.id))).toBe(true);
+    expect(getEntry(f.data, entry.id)).toBeNull();
+  });
+
+  it("leaves research intact when the RAW source write fails", async () => {
+    const f = fixture();
+    const entry = saveEntry(f.data, {
+      mode: "article",
+      query: "Article",
+      article: {
+        url: "https://example.com/article",
+        title: "Article",
+        content: "Article body.",
+        publishedDate: null,
+        author: "Author",
+      },
+    });
+    // Occupy the exact RAW path so the create fails with 409.
+    const raw = buildRawTarget(f.vault, "wiki", "raw/", "Article");
+    mkdirSync(raw.dir, { recursive: true });
+    writeFileSync(raw.full, "different");
+    const res = await request(f.app)
+      .post(`/api/research/history/${entry.id}/save-raw-source`)
+      .set(TOKEN_HEADER, await token(f.app))
+      .send({ wikiId: "wiki" });
+    expect(res.status).toBe(409);
+    expect(getEntry(f.data, entry.id)).not.toBeNull();
+  });
+
+  it("generates only derived ops from an existing RAW source", async () => {
+    const f = fixture({
+      llm: '{"operations":[{"type":"create","path":"wiki/derived.md","content":"# Derived"}]}',
+    });
+    mkdirSync(join(f.vault, "raw"), { recursive: true });
+    const rawPath = "raw/2026-01-01_existing.md";
+    writeFileSync(join(f.vault, rawPath), "# Existing Source\n\nBody.\n");
+    const res = await request(f.app)
+      .post("/api/wiki-ingest/propose")
+      .set(TOKEN_HEADER, await token(f.app))
+      .send({ wikiId: "wiki", sourceNote: rawPath });
+    expect(res.status).toBe(200);
+    expect(res.body.operations.some((op: { raw: boolean }) => op.raw)).toBe(
+      false,
+    );
+    expect(res.body.rawPath).toBe(rawPath);
+    const prompt = f.chatBody()?.messages?.at(-1)?.content ?? "";
+    expect(prompt).toContain(rawPath);
+    expect(prompt).toContain("already exists");
+    expect(prompt).toContain("Existing Source");
+  });
+
+  it("applies derived ops from an existing RAW source without moving it", async () => {
+    const f = fixture({
+      llm: '{"operations":[{"type":"create","path":"wiki/derived.md","content":"# Derived"}]}',
+    });
+    mkdirSync(join(f.vault, "raw"), { recursive: true });
+    const rawPath = "raw/2026-01-01_existing.md";
+    writeFileSync(join(f.vault, rawPath), "# Existing Source\n");
+    const t = await token(f.app);
+    const proposed = await request(f.app)
+      .post("/api/wiki-ingest/propose")
+      .set(TOKEN_HEADER, t)
+      .send({ wikiId: "wiki", sourceNote: rawPath });
+    expect(proposed.status).toBe(200);
+    const applied = await request(f.app)
+      .post("/api/wiki-ingest/apply")
+      .set(TOKEN_HEADER, t)
+      .send({
+        wikiId: "wiki",
+        sourceNote: rawPath,
+        operations: proposed.body.operations,
+      });
+    expect(applied.status).toBe(200);
+    expect(applied.body.ids).toContain("wiki/derived.md");
+    // The RAW source is unchanged in place (not moved/duplicated).
+    expect(readFileSync(join(f.vault, rawPath), "utf-8")).toBe(
+      "# Existing Source\n",
+    );
+  });
+
+  it("rejects an existing-RAW apply that smuggles in a RAW operation", async () => {
+    const f = fixture();
+    mkdirSync(join(f.vault, "raw"), { recursive: true });
+    const rawPath = "raw/2026-01-01_existing.md";
+    writeFileSync(join(f.vault, rawPath), "# Existing Source\n");
+    const res = await request(f.app)
+      .post("/api/wiki-ingest/apply")
+      .set(TOKEN_HEADER, await token(f.app))
+      .send({
+        wikiId: "wiki",
+        sourceNote: rawPath,
+        operations: [
+          {
+            type: "create",
+            path: "raw/2026-01-01_smuggled.md",
+            content: "x",
+            raw: true,
+          },
+        ],
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("RAW operation");
+    expect(existsSync(join(f.vault, "raw", "2026-01-01_smuggled.md"))).toBe(
+      false,
+    );
+  });
 });
+
+function buildRawTarget(
+  vault: string,
+  wikiPath: string,
+  rawDestination: string,
+  title: string,
+): { dir: string; full: string } {
+  const date = new Date().toISOString().slice(0, 10);
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const full = join(vault, wikiPath, rawDestination, `${date}_${slug}.md`);
+  return { dir: join(vault, wikiPath, rawDestination), full };
+}

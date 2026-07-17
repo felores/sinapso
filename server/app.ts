@@ -164,6 +164,7 @@ import { attachVoiceRelay } from "./integrations/voice.js";
 import { discoverAndMerge } from "./integrations/wiki.js";
 import {
   applyWikiIngestOperations,
+  buildRawOperation,
   buildWikiIngestProposal,
   readWikiContracts,
   resolveWikiTarget,
@@ -1252,7 +1253,11 @@ export function createApp(
   const writeDeps = () => ({ vaultRoot, dataDir: dirname(graphPath) });
   const writeFail = (res: express.Response, e: unknown, what: string) => {
     if (e instanceof WriteError) {
-      res.status(e.status).json({ error: e.message });
+      res.status(e.status).json({
+        error: e.message,
+        ...(e.code ? { code: e.code } : {}),
+        ...(e.details !== undefined ? { details: e.details } : {}),
+      });
     } else {
       console.error(`${what} failed:`, e);
       res.status(500).json({ error: `${what} failed` });
@@ -1380,7 +1385,11 @@ export function createApp(
   async function wikiIngestProposal(
     converted: ConvertedDocument,
     wikiId: unknown,
-    opts: { researchId?: string; sourceNote?: string } = {},
+    opts: {
+      researchId?: string;
+      sourceNote?: string;
+      existingRawPath?: string;
+    } = {},
   ) {
     const cfg = loadConfig(configPath);
     // Wiki-ingest synthesis is the thinker-tier operation (R8).
@@ -1416,7 +1425,37 @@ export function createApp(
     return relative(resolve(vaultRoot), full).split(sep).join("/");
   }
 
-  function convertedFromInboxNote(sourceNote: string): ConvertedDocument {
+  /**
+   * Server-side classification of a vault note used as a wiki-ingest source.
+   *   "raw"   -> already a canonical RAW source (under wiki.rawDestination)
+   *   "inbox" -> an Inbox note (under writeDestination), to be moved to RAW
+   *   null    -> neither (not a valid derived-only source)
+   * The server decides the state; the client never asserts it.
+   */
+  function classifySourceNote(
+    wiki: { path: string; rawDestination?: string | null },
+    cfg: ReturnType<typeof loadConfig>,
+    sourceNote: string | undefined,
+  ): "raw" | "inbox" | null {
+    if (!sourceNote) return null;
+    const full = confineNoteId(vaultRoot, sourceNote);
+    if (!full) return null;
+    const base = resolve(vaultRoot);
+    const wikiBase = resolve(base, wiki.path);
+    const rawDestination = wiki.rawDestination?.trim();
+    if (rawDestination) {
+      const rawBase = resolve(wikiBase, rawDestination);
+      if (full.startsWith(rawBase + sep)) return "raw";
+    }
+    const inboxBase = resolve(base, cfg.writeDestination);
+    if (full.startsWith(inboxBase + sep)) return "inbox";
+    return null;
+  }
+
+  function convertedFromVaultNote(
+    sourceNote: string,
+    via: string,
+  ): ConvertedDocument {
     const markdown = readFileSync(
       noteFileOrFail(vaultRoot, sourceNote),
       "utf-8",
@@ -1428,9 +1467,9 @@ export function createApp(
       title:
         heading ||
         sourceNote.split("/").pop()?.replace(/\.md$/i, "") ||
-        "Inbox note",
+        "Source note",
       markdown,
-      via: "inbox",
+      via,
     };
   }
 
@@ -1458,6 +1497,47 @@ export function createApp(
     }
   });
 
+  // POST /api/research/history/:id/save-raw-source: persist research as the
+  // canonical RAW source of a wiki (no LLM proposal). Reuses buildRawOperation
+  // (policy/name/frontmatter) + the single writer write.ts. Creates under
+  // wiki.rawDestination (incl ../research), deletes the entry only after the
+  // write succeeds. Token-guarded (mutating).
+  app.post(
+    "/api/research/history/:id/save-raw-source",
+    guarded,
+    express.json(),
+    (req, res) => {
+      try {
+        const entry = getEntry(dataDir, String(req.params.id));
+        if (!entry) throw new WriteError(404, "research not found");
+        const converted = convertedFromResearchEntry(entry);
+        if (!converted)
+          throw new WriteError(
+            400,
+            "only web, article, and document research can be saved",
+          );
+        const cfg = ingestTargetConfig(loadConfig(configPath));
+        const wiki = resolveWikiTarget(vaultRoot, cfg, {
+          wikiId: req.body?.wikiId,
+        });
+        if (!wiki.rawDestination?.trim())
+          throw new WriteError(400, "selected wiki requires a RAW destination");
+        const raw = buildRawOperation(vaultRoot, wiki, converted, new Date());
+        const created = guardedCreate(writeDeps(), {
+          path: raw.path,
+          title: raw.title,
+          content: raw.content!,
+          exact: true,
+          actor: "user",
+        });
+        deleteEntry(dataDir, entry.id);
+        res.json({ ok: true, id: created.id, removedHistory: true });
+      } catch (e) {
+        writeFail(res, e, "research save raw source");
+      }
+    },
+  );
+
   app.post(
     "/api/wiki-ingest/propose",
     guarded,
@@ -1470,18 +1550,33 @@ export function createApp(
           return;
         }
         const cfg = loadConfig(configPath);
-        if (
-          !requireLlmTier(
-            resolveTier(operationTier("wiki_ingest_synthesis"), cfg),
-            res,
-            "Add an OpenRouter key before wiki ingest",
-          )
-        ) {
-          return;
-        }
-        const sourceNote = inboxSourceNote(b.sourceNote, cfg);
+        const merged = ingestTargetConfig(cfg);
+        const proposalWiki = resolveWikiTarget(vaultRoot, merged, {
+          wikiId: b.wikiId,
+        });
+        // Server classifies the source note: existing RAW source -> derived
+        // only (no create/move); Inbox note -> move to RAW. Don't trust the
+        // client; confine + location decide the mode.
+        const rawSourceNote =
+          typeof b.sourceNote === "string" && b.sourceNote.trim()
+            ? b.sourceNote.trim()
+            : undefined;
+        const sourceClass = rawSourceNote
+          ? classifySourceNote(proposalWiki, cfg, rawSourceNote)
+          : null;
+        if (rawSourceNote && !sourceClass)
+          throw new WriteError(
+            400,
+            "source note must be in the configured Inbox or the selected wiki's RAW destination",
+          );
+        const existingRawPath =
+          sourceClass === "raw" ? rawSourceNote : undefined;
+        const sourceNote =
+          sourceClass === "inbox"
+            ? inboxSourceNote(rawSourceNote, cfg)
+            : undefined;
         const researchId =
-          !sourceNote && typeof b.researchId === "string"
+          !sourceNote && !existingRawPath && typeof b.researchId === "string"
             ? b.researchId
             : undefined;
         const researchEntry = researchId ? getEntry(dataDir, researchId) : null;
@@ -1496,7 +1591,10 @@ export function createApp(
             "only web, article, and document research can be ingested",
           );
         const converted =
-          (sourceNote ? convertedFromInboxNote(sourceNote) : null) ??
+          (existingRawPath
+            ? convertedFromVaultNote(existingRawPath, "sinapso-raw-source")
+            : null) ??
+          (sourceNote ? convertedFromVaultNote(sourceNote, "inbox") : null) ??
           researchConverted ??
           convertedFromBody(b) ??
           (await (async () => {
@@ -1522,6 +1620,7 @@ export function createApp(
           await wikiIngestProposal(converted, b.wikiId, {
             researchId,
             sourceNote,
+            existingRawPath,
           }),
         );
       } catch (e) {
@@ -1575,7 +1674,20 @@ export function createApp(
         const b = (req.body ?? {}) as Record<string, unknown>;
         const cfg = ingestTargetConfig(loadConfig(configPath));
         const wiki = resolveWikiTarget(vaultRoot, cfg, { wikiId: b.wikiId });
-        const sourceNote = inboxSourceNote(b.sourceNote, cfg, true);
+        // Server re-classifies the source note at apply time (don't trust the
+        // client). Existing RAW source -> derived only; Inbox -> move to RAW.
+        const rawSourceNote =
+          typeof b.sourceNote === "string" && b.sourceNote.trim()
+            ? b.sourceNote.trim()
+            : undefined;
+        const sourceClass = rawSourceNote
+          ? classifySourceNote(wiki, cfg, rawSourceNote)
+          : null;
+        const existingRaw = sourceClass === "raw";
+        const sourceNote =
+          sourceClass === "inbox"
+            ? inboxSourceNote(rawSourceNote, cfg, true)
+            : undefined;
         const researchId =
           typeof b.researchId === "string" ? b.researchId : undefined;
         if (researchId) {
@@ -1588,7 +1700,7 @@ export function createApp(
           vaultRoot,
           wiki,
           b.operations,
-          { sourceNote },
+          { sourceNote, existingRaw },
         );
         if (sourceNote) {
           const move = ids[0];
