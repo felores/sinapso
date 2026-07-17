@@ -48,6 +48,8 @@
     "desktop:build": "vite build web && esbuild desktop/main.ts --bundle --platform=node --format=cjs --external:electron --external:express --outfile=desktop/dist/main.cjs",
     "desktop": "npm run desktop:build && electron .",
     "dist:desktop": "npm run desktop:build && electron-builder --win",
+    "dist:mac": "npm run desktop:build && electron-builder --mac",
+    "dist:all": "npm run desktop:build && electron-builder --mac --win",
     "test": "vitest run",
     "test:run": "vitest run",
     "test:e2e": "playwright test",
@@ -112,11 +114,19 @@
     "files": [
       "desktop/dist/**",
       "web/dist/**",
-      "THIRD_PARTY_LICENSES.md"
+      "THIRD_PARTY_LICENSES.md",
+      "LICENSE"
     ],
     "asarUnpack": [
       "web/dist/**"
     ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity"
+    },
     "win": {
       "target": [
         "nsis",
