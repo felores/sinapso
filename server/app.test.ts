@@ -19,6 +19,10 @@ import { updateConfig } from "./integrations/config";
 const VAULT = mkdtempSync(join(tmpdir(), "sinapso-test-"));
 const NOTE_BODY = "# Real Note\n\nA real markdown note inside the vault.\n";
 writeFileSync(join(VAULT, "real.md"), NOTE_BODY);
+// 12-line note for anchored-context / pagination tests.
+const LINES_NOTE =
+  Array.from({ length: 12 }, (_, i) => `L${i + 1}`).join("\n") + "\n";
+writeFileSync(join(VAULT, "lines.md"), LINES_NOTE);
 
 const graphPath = join(VAULT, "graph.json");
 writeFileSync(
@@ -80,6 +84,200 @@ describe("server: /api/note-lines slice + guard", () => {
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(4);
     expect(res.body.text).toContain("A real markdown note");
+  });
+
+  it("rejects parent-directory traversal", async () => {
+    const res = await request(app).get(
+      "/api/note-lines?id=../../etc/passwd&from=1",
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a non-.md path", async () => {
+    const res = await request(app).get("/api/note-lines?id=readme.txt");
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a phantom: id with 404", async () => {
+    const res = await request(app).get("/api/note-lines?id=phantom:x");
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("server: rescan excludes", () => {
+  it("reconciles stale graph files with default archive and images excludes on startup", async () => {
+    const root = mkdtempSync(
+      join(tmpdir(), "sinapso-startup-default-excludes-"),
+    );
+    try {
+      mkdirSync(join(root, "archivo"));
+      mkdirSync(join(root, "images"));
+      writeFileSync(join(root, "keep.md"), "# Keep\n");
+      writeFileSync(join(root, "archivo", "old.md"), "# Archived\n");
+      writeFileSync(join(root, "images", "image-note.md"), "# Image note\n");
+      const graph = join(root, "graph.json");
+      scanVault({ vault: root, out: graph });
+      const configPath = join(root, "config.json");
+      updateConfig({ archiveDestination: "archivo" }, configPath);
+
+      const created = createApp(graph, undefined, { configPath });
+      const ids = (created.meta() as unknown as { notes?: number }).notes;
+      const graphData = JSON.parse(readFileSync(graph, "utf-8")) as {
+        meta: { excludes: string[] };
+        nodes: Array<{ id: string }>;
+      };
+
+      expect(ids).toBe(1);
+      expect(graphData.meta.excludes).toContain("archivo");
+      expect(graphData.meta.excludes).toContain("images");
+      expect(graphData.nodes.map((n) => n.id)).toEqual(["keep.md"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("uses initialized vault-scoped excludes exactly on rescan", async () => {
+    const root = mkdtempSync(join(tmpdir(), "sinapso-rescan-excludes-"));
+    try {
+      mkdirSync(join(root, "skip"));
+      mkdirSync(join(root, "done"));
+      mkdirSync(join(root, "media"));
+      writeFileSync(join(root, "keep.md"), "# Keep\n");
+      writeFileSync(join(root, "skip", "hidden.md"), "# Hidden\n");
+      writeFileSync(join(root, "done", "archived.md"), "# Archived\n");
+      writeFileSync(join(root, "media", "image-note.md"), "# Image note\n");
+      const graph = join(root, "graph.json");
+      scanVault({ vault: root, out: graph });
+      const configPath = join(root, "config.json");
+      updateConfig(
+        {
+          archiveDestination: "done",
+          imagesDestination: "media",
+          vaults: {
+            [root]: {
+              path: root,
+              excludes: ["skip"],
+              wikis: [],
+            },
+          },
+        },
+        configPath,
+      );
+      const { app } = createApp(graph, undefined, { configPath });
+
+      const res = await request(app).post("/api/rescan");
+      const ids = (res.body.graph.nodes as Array<{ id: string }>).map(
+        (n) => n.id,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.graph.meta.excludes).toEqual(["skip"]);
+      expect(ids).toContain("keep.md");
+      expect(ids).not.toContain("skip/hidden.md");
+      expect(ids).toContain("done/archived.md");
+      expect(ids).toContain("media/image-note.md");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("server: /api/note-grep literal scan + guard", () => {
+  it("finds every matching line with its 1-based line number", async () => {
+    const res = await request(app).get("/api/note-grep?id=real.md&q=markdown");
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    expect(res.body.matches[0].line).toBe(3);
+    expect(res.body.matches[0].text).toContain("markdown");
+  });
+
+  it("is case-sensitive by default, case-insensitive with ignore_case=1", async () => {
+    const sensitive = await request(app).get(
+      "/api/note-grep?id=real.md&q=Real",
+    );
+    expect(sensitive.body.count).toBe(1); // "# Real Note" only
+    const insensitive = await request(app).get(
+      "/api/note-grep?id=real.md&q=real&ignore_case=1",
+    );
+    expect(insensitive.body.count).toBe(2); // "Real" + "real"
+  });
+
+  it("returns count 0 for no match", async () => {
+    const res = await request(app).get("/api/note-grep?id=real.md&q=zzzznope");
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(0);
+  });
+
+  it("rejects parent-directory traversal", async () => {
+    const res = await request(app).get(
+      "/api/note-grep?id=../../etc/passwd&q=root",
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a phantom: id with 404", async () => {
+    const res = await request(app).get("/api/note-grep?id=phantom:x&q=a");
+    expect(res.status).toBe(404);
+  });
+  it("anchored mode centers context on the line (before AND after)", async () => {
+    const res = await request(app).get(
+      "/api/note-lines?id=lines.md&line=6&before=2&after=2",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.from).toBe(4);
+    expect(res.body.to).toBe(8);
+    expect(res.body.text).toBe("L4\nL5\nL6\nL7\nL8");
+  });
+
+  it("anchored mode at line 1 clamps the start to the file head", async () => {
+    const res = await request(app).get(
+      "/api/note-lines?id=lines.md&line=1&before=5&after=5",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.from).toBe(1);
+    expect(res.body.to).toBe(11);
+    expect(res.body.text.startsWith("L1\n")).toBe(true);
+  });
+
+  it("anchored mode near end of file clamps the tail", async () => {
+    const res = await request(app).get(
+      "/api/note-lines?id=lines.md&line=12&before=3&after=3",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.from).toBe(9);
+    expect(res.body.to).toBe(13);
+    expect(res.body.text).toContain("L12");
+  });
+
+  it("anchored mode caps the window at 400 lines", async () => {
+    const res = await request(app).get(
+      "/api/note-lines?id=lines.md&line=6&before=500&after=500",
+    );
+    expect(res.status).toBe(200);
+    // window = before+1+after would be 1001, capped at 400; small file so
+    // the whole note is returned but never more than 400 lines.
+    expect(res.body.to - res.body.from + 1).toBeLessThanOrEqual(400);
+    expect(res.body.from).toBe(1);
+  });
+
+  it("range mode still works alongside anchored mode (from/count)", async () => {
+    const res = await request(app).get(
+      "/api/note-lines?id=lines.md&from=3&count=4",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.from).toBe(3);
+    expect(res.body.to).toBe(6);
+    expect(res.body.text).toBe("L3\nL4\nL5\nL6");
+  });
+
+  it("always returns the full {id, from, to, total, text} shape", async () => {
+    const res = await request(app).get("/api/note-lines?id=lines.md&line=2");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("id", "lines.md");
+    expect(res.body).toHaveProperty("from");
+    expect(res.body).toHaveProperty("to");
+    expect(res.body).toHaveProperty("total", 13);
+    expect(res.body).toHaveProperty("text");
   });
 
   it("rejects parent-directory traversal", async () => {
@@ -1236,3 +1434,218 @@ describe("server: working document compare-and-swap boundary", () => {
     ).toBe(404);
   });
 });
+
+
+describe("server: /api/tree direct cap", () => {
+  it("caps direct note listings at 40 while preserving the full direct count", async () => {
+    const crowded = mkdtempSync(join(tmpdir(), "sinapso-tree-crowded-"));
+    const crowdedGraph = join(crowded, "graph.json");
+    writeFileSync(
+      crowdedGraph,
+      JSON.stringify({
+        meta: {
+          vaultName: "crowded",
+          vaultPath: crowded,
+          notes: 41,
+          excludes: [],
+        },
+        nodes: Array.from({ length: 41 }, (_, n) => ({
+          id: `crowded-${n}.md`,
+          title: `Crowded ${n}`,
+          phantom: false,
+        })),
+        links: [],
+      }),
+    );
+    const { app: crowdedApp } = createApp(crowdedGraph);
+    try {
+      const res = await request(crowdedApp).get("/api/tree");
+      expect(res.body.noteCount).toBe(41);
+      expect(res.body.notes).toHaveLength(40);
+    } finally {
+      rmSync(crowded, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("server: /api/search-vault consolidated discovery", () => {
+  const V = mkdtempSync(join(tmpdir(), "sinapso-sv-"));
+  mkdirSync(join(V, "saas", "climatia"), { recursive: true });
+  writeFileSync(
+    join(V, "root.md"),
+    "# Root Note\n\nA markdown note about solar panels and renewable energy.\n",
+  );
+  writeFileSync(
+    join(V, "saas", "climatia", "plan.md"),
+    "# Climatia Plan\n\nThe exact phrase. Find it.\nMore (solar panels) content.\n",
+  );
+  const gp = join(V, "graph.json");
+  writeFileSync(
+    gp,
+    JSON.stringify({
+      meta: { vaultName: "t", vaultPath: V, notes: 2, excludes: [] },
+      nodes: [
+        { id: "root.md", title: "Root Note", phantom: false },
+        {
+          id: "saas/climatia/plan.md",
+          title: "Climatia Plan",
+          phantom: false,
+        },
+        { id: "phantom:gone.md", title: "Gone", phantom: true },
+      ],
+      links: [],
+    }),
+  );
+  const { app: svApp } = createApp(gp);
+  afterAll(() => rmSync(V, { recursive: true, force: true }));
+
+  it("path mode matches basenames/titles and is vault-confined", async () => {
+    const res = await request(svApp).get(
+      "/api/search-vault?queries=plan&mode=path",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.source).toBe("path");
+    expect(res.body.results.map((r: { path: string }) => r.path)).toEqual([
+      "saas/climatia/plan.md",
+    ]);
+    // Ranked: stable 1-based rank + scoreKind=path; path emits no score.
+    expect(res.body.results[0].rank).toBe(1);
+    expect(res.body.results[0].scoreKind).toBe("path");
+    expect(res.body.results[0].score).toBeUndefined();
+  });
+
+  it("path mode scopes to a folder prefix", async () => {
+    const res = await request(svApp).get(
+      "/api/search-vault?queries=root&mode=path&path=saas",
+    );
+    expect(res.body.results).toEqual([]);
+    const res2 = await request(svApp).get(
+      "/api/search-vault?queries=root&mode=path",
+    );
+    expect(res2.body.results.map((r: { path: string }) => r.path)).toEqual([
+      "root.md",
+    ]);
+    expect(res2.body.results[0].rank).toBe(1);
+    expect(res2.body.results[0].scoreKind).toBe("path");
+  });
+
+  it("exact mode returns literal matches with line + terms across the vault", async () => {
+    const res = await request(svApp).get(
+      "/api/search-vault?queries=solar%20panels&mode=exact",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.source).toBe("exact");
+    const paths = res.body.results.map((r: { path: string }) => r.path);
+    expect(paths).toEqual(
+      expect.arrayContaining(["root.md", "saas/climatia/plan.md"]),
+    );
+    for (const r of res.body.results) {
+      expect(typeof r.line).toBe("number");
+      expect(r.terms).toContain("solar panels");
+      // Ranked: every exact hit has a stable rank + scoreKind; no raw score.
+      expect(typeof r.rank).toBe("number");
+      expect(r.scoreKind).toBe("exact");
+      expect(r.score).toBeUndefined();
+    }
+    // Ranks are dense 1..N.
+    const ranks = res.body.results
+      .map((r: { rank?: number }) => r.rank)
+      .sort((a: number, b: number) => a - b);
+    expect(ranks).toEqual(
+      Array.from({ length: ranks.length }, (_, i) => i + 1),
+    );
+  });
+
+  it("exact mode honors note scope", async () => {
+    const res = await request(svApp).get(
+      "/api/search-vault?queries=exact%20phrase&mode=exact&note=root.md",
+    );
+    expect(res.body.results).toEqual([]);
+    const res2 = await request(svApp).get(
+      "/api/search-vault?queries=exact%20phrase&mode=exact&note=saas/climatia/plan.md",
+    );
+    expect(res2.body.results.length).toBe(1);
+    expect(res2.body.results[0].path).toBe("saas/climatia/plan.md");
+  });
+
+  it("exact mode treats regex metacharacters literally (no ReDoS)", async () => {
+    // An unmatched '(' would throw in a regex engine; as a literal substring
+    // it matches the parenthesized text in the note.
+    const res = await request(svApp).get(
+      "/api/search-vault?queries=(solar&mode=exact",
+    );
+    expect(res.body.results.map((r: { path: string }) => r.path)).toContain(
+      "saas/climatia/plan.md",
+    );
+  });
+
+  it("auto/keyword mode never touch paths outside the vault", async () => {
+    // A traversal id in a note scope stays confined (404 from the path guard
+    // would only apply to note reads; here the index only has vault nodes).
+    const res = await request(svApp).get(
+      "/api/search-vault?queries=../../etc/passwd&mode=auto",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.results).toEqual([]);
+  });
+
+  it("auto is hybrid RRF: without qmd it degrades to keyword with RRF scoring", async () => {
+    // qmd is not installed in this test env, so semantic contributes nothing
+    // and auto runs keyword-only. The response must still be RRF-tagged
+    // (scoreKind=rrf, stable rank) with source reflecting the single engine.
+    const res = await request(svApp).get(
+      "/api/search-vault?queries=renewable%20energy&mode=auto",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.mode).toBe("auto");
+    // Single contributing engine → keyword (not "hybrid").
+    expect(res.body.source).toBe("keyword");
+    expect(res.body.results.length).toBeGreaterThan(0);
+    for (const r of res.body.results) {
+      expect(r.scoreKind).toBe("rrf");
+      expect(typeof r.score).toBe("number");
+      expect(typeof r.rank).toBe("number");
+      expect(r.sources).toEqual(["keyword"]);
+    }
+    // Ranks are dense 1..N and scores are monotonically non-increasing.
+    const ranks = res.body.results.map(
+      (r: { rank: number }) => r.rank,
+    ) as number[];
+    expect(ranks).toEqual(
+      Array.from({ length: ranks.length }, (_, i) => i + 1),
+    );
+    const scores = res.body.results.map(
+      (r: { score: number }) => r.score,
+    ) as number[];
+    for (let i = 1; i < scores.length; i++)
+      expect(scores[i]).toBeLessThanOrEqual(scores[i - 1]);
+  });
+
+  it("empty queries return an empty bounded shape", async () => {
+    const res = await request(svApp).get("/api/search-vault");
+    expect(res.body).toEqual({ mode: "auto", source: "keyword", results: [] });
+  });
+});
+
+function switchFixture(pickVault?: () => Promise<string | null>) {
+  const root = mkdtempSync(join(tmpdir(), "sinapso-switch-"));
+  const data = join(root, "data");
+  const vaultA = join(root, "vault-a");
+  const vaultB = join(root, "vault-b");
+  mkdirSync(data);
+  mkdirSync(vaultA);
+  mkdirSync(vaultB);
+  writeFileSync(join(vaultA, "a.md"), "# A\n");
+  writeFileSync(join(vaultB, "b.md"), "# B\n");
+  const graph = join(data, "graph.json");
+  scanVault({ vault: vaultA, out: graph });
+  const server = createApp(graph, undefined, {
+    configPath: join(root, "config.json"),
+    pickVault,
+  });
+  return { root, vaultA, vaultB, server };
+}
+
+async function sessionToken(app: ReturnType<typeof createApp>["app"]) {
+  return (await request(app).get("/api/session")).body.token as string;
+}

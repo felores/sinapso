@@ -19,16 +19,48 @@ claude mcp add sinapso -e SINAPSO_URL=http://127.0.0.1:5175 -- \
 ```
 
 Then e.g. "search my vault for X with sinapso" or "create a note in my
-vault". Available tools: `search_notes`, `search_passages`, `read_passage`,
-`browse_folder`, `list_wikis`, `read_wiki_contract`, `create_note`,
-`write_document`, `save_working_document`, `archive_vault_note`,
-`web_research`, `fetch_url`.
+vault". Tools are derived from Sinapso's registry and may vary with the
+local edit opt-in; inspect the connected MCP client's tool list rather than
+copying a static list into an agent prompt.
 
 ## Podcast agent (or any MCP-speaking agent)
 
 Spawn `npx tsx /path/to/sinapso/server/mcp.ts` with `SINAPSO_URL` in the
-environment and speak MCP over stdio. `search_passages` replaces raw
-`/api/semantic-search` calls and adds the keyword fallback for free.
+environment and speak MCP over stdio. `search_vault` is the consolidated
+discovery tool: one call handles meaning/keyword (mode `auto`), literal
+matches (mode `exact`, with line + context), and path/title lookups (mode
+`path`). `auto` is a **hybrid**: it runs BOTH the semantic (qmd vsearch)
+and keyword (MiniSearch) engines and fuses them with Reciprocal Rank
+Fusion (RRF), because the two engines' native scores are not comparable.
+Every result carries a stable 1-based `rank` (the recommended order),
+`score`, `scoreKind` (`rrf`/`semantic`/`keyword`/`exact`/`path`), and
+`sources` (which engines found it, in `auto`). Agents should order by
+`rank` and read `snippet`/`line` context, never compare raw `score`
+values across modes or engines.
+
+**Discovery discipline (applies to MCP and CLI too):** follow
+Discover → Verify → Act for any answer about the vault.
+- **Discover**: `browse_folder` (top-down) when scope is unknown;
+  `search_vault` for concepts/topics. A subfolder's `count` is the TOTAL
+  notes anywhere under it (recursive); `notes` lists up to 40 DIRECT
+  children and `noteCount` gives the total direct-note count before that cap.
+- **Verify**: `read_note` on the path you found before citing, quoting,
+  summarizing, or editing. A `snippet` alone is not a citation.
+- **Act**: only with a real path and verified context. Never invent paths.
+- **Empty results are a signal, not an answer**: if `auto` returns nothing,
+  retry with `exact` (precise term/quote/id), `path` (file/title), or
+  `browse_folder` (folder scope). Never repeat the same
+  `(queries, mode, path)` call unchanged.
+
+**Wiki ingest (propose → approve → apply):** before `propose_wiki_ingest`,
+call `search_vault` for related notes and `read_wiki_contract` on the
+target wiki. The server reads the contract again and plans the exact
+canonical RAW path. The caller must present the proposal and obtain explicit
+user approval before `apply_wiki_ingest`; the server validates token,
+confinement, source state and operations, but cannot prove approval itself.
+Both propose and apply are available to MCP when its surface-scoped token is
+accepted. Backend guards (path confinement, OUTSIDE_SELECTED_WIKI rejection,
+RAW-first apply) remain the authority.
 
 ## In-place editing (off by default)
 
@@ -49,8 +81,8 @@ Restart the MCP server after changing the flag so the tool list updates.
 
 - stdio only — no new port, loopback-bound Sinapso stays loopback-bound.
 - The bridge's token comes from `GET /api/session?surface=mcp` and is only
-  accepted on routes whose registry entry declares the `mcp` surface —
-  git sync, wiki-ingest apply, delegation, and admin config stay
-  browser/voice-only even if the token leaks.
+  accepted on routes whose registry entry declares the `mcp` surface. Wiki
+  ingest propose/apply are on that surface; git sync, delegation, and admin
+  config stay browser/voice-only even if the token leaks.
 - A Sinapso restart rotates tokens; the bridge re-fetches once on 403 and
   replays the call.

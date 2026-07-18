@@ -1823,6 +1823,113 @@ body > :not(#graph) {
   }
 }
 
+/* ---- activity card stack (ephemeral, non-blocking) ----
+   One bounded stack opposite the search bar. The host is pointer-events:none;
+   each card re-enables interaction. Anchored to the corner opposite the search
+   bar via .ac-bottom (search bar on top) / .ac-top (search bar on bottom rail).
+   --btn-right-inset is the docked right-panel width (set on :root by the
+   topbar reflow) so the stack clears the reader/research panels; the mobile
+   vars lift it above the bottom rail. z-index 14 sits above ops-status (13). */
+#activity-cards {
+  position: fixed;
+  right: calc(12px + var(--btn-right-inset, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(320px, calc(100vw - var(--btn-right-inset, 0px) - 24px));
+  max-width: 320px;
+  z-index: 14;
+  pointer-events: none;
+}
+#activity-cards.ac-bottom {
+  bottom: calc(14px + var(--mobile-search-h, 0px) + var(--mobile-nav-h, 0px));
+}
+#activity-cards.ac-top {
+  top: calc(12px + var(--mobile-nav-h, 0px));
+  bottom: auto;
+}
+#activity-cards:empty {
+  display: none;
+}
+.ac-card {
+  pointer-events: auto;
+  background: var(--panel-bg, var(--bg, #1b1f2a));
+  border: 1px solid var(--border, #333);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--fg, #e6e6e6);
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: ac-in 0.18s ease;
+}
+.ac-card.ac-ready {
+  border-color: var(--accent, #6c8aff);
+}
+.ac-card.ac-error {
+  border-color: var(--warning, #d77a3a);
+}
+.ac-label {
+  font-weight: 600;
+}
+.ac-detail {
+  color: var(--muted, #9aa0b4);
+  font-size: 11px;
+}
+.ac-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.ac-actions button {
+  font: inherit;
+  font-size: 11.5px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border, #333);
+  background: transparent;
+  color: var(--fg, #e6e6e6);
+  cursor: pointer;
+}
+.ac-actions button:focus-visible {
+  outline: 2px solid var(--accent, #6c8aff);
+  outline-offset: 2px;
+}
+.ac-actions .ac-cta-primary {
+  background: var(--accent, #6c8aff);
+  color: var(--bg, #11151f);
+  border-color: var(--accent, #6c8aff);
+  font-weight: 600;
+}
+.ac-card .ac-dismiss {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--muted, #9aa0b4);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+@keyframes ac-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ac-card {
+    animation: none;
+  }
+}
+
 /* red recording dot: shows and pulses when voice is active (human speaking / agent responding) */
 #voice-dot {
   display: none;

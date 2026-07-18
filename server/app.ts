@@ -161,6 +161,20 @@ import {
   type ToolCacheRef,
 } from "./integrations/gates.js";
 import { attachVoiceRelay } from "./integrations/voice.js";
+import {
+  buildAutoResponse,
+  clampLimit,
+  inScope,
+  mergeResults,
+  normalizeScope,
+  parseMode,
+  parseQueries,
+  pathMatch,
+  tagRanked,
+  type VaultSearchMode,
+  type VaultSearchResponse,
+  type VaultSearchResult,
+} from "./integrations/search-vault.js";
 import { discoverAndMerge } from "./integrations/wiki.js";
 import {
   applyWikiIngestOperations,
@@ -1029,6 +1043,131 @@ export function createApp(
     } catch (e) {
       console.error("passages search failed:", e);
       res.status(500).json({ error: "passages search failed" });
+    }
+  });
+
+  // GET /api/search-vault: consolidated agent discovery (search_vault tool).
+  // One bounded, normalized, ranked response across four modes over the
+  // existing semantic/keyword/graph backends — no new dependency,
+  // vault-confined, no regex. `auto` is a HYBRID: it runs BOTH semantic
+  // (qmd vsearch) and keyword (MiniSearch) and fuses them with Reciprocal
+  // Rank Fusion (native scores from different engines are not comparable);
+  // `exact` is a global literal scan (line + terms); `path` matches
+  // ids/basenames/titles. Multi-query variants are merged and deduped per
+  // engine before fusion. Every result carries a stable 1-based `rank` (the
+  // recommended order for the agent), a `score`, and a `scoreKind`. Read-only,
+  // no history side effect, no LLM rerank, no egress.
+  app.get("/api/search-vault", async (req, res) => {
+    const mode = parseMode(req.query.mode);
+    const queries = parseQueries(
+      String(req.query.queries ?? req.query.q ?? ""),
+    );
+    const scope = normalizeScope(req.query.path);
+    const note =
+      typeof req.query.note === "string" && req.query.note
+        ? req.query.note
+        : undefined;
+    const limit = clampLimit(req.query.limit, 8, 20);
+    const empty = (
+      src: VaultSearchResponse["source"],
+    ): VaultSearchResponse => ({
+      mode,
+      source: src,
+      results: [],
+    });
+    if (!queries.length) {
+      res.json(empty(mode === "auto" ? "keyword" : mode));
+      return;
+    }
+    try {
+      if (mode === "path") {
+        res.json({
+          mode,
+          source: "path",
+          results: tagRanked(
+            pathMatch(graph.nodes, queries, scope, limit),
+            "path",
+            limit,
+          ),
+        });
+        return;
+      }
+      if (mode === "exact") {
+        const results = searchIndex.grepAll(queries, {
+          scope,
+          note,
+          limit,
+        });
+        res.json({
+          mode,
+          source: "exact",
+          results: tagRanked(results, "exact", limit),
+        });
+        return;
+      }
+      // semantic | auto: run qmd over the variants (capped), merge note-level.
+      // Native qmd scores are preserved so standalone `semantic` can tag them.
+      const semanticBatches: VaultSearchResult[][] = [];
+      let semanticAvailable = false;
+      try {
+        const bin = await qmdBin();
+        if (bin) {
+          for (const q of queries) {
+            const r = await runQmdQuery(qmdDeps(bin), q, {
+              collectionsParam: req.query.collections,
+              mode: "nodes",
+              limit,
+            });
+            const results = (r.body as { results?: unknown[] }).results;
+            if (r.status === 200 && Array.isArray(results)) {
+              semanticAvailable = true;
+              semanticBatches.push(
+                (results as Array<Record<string, unknown>>)
+                  .filter((h) => inScope(String(h.id ?? ""), scope))
+                  .slice(0, limit)
+                  .map((h) => ({
+                    path: String(h.id),
+                    title: String(h.title ?? h.id),
+                    snippet: String(h.snippet ?? ""),
+                    score: typeof h.score === "number" ? h.score : undefined,
+                  })),
+              );
+            }
+          }
+        }
+      } catch {
+        /* semantic layer down: fall through to keyword below */
+      }
+      const semantic = mergeResults(semanticBatches, limit);
+      if (mode === "semantic") {
+        res.json({
+          mode,
+          source: semanticAvailable ? "semantic" : "keyword",
+          results: tagRanked(semantic, "semantic", limit),
+        });
+        return;
+      }
+      // auto: HYBRID. Always run keyword too, then RRF the two ranked lists.
+      // RRF only consumes each engine's rank order, so the qmd cosine and
+      // MiniSearch scores never get compared. buildAutoResponse sets
+      // source="hybrid" when both contributed, the single engine otherwise.
+      const keywordBatches = queries.map((q) =>
+        searchIndex
+          .search(q)
+          .filter((h) => inScope(h.id, scope))
+          .slice(0, limit)
+          .map((h) => ({
+            path: h.id,
+            title: h.title,
+            snippet: h.snippet,
+            score: h.score,
+          })),
+      );
+      const keyword = mergeResults(keywordBatches, limit);
+      res.json(buildAutoResponse(semantic, keyword, limit));
+    } catch (e) {
+      console.error("search-vault failed:", e);
+      res.status(500).json({ error: "search-vault failed" });
     }
   });
 
@@ -2521,9 +2660,12 @@ export function createApp(
     }
   });
 
-  // GET /api/note-lines?id=&from=&count=: read a line-range slice of a note so
-  // a client can expand around a passage without loading the whole file. Same
-  // path-traversal guard as /api/note; read-only. `count` capped at 400 lines.
+  // GET /api/note-lines?id=&from=&count=&line=&before=&after=: read a line-
+  // range slice of a note so a client can read an initial chunk, page through
+  // it, or expand centered context around a known line. Same path-traversal
+  // guard as /api/note; read-only. Two modes: `line` (anchored, centered with
+  // `before`/`after` context) wins over `from`+`count` (range/pagination).
+  // `count`/window capped at 400 lines. Always returns {id, from, to, total, text}.
   app.get("/api/note-lines", (req, res) => {
     const id = String(req.query.id ?? "");
     let full: string;
@@ -2533,15 +2675,36 @@ export function createApp(
       writeFail(res, e, "note-lines");
       return;
     }
-    const from = Math.max(parseInt(String(req.query.from ?? "1"), 10) || 1, 1);
-    const count = Math.min(
-      Math.max(parseInt(String(req.query.count ?? "60"), 10) || 60, 1),
-      400,
-    );
     try {
       const lines = readFileSync(full, "utf-8").split("\n");
       const total = lines.length;
-      const start = Math.min(from - 1, total);
+      let start: number; // 0-based
+      let count: number;
+      const lineRaw = req.query.line;
+      if (lineRaw !== undefined && String(lineRaw) !== "") {
+        // Anchored context: center on `line`, include `before` AND `after`.
+        const anchor = Math.max(parseInt(String(lineRaw), 10) || 1, 1);
+        const before = Math.min(
+          Math.max(parseInt(String(req.query.before ?? "5"), 10) || 5, 0),
+          400,
+        );
+        const after = Math.min(
+          Math.max(parseInt(String(req.query.after ?? "5"), 10) || 5, 0),
+          400,
+        );
+        count = Math.min(before + 1 + after, 400);
+        start = Math.max(anchor - 1 - before, 0);
+      } else {
+        const from = Math.max(
+          parseInt(String(req.query.from ?? "1"), 10) || 1,
+          1,
+        );
+        count = Math.min(
+          Math.max(parseInt(String(req.query.count ?? "60"), 10) || 60, 1),
+          400,
+        );
+        start = Math.min(from - 1, total);
+      }
       const slice = lines.slice(start, start + count);
       res.json({
         id,

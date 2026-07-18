@@ -35,6 +35,44 @@ describe("voice system prompt", () => {
     expect(prompt).toContain("any known note anywhere in the vault");
     expect(prompt).toContain("never use absolute paths, ../ traversal");
   });
+  it("declares the Discover -> Verify -> Act protocol", () => {
+    const prompt = buildVoiceSystemPrompt(defaultConfig(), []);
+    expect(prompt).toContain("DISCOVERY PROTOCOL");
+    expect(prompt).toContain("Discover");
+    expect(prompt).toContain("Verify");
+    expect(prompt).toContain("Act");
+    expect(prompt).toContain("browse_folder (top-down)");
+    expect(prompt).toContain("read_note on the path you found");
+    expect(prompt).toContain("NEVER invent one");
+    expect(prompt).toContain(
+      "Folder-map answers may rely on browse_folder alone",
+    );
+    expect(prompt).toContain('display.decision "blocked-pinned"');
+    expect(prompt).toContain("ready in the background");
+  });
+
+  it("declares retrieval discipline rules for empty results", () => {
+    const prompt = buildVoiceSystemPrompt(defaultConfig(), []);
+    expect(prompt).toContain("RETRIEVAL DISCIPLINE");
+    expect(prompt).toContain("mode 'path'");
+    expect(prompt).toContain("mode 'exact'");
+    expect(prompt).toContain("browse_folder on that path");
+    expect(prompt).toContain(
+      "NEVER repeat the same (queries, mode, path) call unchanged",
+    );
+    expect(prompt).toContain("I couldn't find that in your vault");
+  });
+
+  it("requires pre-proposal discovery in the wiki save rules", () => {
+    const prompt = buildVoiceSystemPrompt(defaultConfig(), []);
+    expect(prompt).toContain(
+      "Before propose_wiki_ingest, call search_vault for notes related",
+    );
+    expect(prompt).toContain("read_note to verify any snippet");
+    expect(prompt).toContain("read_wiki_contract on the target wiki");
+    expect(prompt).toContain("The backend guards");
+    expect(prompt).toContain("OUTSIDE_SELECTED_WIKI rejection");
+  });
 });
 
 describe("voice provider helpers", () => {

@@ -55,6 +55,21 @@ describe("sinapso call", () => {
     expect(r.output).toContain("notes/one.md");
   });
 
+  it("read_note returns an anchored slice over the CLI surface", async () => {
+    const r = await callTool(
+      "read_note",
+      '{"note":"notes/one.md","line":2,"before":1,"after":1}',
+      { base },
+    );
+    expect(r.exitCode).toBe(0);
+    const body = JSON.parse(r.output ?? "{}");
+    expect(body.id).toBe("notes/one.md");
+    expect(body).toHaveProperty("from");
+    expect(body).toHaveProperty("to");
+    expect(body).toHaveProperty("total");
+    expect(body).toHaveProperty("text");
+  });
+
   it("errors naming the surface restriction for a voice-only tool", async () => {
     const r = await callTool("delegate_to_thinker", '{"task":"t"}', { base });
     expect(r.exitCode).toBe(1);
@@ -66,7 +81,7 @@ describe("sinapso call", () => {
     const r = await callTool("nope", undefined, { base });
     expect(r.exitCode).toBe(1);
     expect(r.error).toContain("unknown tool");
-    expect(r.error).toContain("search_notes");
+    expect(r.error).toContain("search_vault");
   });
 
   it("rejects malformed JSON args", async () => {

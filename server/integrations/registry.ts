@@ -60,96 +60,110 @@ export const REGISTRY: RegistryEntry[] = [
     surfaces: ["voice"],
   },
   {
-    name: "search_notes",
+    name: "search_vault",
     description:
-      "DISCOVER which of the user's notes exist on a topic — returns note titles + paths + a snippet, not the content. Meaning-based search first, with automatic keyword fallback that covers the WHOLE vault (every folder). Pass 'path' to scope results to a folder (e.g. 'felo/wiki'). To actually ANSWER a question from note content, use search_passages instead.",
+      "DISCOVER step when the note or path is unknown. Search the user's OWN vault notes and return normalized, bounded, RANKED results — one tool for every discovery need. Pass 'queries' (newline-separated variants of the same intent, e.g. 'renewable energy\\nsolar panels') to widen recall in a single call, and 'path' to scope to a folder. Modes: 'auto' (default) is a HYBRID — it runs BOTH meaning/semantic and keyword full-text, then fuses them with Reciprocal Rank Fusion (RRF) so the two engines' scores are never compared directly; 'semantic' meaning only; 'exact' literal occurrences everywhere with path, line, context, and matched terms; 'path' matches note paths/basenames/titles. Use this for BOTH 'which notes exist on X' (auto/path) and 'what do my notes say about Y' (auto/exact). In 'auto', keyword is the fallback when semantic search is unavailable. Each result carries a stable 1-based 'rank' (the RECOMMENDED reading order — follow it top-down), a 'score', a 'scoreKind' (rrf/semantic/keyword/exact/path), and 'sources' (engines that found it, in auto mode). IMPORTANT: raw 'score' values are NOT comparable across modes or scoreKinds — always order by 'rank' and read 'snippet'/'line' context to judge relevance, never by comparing scores from different engines. Do NOT use search_vault to read a note you already have a path for (use read_note) or to list folders (use browse_folder). EMPTY RESULTS ARE A SIGNAL, NOT AN ANSWER: if 'auto' returns nothing, retry with mode 'exact' for a precise term/quote/id, mode 'path' if the query looks like a file/route/title, drop or rephrase a variant, widen or narrow the 'path' scope — never repeat the exact same (queries, mode, path) call unchanged.",
     params: {
       type: "object",
       properties: {
-        query: {
+        queries: {
           type: "string",
-          description: "Topic, concept, keywords, or filename to find.",
+          description:
+            "One query, or several variants of the same intent separated by newlines (e.g. 'renewable energy\\nsolar panels'). More variants = wider recall in one call.",
+        },
+        mode: {
+          type: "string",
+          enum: ["auto", "semantic", "exact", "path"],
+          description:
+            "auto = hybrid RRF over semantic+keyword (default). semantic = meaning only. exact = literal occurrences (path, line, context, terms). path = match note paths/basenames/titles.",
         },
         path: {
           type: "string",
           description:
             "Optional folder prefix to scope results (e.g. 'felo/wiki' or 'saas/climatia'). Omit to search the whole vault.",
         },
-      },
-      required: ["query"],
-    },
-    surfaces: ["voice", "mcp", "cli"],
-    route: {
-      method: "GET",
-      path: "/api/search",
-      query: { query: "q" },
-    },
-  },
-  {
-    name: "search_passages",
-    description:
-      "ANSWER a question from the user's notes: returns the matching passages (each with path, title, snippet, and line), not whole notes. This is the DEFAULT tool for any 'what does it say about X' / 'what did I write on Y' question. Pass 'note' (a path from an earlier result) to look only inside that one note or book; omit it to search the whole vault. Set exact=true together with 'note' to find literal occurrences of a precise word, name, number, or quote instead of meaning matches. Falls back to keyword search automatically when semantic search is unavailable.",
-    params: {
-      type: "object",
-      properties: {
-        query: {
-          type: "string",
-          description:
-            "Specific question, topic, or (with exact=true) the literal text to find.",
-        },
         note: {
           type: "string",
           description:
-            "Optional relative path of the note to restrict the search to.",
+            "Optional relative path of one note to restrict the search to (exact mode).",
         },
-        exact: {
-          type: "boolean",
-          description:
-            "Match the query literally instead of by meaning (requires 'note'). Default false.",
+        limit: {
+          type: "integer",
+          description: "Max results to return (default 8, max 20).",
         },
       },
-      required: ["query"],
+      required: ["queries"],
     },
     surfaces: ["voice", "mcp", "cli"],
     route: {
       method: "GET",
-      path: "/api/passages",
-      query: { query: "q", note: "note" },
+      path: "/api/search-vault",
+      query: {
+        queries: "queries",
+        mode: "mode",
+        path: "path",
+        note: "note",
+        limit: "limit",
+      },
     },
   },
   {
-    name: "read_passage",
+    name: "read_note",
     description:
-      "Expand context around a location you ALREADY know: reads a line range of one note and returns it as a snippet. Use for 'read me more', 'what's around that', 'go on'. Give 'note' (its path) and 'line' (from an earlier search_passages result).",
+      "VERIFY step: read a slice of ONE vault note by path and return it with line metadata {from, to, total}. Use this whenever you are about to cite, quote, summarize, link, or edit a note — confirm the snippet is real and read the surrounding context before you act on it. Two modes, line wins when both are given. (1) ANCHORED — give 'note' plus 'line' (1-based, from a search_vault result) to expand context AROUND that line: 'before' lines before it AND 'after' lines after it (default 5 each). Use for 'read me more around that', 'what's before/after this', 'go on', 'sigue'. (2) RANGE/PAGINATION — give 'note' plus 'from' (1-based start line, default 1) and 'count' (lines to read, default 60) to read an initial chunk or page forward/back. Never returns more than 400 lines; give a larger 'count' or a new 'from' to read more. The note must be an existing .md file inside the vault. Do NOT use read_note to discover notes (use search_vault) or navigate folders (use browse_folder); never pass an invented path — get the path from a previous result or current_view first.",
     params: {
       type: "object",
       properties: {
         note: {
           type: "string",
-          description: "Relative path of the note.",
+          description: "Vault-relative .md path of the note to read.",
         },
         line: {
           type: "integer",
-          description: "Approximate line to expand.",
+          description:
+            "1-based line to center context on (anchored mode). Takes precedence over from/count when present.",
+        },
+        before: {
+          type: "integer",
+          description:
+            "Lines to include BEFORE the anchor (anchored mode, default 5).",
+        },
+        after: {
+          type: "integer",
+          description:
+            "Lines to include AFTER the anchor (anchored mode, default 5).",
+        },
+        from: {
+          type: "integer",
+          description:
+            "1-based start line (range mode, default 1). Ignored when 'line' is given.",
         },
         count: {
           type: "integer",
-          description: "How many lines to read (default 60).",
+          description:
+            "Lines to read (range mode, default 60, capped at 400). Ignored when 'line' is given.",
         },
       },
-      required: ["note", "line"],
+      required: ["note"],
     },
     surfaces: ["voice", "mcp", "cli"],
     route: {
       method: "GET",
       path: "/api/note-lines",
-      query: { note: "id", line: "from", count: "count" },
+      query: {
+        note: "id",
+        line: "line",
+        before: "before",
+        after: "after",
+        from: "from",
+        count: "count",
+      },
     },
   },
   {
     name: "browse_folder",
     description:
-      "See how the vault is organized: the subfolders (with note counts) and notes directly inside a folder. Omit 'path' for the top level, or give a folder path to look inside it and navigate down. Use for 'what folders do I have', 'how is my vault organized', '¿qué hay en la carpeta saas?', 'las notas dentro de X', or to FIND WHERE a kind of note lives (meetings usually sit in a 'reuniones' subfolder, etc.). This covers the WHOLE vault, including folders the semantic search does not index.",
+      "DISCOVER step when scope is unknown: see how the vault is organized. Returns the subfolders (each with a note 'count') and up to 40 notes DIRECTLY inside a folder; 'noteCount' is the total number of direct notes before that cap. Omit 'path' for the top level, or give a folder path to drill INTO it. Use for 'what folders do I have', 'how is my vault organized', '¿qué hay en la carpeta saas?', 'las notas dentro de X', or to FIND WHERE a kind of note lives (meetings usually sit in a 'reuniones' subfolder, etc.). This covers the WHOLE vault, including folders the semantic search does not index. IMPORTANT: a subfolder's 'count' is the TOTAL number of notes anywhere under that subfolder tree (recursive, nested subfolders included). To see inside a subfolder, call browse_folder again with that subfolder's path. Navigate TOP-DOWN from the root when you don't know the layout. Do NOT use browse_folder to search note contents (use search_vault) or to read one note (use read_note).",
     params: {
       type: "object",
       properties: {
@@ -350,7 +364,7 @@ export const REGISTRY: RegistryEntry[] = [
   {
     name: "propose_wiki_ingest",
     description:
-      "Build a wiki-ingest preview from a persisted research entry or an existing Inbox note. The server reads the selected wiki contract, plans the exact canonical RAW source path, and requires explicit approval before any write.",
+      "Build a wiki-ingest preview from a persisted research entry or an existing Inbox note. The server reads the selected wiki contract and plans the exact canonical RAW source path. This preview writes nothing; the caller must present it and obtain explicit user approval before calling apply_wiki_ingest.",
     params: {
       type: "object",
       properties: {
@@ -381,7 +395,7 @@ export const REGISTRY: RegistryEntry[] = [
   {
     name: "apply_wiki_ingest",
     description:
-      "Apply a previously shown wiki-ingest proposal only after explicit user approval. RAW source storage or an Inbox-note move runs first at its exact canonical path, then derived create/edit operations.",
+      "Apply a previously shown wiki-ingest proposal only after explicit user approval. The caller is responsible for obtaining that approval; the server validates the token, wiki, source state, and operations but cannot prove human approval. RAW source storage or an Inbox-note move runs first at its exact canonical path, then derived create/edit operations.",
     params: {
       type: "object",
       properties: {

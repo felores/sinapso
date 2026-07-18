@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
 import { REGISTRY, entryFor, operationTier, toolsForSurface } from "./registry";
 import { createVoiceToolSession, VOICE_TOOLS } from "./voice-tools";
 import { realtimeVoiceTools } from "./voice";
@@ -72,9 +73,8 @@ describe("registry surfaces and routes", () => {
     const mcp = toolsForSurface("mcp");
     const names = mcp.map((e) => e.name);
     for (const expected of [
-      "search_notes",
-      "search_passages",
-      "read_passage",
+      "search_vault",
+      "read_note",
       "browse_folder",
       "list_wikis",
       "read_wiki_contract",
@@ -89,6 +89,70 @@ describe("registry surfaces and routes", () => {
     ])
       expect(names).toContain(expected);
     for (const e of mcp) expect(e.route, e.name).toBeDefined();
+  });
+
+  it("consolidates discovery into one search_vault tool on voice/mcp/cli", () => {
+    // search_notes and search_passages are gone everywhere.
+    expect(entryFor("search_notes")).toBeUndefined();
+    expect(entryFor("search_passages")).toBeUndefined();
+    const sv = entryFor("search_vault");
+    expect(sv?.surfaces).toEqual(["voice", "mcp", "cli"]);
+    expect(sv?.route?.path).toBe("/api/search-vault");
+    const props = (sv?.params.properties ?? {}) as Record<string, unknown>;
+    expect(props).toHaveProperty("queries");
+    expect(props).toHaveProperty("mode");
+    expect(props).toHaveProperty("path");
+    const mode = props.mode as { enum?: string[] };
+    expect(mode.enum).toEqual(["auto", "semantic", "exact", "path"]);
+    // read_passage is retired; read_note replaces it on every surface.
+    expect(entryFor("read_passage")).toBeUndefined();
+    expect(entryFor("read_note")?.surfaces).toEqual(["voice", "mcp", "cli"]);
+    expect(entryFor("browse_folder")?.surfaces).toEqual([
+      "voice",
+      "mcp",
+      "cli",
+    ]);
+  });
+
+  it("documents Discover/Verify guidance and rank-vs-score in the three discovery tool descriptions", () => {
+    const sv = entryFor("search_vault")?.description ?? "";
+    const rn = entryFor("read_note")?.description ?? "";
+    const bf = entryFor("browse_folder")?.description ?? "";
+    // Modes + multi-query + rank/score guidance in search_vault.
+    expect(sv).toContain("'auto'");
+    expect(sv).toContain("'semantic'");
+    expect(sv).toContain("'exact'");
+    expect(sv).toContain("'path'");
+    expect(sv).toContain("newline-separated variants");
+    expect(sv).toContain("RECOMMENDED reading order");
+    expect(sv).toContain("NOT comparable across modes");
+    // search_vault: when NOT to use + empty-results discipline.
+    expect(sv).toContain("when the note or path is unknown");
+    expect(sv).toContain("In 'auto', keyword is the fallback");
+    expect(sv).toContain("use read_note");
+    expect(sv).toContain("use browse_folder");
+    expect(sv).toContain("EMPTY RESULTS ARE A SIGNAL");
+    expect(sv).toContain("never repeat the exact same");
+    // read_note: both modes + when NOT to use.
+    expect(rn).toContain("ANCHORED");
+    expect(rn).toContain("RANGE/PAGINATION");
+    expect(rn).toContain("'line'");
+    expect(rn).toContain("'before'");
+    expect(rn).toContain("'after'");
+    expect(rn).toContain("'from'");
+    expect(rn).toContain("'count'");
+    expect(rn).toContain("use search_vault");
+    expect(rn).toContain("use browse_folder");
+    expect(rn).toContain("never pass an invented path");
+    // browse_folder: subfolder count vs direct notes distinction.
+    expect(bf).toContain("DIRECTLY");
+    expect(bf).toContain("up to 40");
+    expect(bf).toContain("noteCount");
+    expect(bf).toContain("recursive");
+    expect(bf).toContain("drill");
+    expect(bf).toContain("TOP-DOWN");
+    expect(bf).toContain("use search_vault");
+    expect(bf).toContain("use read_note");
   });
 
   it("keeps create_note off the voice surface (voice uses working documents)", () => {
@@ -109,6 +173,29 @@ describe("registry surfaces and routes", () => {
     expect(operationTier("commit_message")).toBe("worker");
     expect(operationTier("contextual_rewrite")).toBe("worker");
     expect(operationTier("wiki_ingest_synthesis")).toBe("thinker");
+  });
+
+  it("ships the tool-usage flows fixture documenting the three declared flows", () => {
+    const fixturePath = new URL(
+      "./__fixtures__/tool-usage-flows.md",
+      import.meta.url,
+    );
+    expect(existsSync(fixturePath)).toBe(true);
+    const md = readFileSync(fixturePath, "utf-8");
+    expect(md).toContain("Discover → Verify → Act");
+    expect(md).toContain("Flow 1");
+    expect(md).toContain("Flow 2");
+    expect(md).toContain("Flow 3");
+    expect(md).toContain("search_vault");
+    expect(md).toContain("read_note");
+    expect(md).toContain("browse_folder");
+    expect(md).toContain("read_wiki_contract");
+    expect(md).toContain("propose_wiki_ingest");
+    expect(md).toContain("apply_wiki_ingest");
+    expect(md).toContain("Never repeat the same");
+    expect(md).toContain("without explicit user approval");
+    expect(md).toContain("backend guards");
+    expect(md).toContain("up to 40");
   });
 });
 

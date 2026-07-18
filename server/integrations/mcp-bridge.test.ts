@@ -236,6 +236,37 @@ describe("cross-surface parity (HTTP = voice = MCP)", () => {
     expect(viaMcp.body).toEqual(viaHttp.body);
     expect(viaVoice).toEqual(viaHttp.body);
   });
+
+  it("read_note reaches /api/note-lines on mcp+cli and returns {id, from, to, total, text}", async () => {
+    const bridge = createMcpBridge({ base });
+    const viaMcp = await bridge.call(entryFor("read_note")!, {
+      note: "notes/alpha.md",
+      line: 1,
+      before: 1,
+      after: 1,
+    });
+    expect(viaMcp.ok).toBe(true);
+    const body = viaMcp.body as Record<string, unknown>;
+    expect(body.id).toBe("notes/alpha.md");
+    expect(body).toHaveProperty("from");
+    expect(body).toHaveProperty("to");
+    expect(body).toHaveProperty("total");
+    expect(body).toHaveProperty("text");
+    // voice returns the normalized shape with total preserved
+    const session = createVoiceToolSession({
+      base,
+      getSessionToken: () => "unused",
+      send: () => {},
+    });
+    const viaVoice = (await session.run("read_note", {
+      note: "notes/alpha.md",
+      line: 1,
+    })) as Record<string, unknown>;
+    expect(viaVoice).toHaveProperty("total");
+    expect(viaVoice).toHaveProperty("from");
+    expect(viaVoice).toHaveProperty("to");
+    expect(viaVoice).toHaveProperty("snippet");
+  });
 });
 
 describe("startup probe", () => {

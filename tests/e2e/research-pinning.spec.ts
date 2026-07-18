@@ -201,18 +201,21 @@ async function installVoiceHarness(page: Page) {
   return {
     show: async (id: string, action = "open_research") => {
       expect(socket, "voice WebSocket connected").toBeDefined();
-      const acknowledgment = page.evaluate(
-        () =>
-          new Promise<void>((resolve) =>
-            window.addEventListener(
-              "sinapso:research-display-ack",
-              () => resolve(),
-              { once: true },
-            ),
-          ),
-      );
+      await page.evaluate(() => {
+        document.documentElement.dataset.researchDisplayAck = "pending";
+        window.addEventListener(
+          "sinapso:research-display-ack",
+          () => {
+            document.documentElement.dataset.researchDisplayAck = "received";
+          },
+          { once: true },
+        );
+      });
       socket!.send(JSON.stringify({ type: "action", action, id }));
-      await acknowledgment;
+      await page.waitForFunction(
+        () =>
+          document.documentElement.dataset.researchDisplayAck === "received",
+      );
     },
     includeLongEntry: () => {
       includeLongEntry = true;
@@ -256,6 +259,12 @@ test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user nav
     await harness.show(resultB);
     await expectVisibleQuery(page, "Persisted result A");
     await expect(page.locator("#research-pos")).toHaveText(/\/2$/);
+    await expect(page.locator("#activity-cards .ac-ready")).toContainText(
+      "new agent result is ready in the background",
+    );
+    await expect(page.locator("#activity-cards .ac-ready")).toContainText(
+      "current result is pinned",
+    );
 
     await page.locator("#research-next").click();
     await expectVisibleQuery(page, "Agent result B");
@@ -418,6 +427,136 @@ test("evidence is immutable and long snippets expand without opening the note", 
       (element) => element.getBoundingClientRect().height,
     );
     expect(expandedHeight).toBeGreaterThan(collapsedHeight);
+  } finally {
+    await assertCleanBrowser();
+  }
+});
+
+test("activity card host is anchored opposite the search bar", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  try {
+    await page.goto("/");
+    const host = page.locator("#activity-cards");
+    await expect(host).toBeAttached();
+    // Empty stack -> host renders nothing but stays in the DOM.
+    await expect(host).toBeEmpty();
+    // Desktop default: search bar on top -> cards anchored at the bottom.
+    await expect(host).toHaveClass(/ac-bottom/);
+    await expect(host).not.toHaveClass(/ac-top/);
+  } finally {
+    await assertCleanBrowser();
+  }
+});
+
+test("wiki ingest preparation preserves the visible document and surfaces an error card", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info(), {
+    // Propose is expected to fail with a clean 400 here (no OpenRouter key in
+    // the hermetic E2E); that controlled failure is the point of the test, so
+    // allow its console message without weakening the other diagnostics.
+    allow: (entry) =>
+      entry.kind === "console" &&
+      /wiki-ingest\/propose/.test(entry.url ?? "") &&
+      /400/.test(entry.message),
+  });
+  try {
+    const harness = await installVoiceHarness(page);
+    const doc = await createDocument(
+      page,
+      "Visible While Proposing",
+      "PRESERVED DURING WIKI INGEST content",
+    );
+    await harness.show(doc.id);
+    await expectVisibleQuery(page, "PRESERVED DURING WIKI INGEST");
+
+    // Trigger "Save + ingest" from the research footer. Propose hits the
+    // server without an OpenRouter key -> clean 400 -> the frontend must keep
+    // the document visible and surface a non-blocking error activity card.
+    const ingestTrigger = page.locator("#research-ingest-wiki");
+    await expect(ingestTrigger).toBeVisible();
+    await ingestTrigger.click();
+    const menuIngest = page.locator("#research-wiki-menu-ingest");
+    await expect(menuIngest).toBeVisible();
+    await menuIngest.click();
+
+    // An error activity card appears (role=alert), and it is dismissable.
+    const errorCard = page.locator("#activity-cards .ac-card.ac-error", {
+      hasText: "Try again",
+    });
+    await expect(errorCard).toBeVisible({ timeout: 15_000 });
+    await expect(errorCard).toHaveAttribute("role", "alert");
+
+    // Frente B core contract: the visible document is NOT cleared.
+    await expectVisibleQuery(page, "PRESERVED DURING WIKI INGEST");
+
+    // Dismiss the card (not hover-only) -> stack empties.
+    await errorCard.locator(".ac-dismiss").click();
+    await expect(page.locator("#activity-cards")).toBeEmpty();
+  } finally {
+    await assertCleanBrowser();
+  }
+});
+
+test("save-to-inbox keeps the working document visible when the post-save rescan fails", async ({
+  page,
+}) => {
+  // Regression: the save-to-inbox handler used to await openAfterIngest
+  // (which swallows the rescan failure) and then unconditionally call
+  // advanceResearchAfterRemoval, clearing the visible document even though
+  // the new note was not yet selectable. The server has already saved the
+  // note, so on rescan failure the panel must stay visible with the original
+  // content and surface a non-blocking "saved but not opened" error.
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info(), {
+    // The intentional /api/rescan 500 is the point of the test; the route
+    // helper only flags HTTP >=500, so allow this URL explicitly.
+    allow: (entry) =>
+      (entry.kind === "response" || entry.kind === "console") &&
+      /\/api\/rescan/.test(entry.url ?? ""),
+  });
+  try {
+    const harness = await installVoiceHarness(page);
+    const doc = await createDocument(
+      page,
+      "Visible After Save Failure",
+      "PRESERVED AFTER SAVE content",
+    );
+    await harness.show(doc.id);
+    await expectVisibleQuery(page, "PRESERVED AFTER SAVE content");
+
+    // Force the next /api/rescan to 500 so openAfterIngest reports failure.
+    await page.route("**/api/rescan", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "rescan failed" }),
+      }),
+    );
+
+    const saveInbox = page.locator("#research-save-inbox");
+    await expect(saveInbox).toBeVisible();
+    await saveInbox.click();
+
+    // The non-blocking error surfaces the "saved but not opened" copy.
+    await expect(page.locator("#research-error")).toContainText(
+      /saved.*could not open|guardado.*no se pudo abrir/i,
+      { timeout: 15_000 },
+    );
+
+    // Frente B core contract: the visible document is NOT cleared.
+    await expectVisibleQuery(page, "PRESERVED AFTER SAVE content");
+
+    // And the server really did save the note (the panel was preserved only
+    // because the rescan failed, not because the save did). safeName()
+    // slugifies the title "Visible After Save Failure" to this path.
+    const noteCheck = await page.request.get(
+      "/api/note?id=inbox/visible-after-save-failure.md",
+    );
+    expect(noteCheck.status()).toBe(200);
+    const noteBody = (await noteCheck.json()) as { markdown?: string };
+    expect(noteBody.markdown).toContain("PRESERVED AFTER SAVE content");
   } finally {
     await assertCleanBrowser();
   }

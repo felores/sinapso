@@ -41,6 +41,13 @@ export interface VoiceToolSession {
   run(name: string, args: VoiceArgs): Promise<VoiceResult>;
   setBrowserContext(context: unknown): void;
   setSelectedContext(context: unknown): void;
+  /**
+   * Adopt the server-minted working document id after a delegation job
+   * completes. The delegate job creates the document through /api/document
+   * and the id only exists then, so this is the moment to bind it as the
+   * session's active working document. No-op if the id is missing.
+   */
+  adoptDelegationDocument(id: string | null | undefined): void;
   close(): void;
 }
 
@@ -437,168 +444,65 @@ export function createVoiceToolSession(
     return researchSummary(entry);
   }
 
-  const titleFrom = (p: string): string =>
-    (p.split("/").pop() ?? p).replace(/\.md$/i, "");
-
-  /** Keyword full-text across the vault (MiniSearch route). Unscoped queries
-   *  join research history and open the research panel, like before (R9). */
-  async function fulltextNotes(
-    query: string,
-    prefix: string,
-  ): Promise<{ historyId?: string; results: unknown[] }> {
-    const writeHistory = !prefix;
-    const u = new URL(`${base}/api/search`);
-    u.searchParams.set("q", query);
-    if (writeHistory) {
-      u.searchParams.set("history", "1");
-      u.searchParams.set("displayQuery", query);
-    }
-    const d = (await (
-      await fetchFn(
-        u,
-        writeHistory
-          ? { headers: { "x-sinapso-token": getSessionToken() } }
-          : undefined,
-      )
-    ).json()) as { results?: unknown[]; historyId?: string } | unknown[];
-    const hits = Array.isArray(d) ? d : (d.results ?? []);
-    const historyId = Array.isArray(d) ? undefined : d.historyId;
-    if (historyId)
-      send({ type: "action", action: "open_research", id: historyId });
-    return {
-      historyId,
-      results: (hits ?? [])
-        .filter((h) => {
-          if (!prefix) return true;
-          const x = h as Record<string, unknown>;
-          return String(x.id ?? "").startsWith(prefix + "/");
-        })
-        .slice(0, 8)
-        .map((h) => {
-          const x = h as Record<string, unknown>;
-          return { path: x.id, title: x.title, snippet: x.snippet };
-        }),
-    };
-  }
-
-  /** Literal occurrences inside one note, normalized to {path,title,snippet,line}. */
-  async function grepNote(
-    note: string,
-    query: string,
-    ignoreCase: boolean,
-  ): Promise<VoiceResult> {
-    const u = new URL(`${base}/api/note-grep`);
-    u.searchParams.set("id", note);
-    u.searchParams.set("q", query);
-    if (ignoreCase) u.searchParams.set("ignore_case", "1");
-    const d = (await (await fetchFn(u)).json()) as { matches?: unknown[] };
-    return {
-      source: "exact",
-      results: (d.matches ?? []).slice(0, 8).map((m) => {
-        const x = m as Record<string, unknown>;
-        return {
-          path: note,
-          title: titleFrom(note),
-          snippet: x.snippet ?? x.text,
-          line: x.line,
-        };
-      }),
-    };
-  }
-
   // Query tool dispatch: reuse loopback endpoints so guards/history stay shared.
   async function callTool(name: string, args: VoiceArgs): Promise<VoiceResult> {
     try {
-      if (name === "search_notes") {
-        const query = String(args.query ?? "");
-        const prefix =
-          typeof args.path === "string"
-            ? args.path.trim().replace(/\/+$/, "")
-            : "";
-        send({ type: "status", key: "voice.status.searchingVault", query });
-        // Meaning-based first; keyword full-text covers the rest of the vault
-        // (and any semantic-unavailable state) inside this same call (R9).
-        const u = new URL(`${base}/api/semantic-search`);
-        u.searchParams.set("q", query);
-        try {
-          const r = await fetchFn(u);
-          const d = (await r.json()) as { state?: string; results?: unknown[] };
-          const hits = r.ok && d.state === "ready" ? (d.results ?? []) : [];
-          const scoped = hits.filter((h) => {
-            if (!prefix) return true;
-            return String((h as Record<string, unknown>).id ?? "").startsWith(
-              prefix + "/",
-            );
-          });
-          if (scoped.length) {
-            return {
-              source: "semantic",
-              results: scoped.slice(0, 8).map((h) => {
-                const x = h as Record<string, unknown>;
-                return { path: x.id, title: x.title, snippet: x.snippet };
-              }),
-            };
-          }
-        } catch {
-          /* semantic layer down: the keyword fallback below still answers */
-        }
-        return { source: "fulltext", ...(await fulltextNotes(query, prefix)) };
-      }
-      if (name === "search_passages") {
-        const query = String(args.query ?? "");
-        const note =
-          typeof args.note === "string" && args.note ? args.note : undefined;
-        send({ type: "status", key: "voice.status.searchingPassages", query });
-        if (args.exact === true) {
-          if (!note)
-            return {
-              error:
-                "exact search needs 'note' (a path from an earlier result)",
-            };
-          return grepNote(note, query, args.ignore_case === true);
-        }
-        const u = new URL(`${base}/api/passages`);
-        u.searchParams.set("q", query);
-        if (note) u.searchParams.set("note", note);
-        try {
-          const r = await fetchFn(u);
-          const d = (await r.json()) as { state?: string; results?: unknown[] };
-          const hits = r.ok && d.state === "ready" ? (d.results ?? []) : [];
-          if (hits.length) {
-            return {
-              source: "semantic",
-              results: hits.slice(0, 8).map((h) => {
-                const x = h as Record<string, unknown>;
-                return {
-                  path: x.file,
-                  title: x.title,
-                  snippet: x.snippet,
-                  line: x.line,
-                };
-              }),
-            };
-          }
-        } catch {
-          /* fall through to the keyword path below */
-        }
-        // Semantic unavailable or empty: literal search inside the note, or
-        // keyword full-text across the vault — one call, no re-prompting.
-        if (note) return grepNote(note, query, true);
-        return { source: "fulltext", ...(await fulltextNotes(query, "")) };
-      }
-      if (name === "read_passage") {
+      if (name === "search_vault") {
+        const queries = String(args.queries ?? args.query ?? "");
+        const mode =
+          typeof args.mode === "string" && args.mode ? args.mode : "auto";
         send({
           type: "status",
-          key: "voice.status.readingPassage",
+          key: "voice.status.searchingVault",
+          query: queries.split(/\n/)[0] ?? queries,
+        });
+        // The /api/search-vault route owns the consolidation: modes, multi-
+        // query merge, semantic→keyword fallback, exact global scan, and the
+        // bounded normalized shape. Voice just forwards and returns it.
+        const u = new URL(`${base}/api/search-vault`);
+        u.searchParams.set("queries", queries);
+        u.searchParams.set("mode", mode);
+        if (typeof args.path === "string" && args.path)
+          u.searchParams.set("path", args.path);
+        if (typeof args.note === "string" && args.note)
+          u.searchParams.set("note", args.note);
+        if (args.limit !== undefined)
+          u.searchParams.set("limit", String(args.limit));
+        const r = await fetchFn(u);
+        const d = (await r.json().catch(() => ({}))) as VoiceResult;
+        if (!r.ok)
+          return {
+            error: String((d as { error?: string }).error ?? "search failed"),
+          };
+        return d;
+      }
+      if (name === "read_note") {
+        send({
+          type: "status",
+          key: "voice.status.readingNote",
           note: String(args.note ?? ""),
         });
-        const line = Number(args.line ?? 1);
         const u = new URL(`${base}/api/note-lines`);
         u.searchParams.set("id", String(args.note ?? ""));
-        u.searchParams.set("from", String(Math.max(1, line - 5)));
-        u.searchParams.set("count", String(Number(args.count ?? 60)));
+        if (args.line !== undefined && args.line !== null) {
+          // Anchored context: server centers on `line` with before+after.
+          u.searchParams.set("line", String(args.line));
+          if (args.before !== undefined)
+            u.searchParams.set("before", String(args.before));
+          if (args.after !== undefined)
+            u.searchParams.set("after", String(args.after));
+        } else {
+          u.searchParams.set("from", String(args.from ?? 1));
+          u.searchParams.set("count", String(args.count ?? 60));
+        }
         const d = (await (await fetchFn(u)).json()) as Record<string, unknown>;
-        return { path: args.note, line: d.from, to: d.to, snippet: d.text };
+        return {
+          path: args.note,
+          from: d.from,
+          to: d.to,
+          total: d.total,
+          snippet: d.text,
+        };
       }
       if (name === "browse_folder") {
         send({
@@ -912,19 +816,23 @@ export function createVoiceToolSession(
         }),
       });
       const d = (await r.json().catch(() => ({}))) as {
-        job?: { id: string; documentId: string };
+        job?: { id: string; documentId?: string | null };
         error?: string;
       };
       if (!r.ok || !d.job)
         return { error: d.error ?? "could not start the delegation" };
-      // The job writes into this document; adopt it as the session's working
-      // document so later curation and revisions target it (R13).
-      knownDocumentIds.add(d.job.documentId);
-      activeWorkingDocId = d.job.documentId;
+      // The job's documentId is null until the server mints one on success;
+      // do NOT adopt a fake/stale id here. The delegation relay adopts the
+      // real id on completion via adoptDelegationDocument (R13).
+      const startedDocId = d.job.documentId ?? null;
+      if (startedDocId) {
+        knownDocumentIds.add(startedDocId);
+        activeWorkingDocId = startedDocId;
+      }
       return {
         started: true,
         jobId: d.job.id,
-        documentId: d.job.documentId,
+        documentId: startedDocId,
         note: "The reasoner is working in the background. Announce the handoff aloud and keep conversing; the result will arrive in the working document.",
       };
     }
@@ -969,6 +877,12 @@ export function createVoiceToolSession(
     run: (name, args) => runTool(name, args),
     setBrowserContext,
     setSelectedContext: setBrowserContext,
+    adoptDelegationDocument(id) {
+      if (!id) return;
+      knownDocumentIds.add(id);
+      activeWorkingDocId = id;
+      activeResearchId = id;
+    },
     close() {
       for (const pending of displayAcks.values()) {
         clearTimeout(pending.timer);

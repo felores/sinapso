@@ -128,7 +128,7 @@ describe("wireDelegation (faked session)", () => {
       send: vi.fn(),
       sendToolResponse,
     });
-    relay.noteCall({ id: "fc-1", name: "search_notes" });
+    relay.noteCall({ id: "fc-1", name: "search_vault" });
     relay.dispose();
     expect(sendToolResponse).not.toHaveBeenCalled();
   });
@@ -160,7 +160,7 @@ describe("per-model tool declarations (KTD5)", () => {
   it("OpenAI/xAI realtime tool lists exclude the delegate tool (R11)", () => {
     const names = realtimeVoiceTools().map((t) => t.name);
     expect(names).not.toContain("delegate_to_thinker");
-    expect(names).toContain("search_notes");
+    expect(names).toContain("search_vault");
   });
 
   it("the live model config value resolves with the 3.1 default", () => {

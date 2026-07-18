@@ -23,7 +23,7 @@ export default defineConfig({
       // it — never the developer's real data/graph.json. (Playwright starts
       // webServer before globalSetup, so setup rides the command chain.)
       command:
-        "npx tsx tests/e2e/global-setup.ts && npx tsx tests/e2e/server.ts",
+        "./node_modules/.bin/tsx tests/e2e/global-setup.ts && exec ./node_modules/.bin/tsx tests/e2e/server.ts",
       env: {
         SINAPSO_GRAPH: E2E_GRAPH,
         SINAPSO_PORT: "6175",
@@ -33,7 +33,8 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: "npm run dev:web -- --host 127.0.0.1 --port 6173 --strictPort",
+      command:
+        "exec ./node_modules/.bin/vite web --host 127.0.0.1 --port 6173 --strictPort",
       env: { SINAPSO_API_URL: "http://127.0.0.1:6175" },
       url: "http://127.0.0.1:6173",
       reuseExistingServer: false,

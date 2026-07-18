@@ -144,8 +144,7 @@ describe("VOICE_TOOLS declarations", () => {
     const names = new Set(VOICE_TOOLS.map((t) => t.name));
     for (const expected of [
       "current_view",
-      "search_notes",
-      "search_passages",
+      "search_vault",
       "list_wikis",
       "read_wiki_contract",
       "write_document",
@@ -260,268 +259,150 @@ describe("createVoiceToolSession — selected context", () => {
 });
 
 describe("createVoiceToolSession — read-only tools", () => {
-  it("search_notes falls back to GET /api/search and maps the response", async () => {
+  it("search_vault forwards to GET /api/search-vault and returns the body", async () => {
     const { ctx, fake, sent } = makeCtx();
-    fake.on("/api/semantic-search", () =>
-      jsonResponse({ state: "uncovered", results: [] }),
-    );
-    fake.on("/api/search", () =>
+    fake.on("/api/search-vault", () =>
       jsonResponse({
-        historyId: "hist-keyword",
-        results: [
-          { id: "alpha/one.md", title: "One", snippet: "first match" },
-          { id: "alpha/two.md", title: "Two", snippet: "second match" },
-          { id: "other/skip.md", title: "Skip", snippet: "wrong folder" },
-        ],
-      }),
-    );
-
-    const session = createVoiceToolSession(ctx);
-    const out = (await session.run("search_notes", { query: "alpha" })) as {
-      source: string;
-      historyId?: string;
-      results: Array<{ title: string; path: string; snippet: string }>;
-    };
-
-    expect(out.source).toBe("fulltext");
-    expect(out.results).toHaveLength(3);
-    expect(out.results[0]).toEqual({
-      title: "One",
-      snippet: "first match",
-      path: "alpha/one.md",
-    });
-    expect(out.historyId).toBe("hist-keyword");
-    expect(sent).toContainEqual({
-      type: "action",
-      action: "open_research",
-      id: "hist-keyword",
-    });
-    const call = fake.url("/api/search?")[0];
-    expect(call.url).toBe(
-      `${BASE}/api/search?q=alpha&history=1&displayQuery=alpha`,
-    );
-    expect(call.init?.method).toBeUndefined();
-    expect(
-      (call.init!.headers as Record<string, string>)["x-sinapso-token"],
-    ).toBe(TEST_TOKEN);
-  });
-
-  it("search_notes scopes results to the requested path prefix and trims trailing slashes", async () => {
-    const { ctx, fake } = makeCtx();
-    fake.on("/api/semantic-search", () =>
-      jsonResponse({ state: "uncovered", results: [] }),
-    );
-    fake.on("/api/search", () =>
-      jsonResponse([
-        { id: "felo/wiki/intro.md", title: "Intro", snippet: "x" },
-        { id: "felo/wiki/sub/deep.md", title: "Deep", snippet: "x" },
-        { id: "felo/other.md", title: "Other", snippet: "x" },
-      ]),
-    );
-
-    const session = createVoiceToolSession(ctx);
-    const out = (await session.run("search_notes", {
-      query: "anything",
-      path: "felo/wiki/",
-    })) as { results: Array<{ path: string }> };
-
-    expect(out.results.map((r) => r.path)).toEqual([
-      "felo/wiki/intro.md",
-      "felo/wiki/sub/deep.md",
-    ]);
-    expect(fake.url("/api/search?")[0].url).toBe(
-      `${BASE}/api/search?q=anything`,
-    );
-  });
-
-  it("search_notes caps the result list at 8 entries", async () => {
-    const { ctx, fake } = makeCtx();
-    fake.on("/api/semantic-search", () =>
-      jsonResponse({ state: "uncovered", results: [] }),
-    );
-    const ten = Array.from({ length: 10 }, (_, i) => ({
-      id: `n${i}.md`,
-      title: `N${i}`,
-      snippet: `s${i}`,
-    }));
-    fake.on("/api/search", () => jsonResponse(ten));
-
-    const session = createVoiceToolSession(ctx);
-    const out = (await session.run("search_notes", { query: "x" })) as {
-      results: unknown[];
-    };
-    expect(out.results).toHaveLength(8);
-  });
-
-  it("an HTTP error from the read-only fetch surfaces the tool-error envelope", async () => {
-    const { ctx, fake } = makeCtx();
-    fake.on("/api/semantic-search", () =>
-      jsonResponse({ state: "uncovered", results: [] }),
-    );
-    fake.on("/api/search", () => {
-      throw new Error("ECONNREFUSED");
-    });
-
-    const session = createVoiceToolSession(ctx);
-    const out = (await session.run("search_notes", { query: "x" })) as {
-      error: string;
-    };
-    expect(out.error).toMatch(/^tool search_notes failed: /);
-    expect(out.error).toContain("ECONNREFUSED");
-  });
-});
-
-describe("consolidated search contracts (U5, AE5)", () => {
-  it("search_notes returns semantic results in the normalized shape", async () => {
-    const { ctx, fake } = makeCtx();
-    fake.on("/api/semantic-search", () =>
-      jsonResponse({
-        state: "ready",
-        results: [{ id: "a/one.md", title: "One", snippet: "sem hit" }],
+        mode: "auto",
+        source: "semantic",
+        results: [{ path: "a.md", title: "A", snippet: "s" }],
       }),
     );
     const session = createVoiceToolSession(ctx);
-    const out = (await session.run("search_notes", { query: "topic" })) as {
-      source: string;
-      results: unknown[];
+    const out = (await session.run("search_vault", { queries: "topic" })) as {
+      mode?: string;
+      results?: Array<{ path: string }>;
     };
-    expect(out.source).toBe("semantic");
-    expect(out.results).toEqual([
-      { path: "a/one.md", title: "One", snippet: "sem hit" },
-    ]);
-    expect(fake.url("/api/search?")).toHaveLength(0); // no fallback needed
+    expect(out.mode).toBe("auto");
+    expect(out.results).toEqual([{ path: "a.md", title: "A", snippet: "s" }]);
+    const call = fake.url("/api/search-vault?")[0];
+    expect(call.url).toContain("queries=topic");
+    expect(call.url).toContain("mode=auto");
+    expect(sent.some((m) => (m as { type?: string }).type === "status")).toBe(
+      true,
+    );
   });
 
-  it("search_notes degrades to full-text inside one call when semantic is down (503)", async () => {
+  it("search_vault passes scope, note, mode and limit through", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on("/api/semantic-search", () =>
-      jsonResponse({ error: "qmd not installed" }, 503),
-    );
-    fake.on("/api/search", () =>
-      jsonResponse([{ id: "b/two.md", title: "Two", snippet: "kw hit" }]),
+    fake.on("/api/search-vault", () =>
+      jsonResponse({ mode: "exact", source: "exact", results: [] }),
     );
     const session = createVoiceToolSession(ctx);
-    const out = (await session.run("search_notes", { query: "topic" })) as {
-      source: string;
-      results: unknown[];
-    };
-    expect(out.source).toBe("fulltext");
-    expect(out.results).toEqual([
-      { path: "b/two.md", title: "Two", snippet: "kw hit" },
-    ]);
-  });
-
-  it("search_passages returns normalized passages with line numbers", async () => {
-    const { ctx, fake } = makeCtx();
-    fake.on("/api/passages", () =>
-      jsonResponse({
-        state: "ready",
-        results: [
-          { file: "a/one.md", title: "One", snippet: "para", line: 42 },
-        ],
-      }),
-    );
-    const session = createVoiceToolSession(ctx);
-    const out = (await session.run("search_passages", { query: "q" })) as {
-      source: string;
-      results: unknown[];
-    };
-    expect(out.source).toBe("semantic");
-    expect(out.results).toEqual([
-      { path: "a/one.md", title: "One", snippet: "para", line: 42 },
-    ]);
-  });
-
-  it("search_passages exact=true returns literal matches only, normalized", async () => {
-    const { ctx, fake } = makeCtx();
-    fake.on("/api/note-grep", () =>
-      jsonResponse({ matches: [{ line: 7, snippet: "the exact phrase" }] }),
-    );
-    const session = createVoiceToolSession(ctx);
-    const out = (await session.run("search_passages", {
-      query: "exact phrase",
-      note: "a/one.md",
-      exact: true,
-    })) as { source: string; results: unknown[] };
-    expect(out.source).toBe("exact");
-    expect(out.results).toEqual([
-      { path: "a/one.md", title: "one", snippet: "the exact phrase", line: 7 },
-    ]);
-    expect(fake.url("/api/passages")).toHaveLength(0); // literal only, no semantic
-  });
-
-  it("search_passages exact=true without a note explains the contract", async () => {
-    const { ctx } = makeCtx();
-    const session = createVoiceToolSession(ctx);
-    const out = await session.run("search_passages", {
-      query: "x",
-      exact: true,
+    await session.run("search_vault", {
+      queries: "term",
+      mode: "exact",
+      path: "felo/wiki",
+      note: "felo/wiki/n.md",
+      limit: 5,
     });
-    expect(out.error).toContain("note");
+    const url = fake.url("/api/search-vault?")[0].url;
+    expect(url).toContain("queries=term");
+    expect(url).toContain("mode=exact");
+    expect(url).toContain("path=felo");
+    expect(url).toContain("note=felo");
+    expect(url).toContain("limit=5");
   });
 
-  it("note-scoped search_passages falls back to an in-note grep when semantic is empty", async () => {
+  it("search_vault accepts the legacy 'query' alias", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on("/api/passages", () =>
-      jsonResponse({ state: "uncovered", results: [] }),
-    );
-    fake.on("/api/note-grep", () =>
-      jsonResponse({ matches: [{ line: 3, text: "fallback line" }] }),
+    fake.on("/api/search-vault", () =>
+      jsonResponse({ mode: "auto", source: "keyword", results: [] }),
     );
     const session = createVoiceToolSession(ctx);
-    const out = (await session.run("search_passages", {
-      query: "term",
-      note: "a/one.md",
-    })) as { source: string; results: Array<{ line: number }> };
-    expect(out.source).toBe("exact");
-    expect(out.results[0].line).toBe(3);
-    expect(fake.url("/api/note-grep")[0].url).toContain("ignore_case=1");
+    await session.run("search_vault", { query: "legacy" });
+    expect(fake.url("/api/search-vault?")[0].url).toContain("queries=legacy");
   });
 
-  it("empty results keep one consistent shape across the contracts", async () => {
+  it("search_vault surfaces a route error as the tool-error envelope", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on("/api/semantic-search", () =>
-      jsonResponse({ state: "ready", results: [] }),
-    );
-    fake.on("/api/passages", () =>
-      jsonResponse({ state: "ready", results: [] }),
-    );
-    fake.on("/api/search", () => jsonResponse([]));
-    fake.on("/api/note-grep", () => jsonResponse({ matches: [] }));
+    fake.on("/api/search-vault", () => jsonResponse({ error: "boom" }, 500));
     const session = createVoiceToolSession(ctx);
-    const notes = (await session.run("search_notes", { query: "none" })) as {
-      source: string;
-      results: unknown[];
+    const out = (await session.run("search_vault", { queries: "x" })) as {
+      error?: string;
     };
-    const passages = (await session.run("search_passages", {
-      query: "none",
-    })) as { source: string; results: unknown[] };
-    const exact = (await session.run("search_passages", {
-      query: "none",
-      note: "a.md",
-      exact: true,
-    })) as { source: string; results: unknown[] };
-    for (const out of [notes, passages, exact]) {
-      expect(out.results).toEqual([]);
-      expect(typeof out.source).toBe("string");
-    }
+    expect(out.error).toBe("boom");
   });
 
-  it("read_passage returns the normalized location shape", async () => {
+  it("empty search_vault results keep one consistent shape", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on("/api/note-lines", () =>
-      jsonResponse({ from: 37, to: 96, text: "surrounding lines" }),
+    fake.on("/api/search-vault", () =>
+      jsonResponse({ mode: "auto", source: "keyword", results: [] }),
     );
     const session = createVoiceToolSession(ctx);
-    const out = await session.run("read_passage", {
-      note: "a/one.md",
-      line: 42,
+    const out = await session.run("search_vault", { queries: "none" });
+    expect(out).toEqual({ mode: "auto", source: "keyword", results: [] });
+  });
+
+  it("read_note anchored mode builds a centered line query and preserves total", async () => {
+    const { ctx, fake } = makeCtx();
+    const calls: string[] = [];
+    fake.on(
+      (url) => url.startsWith(`${BASE}/api/note-lines`),
+      (u) => {
+        calls.push(u);
+        return jsonResponse({
+          id: "x.md",
+          from: 91,
+          to: 101,
+          total: 200,
+          text: "surrounding lines",
+        });
+      },
+    );
+    const session = createVoiceToolSession(ctx);
+    const out = await session.run("read_note", {
+      note: "x.md",
+      line: 96,
+      before: 5,
+      after: 5,
     });
+    // line + before + after are forwarded; from/count are NOT.
+    expect(calls[0]).toContain("line=96");
+    expect(calls[0]).toContain("before=5");
+    expect(calls[0]).toContain("after=5");
+    expect(calls[0]).not.toContain("from=");
+    expect(calls[0]).toContain("id=x.md");
     expect(out).toEqual({
-      path: "a/one.md",
-      line: 37,
-      to: 96,
+      path: "x.md",
+      from: 91,
+      to: 101,
+      total: 200,
       snippet: "surrounding lines",
+    });
+  });
+
+  it("read_note range mode builds a from/count query", async () => {
+    const { ctx, fake } = makeCtx();
+    const calls: string[] = [];
+    fake.on(
+      (url) => url.startsWith(`${BASE}/api/note-lines`),
+      (u) => {
+        calls.push(u);
+        return jsonResponse({
+          id: "x.md",
+          from: 1,
+          to: 60,
+          total: 200,
+          text: "first chunk",
+        });
+      },
+    );
+    const session = createVoiceToolSession(ctx);
+    const out = await session.run("read_note", {
+      note: "x.md",
+      from: 1,
+      count: 60,
+    });
+    expect(calls[0]).toContain("from=1");
+    expect(calls[0]).toContain("count=60");
+    expect(calls[0]).not.toContain("line=");
+    expect(out).toEqual({
+      path: "x.md",
+      from: 1,
+      to: 60,
+      total: 200,
+      snippet: "first chunk",
     });
   });
 });
@@ -1180,7 +1061,11 @@ describe("createVoiceToolSession — default fetchFn", () => {
   it("uses the global fetch when no fetchFn is injected", async () => {
     const original = globalThis.fetch;
     const spy = vi.fn(async () =>
-      jsonResponse([{ id: "x.md", title: "X", snippet: "s" }]),
+      jsonResponse({
+        mode: "auto",
+        source: "keyword",
+        results: [{ path: "x.md", title: "X", snippet: "s" }],
+      }),
     );
     globalThis.fetch = spy as unknown as typeof fetch;
     try {
@@ -1190,11 +1075,11 @@ describe("createVoiceToolSession — default fetchFn", () => {
         send: () => {},
       };
       const session = createVoiceToolSession(ctx);
-      const out = (await session.run("search_notes", { query: "x" })) as {
+      const out = (await session.run("search_vault", { queries: "x" })) as {
         results: Array<{ title: string; path: string }>;
       };
-      expect(out.results).toEqual([{ title: "X", snippet: "s", path: "x.md" }]);
-      expect(spy).toHaveBeenCalledTimes(2); // semantic probe, then keyword fallback
+      expect(out.results).toEqual([{ path: "x.md", title: "X", snippet: "s" }]);
+      expect(spy).toHaveBeenCalledTimes(1); // one consolidated /api/search-vault call
     } finally {
       globalThis.fetch = original;
     }

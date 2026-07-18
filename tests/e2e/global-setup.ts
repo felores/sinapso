@@ -20,11 +20,20 @@ const NOTES: Record<string, string> = {
   "beta-note.md":
     "# Beta Note\n\nBeta content with a [[Welcome]] link and a [[Phantom Target]].\n",
   "inbox/.keep.md": "# keep\n\nKeeps the inbox folder present for tests.\n",
+  // A hermetic wiki so the wiki-ingest UI menu appears in E2E (auto-discovered,
+  // defaults enabled, raw/ infers the RAW destination). Propose still fails
+  // cleanly with 400 because no OpenRouter key is configured in E2E.
+  "wiki/AGENTS.md":
+    "# Test Wiki Contract\n\nNodes live under wiki/. Use [[wikilinks]].\n",
+  "wiki/.keep.md": "# keep\n",
+  "raw/.keep.md": "# keep\n",
 };
 
 export default function globalSetup(): void {
   rmSync(E2E_TMP, { recursive: true, force: true });
   mkdirSync(join(E2E_VAULT, "inbox"), { recursive: true });
+  mkdirSync(join(E2E_VAULT, "wiki"), { recursive: true });
+  mkdirSync(join(E2E_VAULT, "raw"), { recursive: true });
   for (const [rel, content] of Object.entries(NOTES)) {
     writeFileSync(join(E2E_VAULT, rel), content);
   }

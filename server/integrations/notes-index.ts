@@ -22,6 +22,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import MiniSearch from "minisearch";
+import type { VaultSearchResult } from "./search-vault.js";
 
 /** Single hit shape returned by /api/search today. */
 export interface SearchHit {
@@ -38,14 +39,27 @@ export interface SearchIndexNode {
   phantom?: boolean;
 }
 
+export interface GrepAllOptions {
+  /** Folder prefix scope ("" = whole vault). */
+  scope?: string;
+  /** Restrict to one vault-relative note. */
+  note?: string;
+  /** Context lines on each side of a match (default 2). */
+  contextLines?: number;
+  /** Cap on returned matches (default 30). */
+  limit?: number;
+}
+
 /**
  * Opaque handle over the in-memory search index. Routes call
  * `search(q)` to query and `invalidate()` from the reload() path to
  * force a fresh build on the next call. The build itself is lazy
- * (first non-empty search) so cold boot stays fast.
+ * (first non-empty search) so cold boot stays fast. `grepAll` reuses the
+ * same in-memory contents for a global literal scan (search_vault exact mode).
  */
 export interface SearchIndex {
   search(query: string): SearchHit[];
+  grepAll(needles: string[], options?: GrepAllOptions): VaultSearchResult[];
   invalidate(): void;
 }
 
@@ -68,6 +82,7 @@ export function buildSearchIndex(
 ): SearchIndex {
   let ms: MiniSearch | null = null;
   let contents = new Map<string, string>();
+  let titles = new Map<string, string>();
 
   const build = (): MiniSearch => {
     const m = new MiniSearch({
@@ -76,12 +91,14 @@ export function buildSearchIndex(
       searchOptions: { boost: { title: 3 }, prefix: true, fuzzy: 0.15 },
     });
     contents = new Map();
+    titles = new Map();
     const docs: Array<{ id: string; title: string; content: string }> = [];
     for (const n of nodes) {
       if (n.phantom) continue;
       try {
         const text = readFileSync(resolve(vaultRoot, n.id), "utf-8");
         contents.set(n.id, text);
+        titles.set(n.id, n.title);
         docs.push({ id: n.id, title: n.title, content: text });
       } catch {
         // file moved/deleted since scan; skip it (matches inline behavior)
@@ -89,6 +106,13 @@ export function buildSearchIndex(
     }
     m.addAll(docs);
     return m;
+  };
+
+  // Build once lazily and return the cached MiniSearch + maps. Shared by
+  // search() and grepAll() so a global literal scan reuses the in-memory
+  // contents instead of re-reading every file.
+  const ensure = (): void => {
+    if (!ms) ms = build();
   };
 
   const snippet = (id: string, terms: string[]): string => {
@@ -112,8 +136,8 @@ export function buildSearchIndex(
   return {
     search(query: string): SearchHit[] {
       if (!query.trim()) return [];
-      if (!ms) ms = build();
-      return ms
+      ensure();
+      return ms!
         .search(query)
         .slice(0, SEARCH_HIT_LIMIT)
         .map((h) => ({
@@ -123,11 +147,72 @@ export function buildSearchIndex(
           snippet: snippet(h.id as string, h.terms),
         }));
     },
+    /**
+     * Global literal scan (search_vault `exact` mode). Reuses the in-memory
+     * `contents` map so files are read once per build, not per query. Each
+     * non-phantom note in scope is scanned for every needle (case-insensitive,
+     * no regex so no ReDoS); matches carry path, title, a context snippet, the
+     * 1-based line, and the needles that hit there. Deduped per path:line,
+     * capped at `limit`.
+     */
+    grepAll(
+      needles: string[],
+      options: GrepAllOptions = {},
+    ): VaultSearchResult[] {
+      const cleaned = needles.map((n) => n.trim()).filter(Boolean);
+      if (!cleaned.length) return [];
+      const scope = typeof options.scope === "string" ? options.scope : "";
+      const note = typeof options.note === "string" ? options.note : "";
+      const contextLines = options.contextLines ?? 2;
+      const limit = options.limit ?? 30;
+      ensure();
+      const lower = cleaned.map((n) => n.toLowerCase());
+      const out: VaultSearchResult[] = [];
+      const seen = new Set<string>();
+      // Iterate the cached note ids in stable order for deterministic output.
+      const ids = Array.from(contents.keys()).sort();
+      for (const id of ids) {
+        if (note ? id !== note : !inScopePrefix(id, scope)) continue;
+        const text = contents.get(id) ?? "";
+        const title = titles.get(id) ?? id;
+        const lines = text.split("\n");
+        for (let i = 0; i < lines.length && out.length < limit; i++) {
+          const hay = lines[i].toLowerCase();
+          const hit = lower.filter((n) => hay.includes(n));
+          if (!hit.length) continue;
+          const key = `${id}:${i + 1}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const from = Math.max(i - contextLines, 0);
+          out.push({
+            path: id,
+            title,
+            snippet: lines
+              .slice(from, i + contextLines + 1)
+              .join("\n")
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 300),
+            line: i + 1,
+            terms: hit,
+          });
+        }
+        if (out.length >= limit) break;
+      }
+      return out;
+    },
     invalidate(): void {
       ms = null;
       contents = new Map();
+      titles = new Map();
     },
   };
+}
+
+/** Vault-prefix scope check shared with search-vault.inScope (kept local to
+ *  avoid a cycle: notes-index imports search-vault for the type only). */
+function inScopePrefix(id: string, scope: string): boolean {
+  return !scope || id === scope || id.startsWith(scope + "/");
 }
 
 /** Single match shape returned by /api/note-grep today. */

@@ -75,6 +75,12 @@ import { computeSemanticClusters as computeSemanticClustersPure } from "./cluste
 import { api, apiRaw, ApiError, getApiToken, peekApiToken } from "./api";
 import { createPrefs } from "./prefs";
 import {
+  type ActivityCard,
+  dismissActivityCard as dismissActivityCardModel,
+  isTerminal,
+  upsertActivityCard as upsertActivityCardModel,
+} from "./activity-cards";
+import {
   buildKeywordQuery,
   buildSelectionSnapshot,
   buildSemanticQuery,
@@ -5777,7 +5783,15 @@ async function boot() {
         (entry) => entry.id === currentVisibleResearchId(),
       );
       updateHistoryNav();
-      if (decision === "blocked-dirty") {
+      if (decision === "blocked-pinned") {
+        upsertActivityCard({
+          id: `research-ready:${id}`,
+          state: "ready",
+          label: "research.backgroundReady",
+          detail: i18n.t("research.backgroundPinned"),
+        });
+        announceResearch(i18n.t("research.backgroundReady"));
+      } else if (decision === "blocked-dirty") {
         researchError(i18n.t("research.refreshConflict"));
         announceResearch(i18n.t("research.refreshConflict"));
       }
@@ -6096,7 +6110,16 @@ async function boot() {
           `/api/research/history/${encodeURIComponent(researchId)}/save-inbox`,
           { json: {} },
         );
-        await openAfterIngest(String(data.id));
+        const opened = await openAfterIngest(String(data.id));
+        if (!opened) {
+          // The note IS saved on the server, but the rescan/open failed, so
+          // keep the visible research panel intact and surface a non-blocking
+          // error instead of clearing it (the pending-select fallback still
+          // survives in sessionStorage for a reload).
+          researchError(i18n.t("research.savedNotOpened"));
+          saveInbox.disabled = false;
+          return;
+        }
         await advanceResearchAfterRemoval();
       } catch (e) {
         footerFail(e, saveInbox);
@@ -6118,7 +6141,11 @@ async function boot() {
           `/api/research/history/${encodeURIComponent(researchId)}/save-raw-source`,
           { json: { wikiId } },
         );
-        await openAfterIngest(String(data.id));
+        const opened = await openAfterIngest(String(data.id));
+        if (!opened) {
+          researchError(i18n.t("research.savedNotOpened"));
+          return;
+        }
         await advanceResearchAfterRemoval();
       } catch (e) {
         footerFail(e, menuSave);
@@ -6137,7 +6164,9 @@ async function boot() {
         const wikis = await syncResearchWikiTarget();
         if (!wikis.length) throw new Error("no-enabled-wiki");
         const researchId = currentEntryId;
-        await teardownResearchDocument();
+        // Frente B: prepare without tearing down the visible document. The
+        // proposal is prepared in the background and surfaces as a CTA; the
+        // panel keeps showing the current research until the user reviews it.
         await showWikiProposal(
           { researchId },
           wikis.length > 1 ? wikiTarget.value : wikis[0].id,
@@ -7243,16 +7272,21 @@ async function boot() {
   // After saving an ingested note, rescan so the new note joins the graph.
   // Create a note, then rescan-diff the vault (no reload) and fly to the new
   // note once it joins the live graph with its resolved links.
-  async function openAfterIngest(id: string, logReader = false) {
+  async function openAfterIngest(
+    id: string,
+    logReader = false,
+  ): Promise<boolean> {
     sessionStorage.setItem("sinapso-pending-select", id); // survives a fallback reload
     if (!logReader) sessionStorage.setItem("sinapso-pending-select-nolog", "1");
-    await rescan(false);
+    const ok = await rescan(false);
+    if (!ok) return false; // pending-select kept as the reload fallback
     const n = byId.get(id);
     if (n) {
       sessionStorage.removeItem("sinapso-pending-select");
       sessionStorage.removeItem("sinapso-pending-select-nolog");
       select(n, undefined, logReader);
     }
+    return true;
   }
 
   interface WikiIngestOperation {
@@ -7357,9 +7391,24 @@ async function boot() {
       | { researchId: string; sourceNote?: string },
     wikiId?: string,
   ) {
-    openResearch("ingest");
-    const body = $("#research-body");
-    body.innerHTML = `<p class="muted">${i18n.t("wiki.buildingProposal")}</p>`;
+    // Frente B: non-interruptive preparation. Do NOT open/empty the research
+    // panel while the LLM prepares — keep the current document/article/result
+    // exactly visible. Surface progress as a transient activity card + ops
+    // status; on ready, present a non-intrusive CTA (opens the saved proposal
+    // only when the user taps it). Errors show as contextual activity and never
+    // clear the visible content. Approval semantics are unchanged: applying
+    // still happens only after explicit approval inside the proposal.
+    const cardId = "wiki-ingest";
+    setOpsStatus({
+      label: i18n.t("activity.propose"),
+      indeterminate: true,
+    });
+    upsertActivityCard({
+      id: cardId,
+      state: "propose",
+      label: "activity.propose",
+      detail: "wiki.buildingProposal",
+    });
     try {
       const proposal = await api<WikiIngestProposal>(
         "/api/wiki-ingest/propose",
@@ -7374,21 +7423,39 @@ async function boot() {
               : { converted: input, sourceNote: input.sourceNote, wikiId },
         },
       );
-      renderWikiProposal(body, proposal);
+      pendingWikiProposal = {
+        proposal,
+        wikiId: proposal.wiki.id,
+        researchId: proposal.researchId,
+        sourceNote: proposal.sourceNote,
+      };
+      setOpsStatus(null);
+      upsertActivityCard({
+        id: cardId,
+        state: "ready",
+        label: "activity.ready",
+        detail: i18n.t("activity.readyHint"),
+        cta: "activity.review",
+        ctaKind: "primary",
+      });
     } catch (e) {
-      body.innerHTML = "";
-      if (e instanceof ApiError) {
-        const body = e.body as
-          | { message?: string; error?: string }
-          | null
-          | undefined;
-        const msg = body?.message ?? body?.error;
-        researchError(msg ?? i18n.t("wiki.ingestFailed"));
-      } else {
-        researchError(
-          e instanceof Error ? e.message : i18n.t("wiki.ingestFailed"),
-        );
-      }
+      setOpsStatus(null);
+      const msg =
+        e instanceof ApiError
+          ? ((e.body as { message?: string; error?: string } | null)?.message ??
+            (e.body as { error?: string } | null)?.error ??
+            i18n.t("wiki.ingestFailed"))
+          : e instanceof Error
+            ? e.message
+            : i18n.t("wiki.ingestFailed");
+      upsertActivityCard({
+        id: cardId,
+        state: "error",
+        label: "activity.error",
+        detail: msg,
+        cta: "activity.tryAgain",
+        ctaKind: "retry",
+      });
     }
   }
 
@@ -7521,7 +7588,11 @@ async function boot() {
     const data = await api<{ id: string }>("/api/ingest/save", {
       json: { converted: preview },
     });
-    await openAfterIngest(String(data.id));
+    const opened = await openAfterIngest(String(data.id));
+    if (!opened) {
+      researchError(i18n.t("research.savedNotOpened"));
+      return;
+    }
     readerLeftPinned = true;
     setReaderCtxLeft(true);
     closeResearch();
@@ -8077,6 +8148,16 @@ async function boot() {
     });
   }
 
+  // ---- activity card host + anchor (declared before the topbar reflow so the
+  // reflow pass can reposition the anchor without a temporal-dead-zone access;
+  // the rest of the activity-card system is wired further below) ----
+  const activityHost = $("#activity-cards");
+  function relayoutActivityAnchor(): void {
+    const rail = $("#topbar").classList.contains("topbar-rail");
+    activityHost.classList.toggle("ac-bottom", !rail);
+    activityHost.classList.toggle("ac-top", rail);
+  }
+
   // ---- topbar reflow around docked panels ----
   // Any dock/undock/open/close flips a class on #reader or #research, and a
   // width resize changes their inline style — observe both so the topbar inset
@@ -8085,6 +8166,7 @@ async function boot() {
   let relayoutT = 0;
   const relayout = () => {
     layoutTopbar();
+    relayoutActivityAnchor();
     clearTimeout(relayoutT);
     relayoutT = window.setTimeout(layoutTopbar, 300);
   };
@@ -8160,8 +8242,106 @@ async function boot() {
     bar.setAttribute("aria-valuenow", String(pct));
   }
 
+  // ---- activity card stack (ephemeral, non-blocking) ----
+  // Single bounded stack (max 3) anchored opposite the search bar. Transient
+  // states (search/prepare/propose) self-update; ready/error persist with a
+  // CTA/dismiss. The host is pointer-events:none; cards re-enable interaction.
+  let activityStack: ActivityCard[] = [];
+  // Pending wiki-ingest proposal awaiting the user's review CTA (Frente B).
+  let pendingWikiProposal: {
+    proposal: WikiIngestProposal;
+    wikiId: string;
+    researchId?: string;
+    sourceNote?: string;
+  } | null = null;
+
+  function renderActivityCards(): void {
+    const stack = activityStack;
+    activityHost.innerHTML = "";
+    if (!stack.length) return;
+    for (const card of stack) {
+      const el = document.createElement("div");
+      el.className = `ac-card ac-${card.state}`;
+      el.dataset.id = card.id;
+      const role = card.state === "error" ? "alert" : "status";
+      el.setAttribute("role", role);
+      const label = document.createElement("span");
+      label.className = "ac-label";
+      label.textContent = i18n.t(card.label);
+      el.appendChild(label);
+      if (card.detail) {
+        const d = document.createElement("span");
+        d.className = "ac-detail";
+        d.textContent = card.detail;
+        el.appendChild(d);
+      }
+      const actions = document.createElement("div");
+      actions.className = "ac-actions";
+      if (card.cta) {
+        const cta = document.createElement("button");
+        cta.type = "button";
+        cta.className =
+          card.ctaKind === "retry" ? "ac-cta-retry" : "ac-cta-primary";
+        cta.textContent = i18n.t(card.cta);
+        cta.addEventListener("click", () => onActivityCta(card));
+        actions.appendChild(cta);
+      }
+      // ready/error persist with an explicit dismiss (not hover-only).
+      if (isTerminal(card.state)) {
+        const dismiss = document.createElement("button");
+        dismiss.type = "button";
+        dismiss.className = "ac-dismiss";
+        dismiss.setAttribute("aria-label", i18n.t("activity.dismiss"));
+        dismiss.textContent = "×";
+        dismiss.title = i18n.t("activity.dismiss");
+        dismiss.addEventListener("click", () => dismissActivityCard(card.id));
+        actions.appendChild(dismiss);
+      }
+      if (actions.childNodes.length) el.appendChild(actions);
+      activityHost.appendChild(el);
+    }
+  }
+
+  function setActivityStack(next: ActivityCard[]): void {
+    activityStack = next;
+    renderActivityCards();
+  }
+
+  function upsertActivityCard(card: ActivityCard): void {
+    setActivityStack(upsertActivityCardModel(activityStack, card));
+  }
+
+  function dismissActivityCard(id: string): void {
+    setActivityStack(dismissActivityCardModel(activityStack, id));
+  }
+
+  /** CTA routing: ready -> open the pending wiki proposal; error -> retry. */
+  function onActivityCta(card: ActivityCard): void {
+    if (card.state === "ready" && card.id === "wiki-ingest") {
+      openPendingWikiProposal();
+    } else if (card.state === "error" && card.id === "wiki-ingest") {
+      dismissActivityCard(card.id);
+      pendingWikiProposal = null;
+    }
+  }
+
+  /** Render the saved proposal in the research panel (explicit user action). */
+  function openPendingWikiProposal(): void {
+    const pending = pendingWikiProposal;
+    if (!pending) return;
+    openResearch("ingest");
+    const body = $("#research-body");
+    renderWikiProposal(body, pending.proposal);
+    dismissActivityCard("wiki-ingest");
+  }
+
+  // Anchor opposite the search bar: search bar on top -> cards at the bottom;
+  // search bar on the bottom rail -> cards at the top. Toggle the host class on
+  // the same reflow pass that repositions the topbar (see relayoutActivityAnchor
+  // declared with the host before the topbar-reflow block).
+
   // ---- File ----
-  async function rescan(full: boolean) {
+  async function rescan(full: boolean): Promise<boolean> {
     closeMenus();
     rescanRunning = true;
     setOpsStatus({
@@ -8198,11 +8378,13 @@ async function boot() {
       } else {
         window.location.reload();
       }
+      return true;
     } catch {
       showModal(
         "Rescan failed",
         "<p>Could not rescan. The server needs access to the original vault path.</p>",
       );
+      return false;
     } finally {
       rescanRunning = false;
       setOpsStatus(null);
