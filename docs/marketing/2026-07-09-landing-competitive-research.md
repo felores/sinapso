@@ -6,7 +6,7 @@
 
 ## Executive summary
 
-Obsidian's built-in graph view is officially conceded to be unusable past ~25k notes and freezes vaults with heavy interlinking; the 3D-plugin ecosystem is small, buggy, and largely abandoned by solo maintainers. A real category of "talk to your notes" voice tools exists (2025-2026), but almost all are voice-*capture* (dictation) rather than realtime *agentic voice over the whole graph* — and the one direct competitor (Hermes for Obsidian) validates Sinapso's exact Gemini-Live + BYO-key architecture. Document ingest to markdown is a widely documented pain with no clean native path. Subscription fatigue in PKM/AI is a loud, well-sourced sentiment that explicitly favors local-first, BYO-key, pay-per-use models.
+Obsidian's built-in graph view is officially conceded to be unusable past ~25k notes and freezes vaults with heavy interlinking; the 3D-plugin ecosystem is small, buggy, and largely abandoned by solo maintainers. A real category of "talk to your notes" voice tools exists (2025-2026), but almost all are voice-*capture* (dictation) rather than realtime *agentic voice over the whole graph*. The one direct competitor, Hermes for Obsidian, validates Sinapso's exact Gemini-Live + BYO-key architecture. Document ingest to markdown is a widely documented pain with no clean native path. Subscription fatigue supports a free, open local core and BYO-key AI. Sinapso can charge separately for opt-in managed continuity when synchronization, backup, recovery, and mobile access provide ongoing operational value.
 
 ---
 
@@ -109,7 +109,32 @@ Obsidian's built-in graph view is officially conceded to be unusable past ~25k n
 
 Sources: https://get.mem.ai/pricing, https://www.notion.com/pricing, https://reflect.app/, https://www.aitoolbox.hk/articles/best-ai-note-taking-tools-2026-notion-ai-vs-mem-vs-reflect-vs-tana/, https://aiandapps.com/top-3-ai-note-taking-apps-notion-vs-mem-vs-reflect-compared/
 
-Baseline: **Obsidian itself is free** (removed commercial license Feb 2025, ~1.5M MAU, ~$25M ARR from optional Sync $4/mo + Publish $8/mo). — https://aiordienow.com/note-taking-app-without-subscription/
+Baseline: **Obsidian itself is free**, with optional paid Sync and Publish services. The previously cited ARR estimate came from a non-official source and should not be used as a verified company figure.
+
+### Economics addendum (2026-07-18, official pricing only)
+
+Current official continuity and note-service pricing provides a useful market frame:
+
+| Service | Official listed price |
+|---|---|
+| Obsidian Sync | $4/user/month billed annually, or $5 billed monthly |
+| Joplin Cloud Basic | €2.40/month billed annually, or €2.99 billed monthly |
+| Joplin Cloud Pro | €4.79/month billed annually, or €5.99 billed monthly |
+| Notesnook Pro | $5.83/month annual equivalent, or $6.99 billed monthly |
+| Standard Notes | $90/year or $120/year, depending on plan |
+| AFFiNE Pro | $6.75/month |
+
+Official sources: https://obsidian.md/pricing, https://joplinapp.org/plans/,
+https://notesnook.com/pricing, https://standardnotes.com/plans, and
+https://affine.pro/pricing.
+
+Cloudflare R2 Standard lists storage at $0.015/GB-month, Class A operations at
+$4.50 per million, Class B operations at $0.36 per million, and free egress.
+Source: https://developers.cloudflare.com/r2/pricing/.
+
+Raw storage is not the primary business risk. Operational correctness, recovery
+integrity, privacy, and user support are harder and more consequential than the
+underlying storage bill.
 
 ---
 
@@ -119,7 +144,7 @@ Baseline: **Obsidian itself is free** (removed commercial license Feb 2025, ~1.5
 2. **"Uses your GPU. Obsidian's graph uses one CPU core."** The most-repeated technical complaint, and a demonstrable side-by-side.
 3. **"Talk to your vault, don't just stare at it."** The community's own phrasing ("Your vault has a graph. But you can only stare at it.") — Sinapso adds voice agent + navigable map. Nobody combines both.
 4. **"Realtime voice over YOUR markdown files — not another cloud silo."** Resty/Voicie/SpoknLog lock notes in their clouds; Sinapso speaks to files you already own, local-first.
-5. **"No subscription. Bring your own key. Pay cents, not $20/month."** Ride the documented subscription-fatigue wave; contrast with Notion AI/Mem/Reflect ($10-20/mo).
+5. **"Free local core. Bring your own AI keys. Pay for continuity only if you want it."** Separate the forever-free, account-free local platform from planned paid synchronization, backup, recovery, and mobile access.
 6. **"Drag a Word/PDF/Google Doc in — it becomes a linked note."** Turns a universally-hated 20-minute cleanup into a drop.
 7. **"Your data never leaves your machine unless you say so."** Local-first + explicit-consent egress — a trust story cloud-by-default rivals can't tell.
 8. **"See the gaps, not just the notes."** Semantic clustering / orphan-and-gap surfacing answers the questions the static graph can't ("which notes are isolated? which concepts are missing?").

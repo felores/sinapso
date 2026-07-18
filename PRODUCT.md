@@ -1,10 +1,10 @@
 # Sinapso
 
-> Your knowledge base as a 3D universe you can talk to.
+> Your whole knowledge world, ready to talk, research, and decide with you.
 
 ## What This Is
 
-Sinapso takes a folder of linked notes - an Obsidian vault, a wiki, any collection of Markdown files - and turns it into a living 3D galaxy. Every note is a glowing node, every link a strand between them, and the clusters that emerge are your actual areas of knowledge, discovered from the links alone. You fly through it, click a note to read it right there, and - this is the part that changes everything - you talk to it. A real-time voice assistant explores your notes with you, searches the web, pulls in new sources, drafts documents, and files them into your knowledge base, all by conversation.
+Sinapso is an independent knowledge platform for linked Markdown and YAML files you own. It turns a folder of notes into a living 3D galaxy: every note is a glowing node, every link a strand between them, and the clusters that emerge are your actual areas of knowledge. You fly through it, click a note to read it, and talk to it. A real-time voice assistant explores your notes with you, searches the web, pulls in new sources, drafts documents, and files them into your knowledge base, all by conversation. Obsidian compatibility and handoff are optional conveniences, not requirements.
 
 ## The Origin Story
 
@@ -12,17 +12,20 @@ Sinapso began as a repository with a single star. It was created by Fable, the m
 
 ## Who This Is For
 
-- People with years of notes in Obsidian who have never actually *seen* what they built - the built-in graph turns into slow soup past a few thousand notes.
-- Researchers and consultants who collect sources from everywhere and need them connected, not piled up.
-- Anyone drowning in Word docs, PDFs, and Google Docs who wants their knowledge in a clean format that both humans and AI can actually use.
-- People tired of paying five AI subscriptions and want to bring their own pay-per-use keys instead.
-- Tinkerers who want a knowledge base their AI agents can work with, not just a folder of files.
+**Primary audience: independent knowledge operators.** Consultants, researchers, founders, analysts, and other people who maintain substantial personal knowledge and need to turn it into research, decisions, and durable deliverables.
+
+- People who repeatedly reconstruct context before important work and still miss relevant knowledge they already possess.
+- People with years of linked notes who need to see patterns, gaps, and connections across a large collection.
+- People who collect sources from everywhere and need them connected, not piled up.
+- People who want Word documents, PDFs, and web sources converted into clean files that both humans and AI can use.
+- People who prefer their own pay-per-use AI keys over mandatory bundled AI subscriptions.
+- Tinkerers who want a knowledge base their AI agents can work with, not a vendor-controlled silo.
 
 ## The Problem It Solves
 
-You spent years building a knowledge base. Thousands of notes, carefully linked. And what do you get for it? A file tree. A search box. A 2D graph that turns into an unreadable hairball and drops frames the moment your vault gets serious. You can't see the shape of what you know, you can't spot the gaps, and getting *new* knowledge in means copy-pasting out of PDFs and Word files that pollute everything they touch.
+You spent years building a knowledge base, but important research and decisions still begin with reconstructing context. Relevant knowledge is easy to miss, generic AI lacks your accumulated history, and useful work disappears into disposable conversations. A file tree, a search box, and an unreadable graph do not help your knowledge act when it matters.
 
-Sinapso flips that. Your vault becomes a place you visit. Patterns you never noticed are suddenly obvious - that orange cluster you forgot about, the bright strands connecting two domains you didn't know were related. New material flows in clean: drop a URL, a Word file, and it comes out as a tidy note, previewed before it's saved, linked into what you already have. And when your hands are busy or your thoughts are faster than your typing, you just say what you want.
+Sinapso turns your knowledge world into a place you can explore and a partner you can consult. Patterns you never noticed become visible. New material flows in clean: drop a URL or a document, preview the resulting note, and connect it to what you already have. Grounded conversation, research, synthesis, and decision support produce durable work instead of another chat transcript.
 
 ## What You Can Do With It
 
@@ -51,23 +54,29 @@ The voice assistant is not a gimmick bolted on top. It's the fastest way to driv
 
 It answers in real time, accepts interruptions, corrects itself when you push back, and works in your language. You pick the voice and the provider - three of the best real-time voice engines available, using your own key. The difference from a chatbot: nothing gets lost in a scroll. What you produce together becomes notes, linked and saved, part of your base.
 
-## No Subscriptions, Ever
+## Free Local Core, Optional Paid Continuity
 
-Sinapso is free and open source. The optional smart features run on **your own keys, pay-per-use**:
+Sinapso's local platform is free and open source, with no account required. Optional smart features continue to run on **your own keys, pay-per-use**:
 
 - Web research costs cents - you load credits and they last.
 - The language models behind synthesis and document drafting are pay-as-you-go, with efficient, current models as the defaults.
-- Voice works the same way: your key, your usage, no monthly fee.
+- Voice works the same way: your key and your usage.
 - Semantic search over your own notes is fully local and costs nothing.
 
-Use it every day or once a month - you pay for what you use, and the core visualizer costs nothing at all.
+Planned managed services will offer opt-in private synchronization, encrypted backup, recoverability, versioning, and mobile access as a paid subscription. That subscription is for continuity across devices, not mandatory AI access. The local core remains free forever and keeps user-owned Markdown and YAML as the source of truth.
+
+## Planned Companion and Sharing
+
+The planned mobile companion will focus first on grounded conversation, research, decisions, search, capture, and reading. Full mobile 3D parity comes later, only if the companion experience proves useful.
+
+Selective document sharing is the first planned collaboration and growth loop. Recipients should get immediate value from a shared document and an invitation to start their own Sinapso workspace. Live co-editing, presence, and complex permissions are deliberately deferred until sharing proves demand.
 
 ## Why It's Different
 
 - **It stays fast where everything else breaks.** Big vaults are the point, not the edge case.
-- **Everything stays on your machine.** Notes are never uploaded, indexed, or phoned home. Web features only activate when you explicitly turn them on, with your own keys.
+- **The current local core stays on your machine.** Scanning, rendering, local search, and reading do not send vault data elsewhere. Existing Web, LLM, and Git actions run only when you explicitly trigger them, with consent or your own keys where required.
 - **Your notes stay yours** - plain Markdown files in your own folders. Sinapso never locks them in, never rewrites them behind your back, asks before it saves anything, and keeps a journal of every change.
-- **It complements Obsidian instead of replacing it.** One click hands any note to Obsidian for human editing; Sinapso is the exploration and agent layer on top.
+- **It is independent of Obsidian.** Any linked Markdown collection works. If you use Obsidian, one click can hand a note there for editing.
 - **Your AI gains a capability.** Sinapso isn't just a viewer - it's a surface agents can use: voice agents today, and a roadmap where your other AI assistants tap your knowledge base as grounded context for deep reasoning.
 - **Open source, MIT, built on open source** - the converter, the semantic engine, the visualizer, all of it inspectable.
 

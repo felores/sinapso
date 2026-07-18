@@ -20,11 +20,12 @@
 | 5 | Voice showcase | Value peak | No desire |
 | 6 | Why Sinapso and not X | Differentiation | No trust, no money |
 | 7 | Origin story | Differentiation / narrative | No trust |
-| 8 | Pricing truth (free + BYO keys) | Value | No money |
-| 9 | Trust model | Differentiation | No trust |
-| 10 | Final CTA | Close | No hurry |
+| 8 | Pricing truth (free local + optional paid continuity) | Value | No money |
+| 9 | Continuity, mobile, and sharing roadmap | Value / growth | No desire, no trust |
+| 10 | Trust model | Differentiation | No trust |
+| 11 | Final CTA | Close | No hurry |
 
-CTA appears after sections 1, 4, 6, 8, and 10. Same action everywhere: copy the
+CTA appears after sections 1, 4, 6, 8, and 11. Same primary action everywhere: copy the
 one-line install command + GitHub link. Proof element accompanies each CTA (see
 "Social proof strategy" below).
 
@@ -32,35 +33,37 @@ one-line install command + GitHub link. Proof element accompanies each CTA (see
 
 ## 1. Hero (Layer 1: Clarity)
 
-The 15-second test: what is it, what do I get, what's the catch (none).
+The 15-second test: what is it, what do I get, and what stays free.
 
 **Headline (EN):**
-> Fly through everything you know. Then talk to it.
+> Your whole knowledge world, ready to talk, research, and decide with you.
 
 **Headline (ES):**
-> Vuela por todo lo que sabes. Y luego háblale.
+> Todo tu mundo de conocimiento, listo para conversar, investigar y decidir contigo.
 
-Checklist: imperative verb (Fly / Vuela), outcome (everything you know, navigable),
-attention hook (talk to it). The objection lives in the subtitle.
+Checklist: audience outcome (their whole knowledge world), active value (conversation,
+research, decisions), and personal grounding. The objection lives in the subtitle.
 
 **Subtitle (EN):**
-> Sinapso turns your Obsidian vault, or any folder of linked Markdown, into a smooth
-> 3D universe: thousands of notes, tens of thousands of links, on your own machine.
-> A real-time voice assistant explores it with you, researches the web, and files
-> what you create back into your notes. Free, open source, no subscription.
+> Sinapso is a free, open local platform for linked Markdown and YAML files you own.
+> Explore thousands of notes in 3D, talk with a grounded voice assistant, research,
+> and turn decisions into durable work. No account required. Optional managed
+> continuity services are planned, not part of the product today.
 
 **Subtitle (ES):**
-> Sinapso convierte tu vault de Obsidian, o cualquier carpeta de Markdown enlazado,
-> en un universo 3D fluido: miles de notas, decenas de miles de enlaces, en tu propia
-> máquina. Un asistente de voz en tiempo real lo explora contigo, investiga en la web
-> y guarda lo que crean de vuelta en tus notas. Gratis, open source, sin suscripción.
+> Sinapso es una plataforma local, abierta y gratuita para archivos Markdown y YAML
+> enlazados que tú controlas. Explora miles de notas en 3D, conversa con un asistente
+> de voz basado en tu conocimiento, investiga y convierte decisiones en trabajo
+> duradero. No requiere cuenta. Los servicios administrados de continuidad están
+> planeados y todavía no forman parte del producto.
 
 **CTA block:**
 - Primary: copyable command box: `npx sinapso "path/to/YourVault"` with a copy button.
   Label EN: "One command. Your vault, in orbit." / ES: "Un comando. Tu vault, en órbita."
 - Secondary: "Star on GitHub" + live star count.
-- Under-CTA microcopy (risk reversal): EN "MIT licensed. Runs on localhost. Uploads
-  nothing." / ES "Licencia MIT. Corre en localhost. No sube nada."
+- Under-CTA microcopy (risk reversal): EN "MIT licensed. The current local core runs
+  on localhost and sends no vault data elsewhere." / ES "Licencia MIT. El núcleo
+  local actual corre en localhost y no envía los datos de tu base a otros servicios."
 
 **Visual:** full-bleed background or right-side render of the galaxy (image slot 1,
 or ideally the real flythrough video/GIF from `assets/`).
@@ -104,9 +107,10 @@ from real community complaints (see research doc for quotes and URLs).
    You get a wall of text, it's gone by tomorrow, and none of it connects to the
    notes you already have.
 
-5. **Every tool wants $10-20 a month.**
-   One subscription per app, whether you used it this month or not. Renting your
-   own second brain gets old.
+5. **You should not need a subscription to use your own files.**
+   A local knowledge platform should remain useful without an account or recurring
+   fee. Paid continuity should earn its price through synchronization, recovery,
+   and support, not by holding local access hostage.
 
 6. **Cloud tools want your notes on their servers.**
    Your vault is years of your thinking. Uploading it to someone else's silo to get
@@ -138,14 +142,15 @@ from real community complaints (see research doc for quotes and URLs).
    base. Select any text and launch the next question from it. Nothing you produce
    gets lost.
 
-5. **Free core, cents-per-use extras.** (counters pain 5)
-   The visualizer costs nothing, forever. Smart features run on your own pay-per-use
-   keys. Semantic search over your notes is fully local and free.
+5. **Free local core, BYO-key AI.** (counters pain 5)
+   The local platform is free forever and requires no account. Smart features run
+   on your own pay-per-use keys. Planned paid services cover optional managed
+   continuity, not mandatory AI access.
 
-6. **Everything stays on your machine.** (counters pain 6)
-   Plain Markdown in your own folders. Nothing is uploaded unless you explicitly ask.
-   Every write is previewed, guarded, and journaled. Obsidian stays one click away
-   for hand-editing.
+6. **Your files remain the source of truth.** (counters pain 6)
+   Plain Markdown and YAML stay in your own folders. The current local core does not
+   send vault data elsewhere; Web, LLM, and Git actions require explicit user action.
+   Every app-authored write is guarded and journaled. Obsidian handoff is optional.
 
 ---
 
@@ -190,10 +195,12 @@ Comparison table (verify pricing before publish; sources in research doc):
 | 3D navigable map | Yes | No | Partial, unmaintained | 2D-ish / cluttered | No |
 | Real-time voice agent | Yes | No | No | No | Capture only |
 | Your own Markdown files | Yes | Yes | Yes | Proprietary / cloud | Their cloud |
-| Price | Free + BYO keys | Free | Free | $180/yr+ / €12-66/mo | $/mo subscriptions |
+| Independent of a host note app | Yes | No | No | Yes | Yes |
+| Price | Local core free; BYO-key AI; managed continuity planned paid | Free; Sync optional paid | Free | $180/yr+ / €12-66/mo | $/mo subscriptions |
 
-Tone rule: respectful toward Obsidian everywhere. Sinapso complements it (one click
-opens any note there); the contrast is with the graph view, not the editor.
+Tone rule: respectful toward Obsidian everywhere. Sinapso is independent of it, while
+one-click handoff remains available for users who choose Obsidian as an editor. The
+contrast is with the graph view, not the editor.
 
 ---
 
@@ -215,37 +222,59 @@ Visual: timeline or "constellation being born" treatment (image slot).
 
 ## 8. Pricing truth (Value / no-money objection)
 
-**Section headline (EN):** Free. And the smart parts cost cents, not subscriptions.
-**Section headline (ES):** Gratis. Y las partes inteligentes cuestan centavos, no suscripciones.
+**Section headline (EN):** The local platform stays free. Continuity is optional.
+**Section headline (ES):** La plataforma local sigue siendo gratuita. La continuidad es opcional.
 
 Three columns:
-1. **Always free:** the 3D universe, search, filters, themes, reader, Obsidian
-   hand-off, note version history. Open source, MIT.
-2. **Fully local, also free:** semantic search over your own notes. No key, no cloud.
-3. **Bring your own keys, pay per use:** web research credits last months for cents
-   per query; language models and voice are pay-as-you-go with efficient current
-   models as defaults. No monthly fee, ever. Use it daily or once a month; you pay
-   for what you use.
+1. **Local core, free forever:** the 3D universe, search, filters, themes, reader,
+   optional Obsidian handoff, and local workflows. Open source, MIT, no account.
+2. **Bring your own keys:** Web research, language models, and voice remain
+   pay-per-use through the user's chosen providers. Managed continuity is not a
+   requirement for AI access.
+3. **Managed continuity, planned and paid:** opt-in private synchronization,
+   encrypted backup, recoverability, versioning, and mobile access. Do not publish
+   a price, launch date, encryption algorithm, or zero-knowledge claim until those
+   details are approved and implemented.
 
-Contrast line (EN): "Comparable subscription tools run $10-20 per month, forever,
-whether you open them or not." (Re-verify figures before publish.)
+Contrast line (EN): "Use your local knowledge platform for free. Subscribe only if
+managed continuity across devices is worth it to you."
+
+Contrast line (ES): "Usa gratis tu plataforma local de conocimiento. Suscríbete solo
+si para ti vale la pena tener continuidad administrada entre dispositivos."
 
 ---
 
-## 9. Trust model (no-trust objection, short section)
+## 9. Continuity, mobile, and sharing roadmap
 
-**Section headline (EN):** Your notes never leave home.
-**Section headline (ES):** Tus notas nunca salen de casa.
+**Section headline (EN):** Your knowledge stays yours, wherever you need it.
+**Section headline (ES):** Tu conocimiento sigue siendo tuyo, donde lo necesites.
+
+Frame all roadmap content as planned and opt-in:
+
+- Managed continuity: private synchronization, encrypted backup, recoverability,
+  versioning, and mobile access while local files remain canonical.
+- Mobile companion first: grounded conversation, research, decisions, search,
+  capture, and reading. Full mobile 3D parity comes later.
+- Selective document sharing first: recipients get immediate value and an invitation
+  to create their own workspace.
+- Explicitly deferred: live co-editing, presence, and complex permission matrices.
+
+---
+
+## 10. Trust model (no-trust objection, short section)
+
+**Section headline (EN):** Local by default. External actions stay explicit.
+**Section headline (ES):** Local por defecto. Las acciones externas siempre son explícitas.
 
 Four short bullets, plain language:
-- Runs entirely on your machine; the core uploads nothing.
-- Web and AI features only activate when you turn them on, with your own keys.
+- The current core scans, renders, searches, and reads on your machine.
+- Web, AI, and Git network actions only run when you explicitly trigger them.
 - It never overwrites a note silently: writes are user-triggered, previewed, and journaled.
 - All the code is open. Read it, fork it, or just use it.
 
 ---
 
-## 10. Final CTA (no-hurry close)
+## 11. Final CTA (no-hurry close)
 
 **Headline (EN):** Your vault is already a universe. See it tonight.
 **Headline (ES):** Tu vault ya es un universo. Míralo esta noche.
@@ -253,6 +282,10 @@ Four short bullets, plain language:
 Copy (EN):
 > One command. No signup, no migration, no config. If you have a folder of Markdown,
 > you're 60 seconds from flying through it.
+
+Copy (ES):
+> Un comando. Sin registro, migración ni configuración. Si tienes una carpeta de
+> Markdown, estás a 60 segundos de recorrerla.
 
 The "no hurry" close for a free tool is effort-based, not scarcity-based: the cost
 of trying is nearly zero and the payoff is immediate (Hormozi: dream outcome high,
@@ -262,6 +295,8 @@ command, effort none).
 - Primary CTA: `npx sinapso "path/to/YourVault"` copy box.
 - Secondary: GitHub link + star count.
 - Tertiary: "Prefer a desktop app?" link to the Electron build instructions.
+- Roadmap link: "Want sync and mobile continuity? Follow the roadmap." / "¿Quieres
+  sincronización y continuidad móvil? Sigue la hoja de ruta."
 
 ---
 
@@ -280,10 +315,10 @@ Sinapso has no user testimonials yet. Do not fabricate any. Until real quotes ex
 ## Ziglar objection coverage check
 
 - **No need:** section 3 (pains sourced from real complaints).
-- **No desire:** sections 2, 4, 5 (demo + counters + voice showcase).
-- **No trust:** sections 6, 7, 9 + open source badges + proof-by-demo.
-- **No money:** section 8 (free core, cents per use, subscription contrast).
-- **No hurry:** section 10 (60 seconds to value, zero effort, no migration).
+- **No desire:** sections 2, 4, 5, 9 (demo + counters + voice showcase + roadmap).
+- **No trust:** sections 6, 7, 9, 10 + open source badges + proof-by-demo.
+- **No money:** section 8 (free local core, BYO-key AI, optional paid continuity).
+- **No hurry:** section 11 (60 seconds to value, zero effort, no migration).
 
 ## Image slot plan (10 x 2K, generation phase)
 

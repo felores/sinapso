@@ -326,9 +326,27 @@ Open **File → Admin...** to manage the current vault and wiki settings.
 
 ## Privacy
 
-Everything in the core runs on `localhost`; data and files are never copied,
-indexed, or uploaded. Optional Web and OpenRouter features are opt-in by key and
-action, as described in the trust model above.
+The current local core runs on `localhost`. Scanning, rendering, local search,
+and reading do not send vault data elsewhere. Optional Web and OpenRouter
+features are opt-in by key and action, and explicit Git push or sync is the only
+current repository-level upload path, as described in the trust model above.
+
+## Roadmap and business model
+
+Sinapso is an independent Markdown/YAML knowledge platform. Obsidian remains an
+optional compatibility and editing handoff, not a requirement. The local core is
+free forever, open source, and requires no account. Optional AI features keep the
+current bring-your-own-key, pay-per-use model.
+
+Planned, opt-in managed continuity services will be paid. The scope is private
+synchronization, encrypted backup, recoverability, versioning, and mobile access,
+while user-owned files remain the source of truth. These services are not shipped
+today, and no price or launch date is promised.
+
+The planned mobile companion starts with conversation, research, decisions,
+search, capture, and reading. Full 3D parity comes later. Selective document
+sharing is the first planned collaboration loop; live co-editing, presence, and
+complex permissions are deliberately deferred.
 
 ## Stack
 
