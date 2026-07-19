@@ -300,6 +300,20 @@ test("hash node changes do not reload the app", async ({ page }) => {
     }, next.toString());
 
     await expect(page.locator("#reader-path")).toHaveText(nodes[1].id);
+    const token = (await (await page.request.get("/api/session")).json()) as {
+      token: string;
+    };
+    await expect
+      .poll(async () => {
+        const response = await page.request.get("/api/current-view", {
+          headers: { "x-sinapso-token": token.token },
+        });
+        const view = (await response.json()) as {
+          view?: { readerNoteId?: string };
+        };
+        return view.view?.readerNoteId;
+      })
+      .toBe(nodes[1].id);
     await expect
       .poll(() =>
         page.evaluate(

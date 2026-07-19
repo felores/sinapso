@@ -186,3 +186,11 @@ Long snippets clamp to **exactly seven lines**, then expand in place without ope
 Coverage: `attachExpand` is reused by semantic passages (`renderSemanticInto`), keyword results (`renderKeywordInto`), and web-result snippets (`renderWebResult`). `.rel-snippet` also carries its own `-webkit-line-clamp: 7` so the `#related`-panel excerpts (which don't get an expand toggle) still clamp at seven. There is exactly one clamp height in the app: **7**.
 
 Alignment: `.expand-btn` is `align-self: flex-end`, so the toggle sits at the row's right edge while metadata/date (`.web-meta`, `.sem-passage-meta`) remain left-aligned in their own rows. Expand/collapse never opens the row.
+
+## 8. Research and Inbox workspace
+
+The right panel switches between two collections with the compact `#research-collections` control. Research history and Inbox filesystem notes keep independent cursors; switching collections never reuses the other collection's position. Inbox creation is an inline required-title step, not a modal and not an `untitled.md` placeholder.
+
+Inbox notes use the same CodeMirror and hash-CAS autosave contract as reader notes. A canonical vault path may own only one mounted editor: reader-targeted opens transfer ownership to the reader, while Inbox navigation and new Inbox notes target the research panel. Clean editors transfer immediately, saving editors are awaited, dirty editors flush first, and conflict/error states keep and focus the existing owner. Closing, navigating, switching collections, archiving, and wiki promotion use the same flush-before-destroy rule.
+
+The research pin protects the visible right-panel identity whether that identity is a research-history id or an Inbox note path. Agent-created Inbox notes still enter the Inbox collection while a different pinned item remains visible.

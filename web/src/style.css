@@ -4297,6 +4297,136 @@ body > :not(#graph) {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
+/* Collection switch (plan 020 U4): two pill buttons in #research-head, shown
+   whenever the research panel is open. Inherits the panel button tint so it
+   reads on every theme. */
+#research-collections {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+#research-collections.hidden {
+  display: none;
+}
+.research-collection-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.research-collection-btn:hover {
+  color: var(--fg);
+}
+.research-collection-btn.active {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+/* Inbox list + inline create row. Same 18px inset as the rest of the panel. */
+.inbox-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0 6px;
+}
+.inbox-toolbar button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.inbox-toolbar button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.inbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.inbox-list-item {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.inbox-list-item:hover {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+.inbox-list-item.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.inbox-list-item .inbox-item-title {
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 13px;
+}
+.inbox-list-item .inbox-item-meta {
+  color: var(--muted);
+  font-size: 11px;
+}
+.inbox-empty {
+  color: var(--muted);
+  padding: 18px 0;
+}
+.inbox-create-row {
+  display: flex;
+  gap: 6px;
+  padding: 8px 0 6px;
+  align-items: center;
+}
+.inbox-create-row input {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+}
+.inbox-create-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.inbox-create-row button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.inbox-create-row button.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.inbox-create-row button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.inbox-create-error {
+  color: #e5534b;
+  font-size: 12px;
+  padding: 4px 0 8px;
+}
+.inbox-editor {
+  min-height: 200px;
+}
 .sr-only {
   position: absolute;
   width: 1px;

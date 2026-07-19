@@ -1,7 +1,7 @@
 [
   {
     "name": "current_view",
-    "description": "What the browser shows RIGHT NOW, never inferred from server history: whether view state is known, the reader note, research panel open state, visible and pinned research (including mutable document content or immutable article URL), and selectedContext.current. Call this FIRST whenever the user refers to what's on screen or selected text. If viewStateKnown is false, say the browser view is not available rather than guessing.",
+    "description": "What the active Sinapso window shows RIGHT NOW, published by the frontend rather than inferred from server history: whether view state is known, the reader note, research panel open state, visible and pinned research ids, plus a bounded summary of visible Research. Voice also receives selectedContext.current; MCP/CLI intentionally do not. Call this FIRST whenever the user refers to what's on screen. If viewStateKnown is false, say the app has no active view rather than guessing.",
     "parameters": {
       "type": "OBJECT",
       "properties": {}
@@ -87,7 +87,7 @@
   },
   {
     "name": "open_note",
-    "description": "Open a vault note in the reader and get a preview. Give 'note' as a vault-relative .md path from a previous result or current_view. Do NOT use this for http(s) URLs; use open_resource or fetch_url for links.",
+    "description": "Open a known vault note in the active Sinapso reader. Give 'note' as a vault-relative .md path from a previous result or current_view. Voice opens it immediately; MCP/CLI queue it for the active desktop window. Do NOT use this for http(s) URLs; use open_resource or fetch_url for links.",
     "parameters": {
       "type": "OBJECT",
       "properties": {
@@ -153,47 +153,58 @@
   },
   {
     "name": "write_document",
-    "description": "Create or update a temporary working document shown in the research panel. Use operation='create' without documentId to create a new document. Before operation='update', call read_working_document and pass its documentId and revision with the COMPLETE replacement markdown. Updates use compare-and-swap and reject stale revisions.",
+    "description": "Create or update a durable Markdown note in the configured Inbox. New work is vault-backed: use operation='create' with a required title plus the COMPLETE markdown to create a new note (the server picks the path under the Inbox and returns { path, baseHash }); for an update, FIRST call read_working_document on the same note to get its current baseHash, then send operation='update' with { note, baseHash, markdown } — the compare-and-swap rejects a stale hash. Legacy mode=document entries (an existing documentId from prior sessions) remain editable with { documentId, revision }; unknown legacy ids are rejected. Never invent a documentId for create.",
     "parameters": {
       "type": "OBJECT",
       "properties": {
         "title": {
           "type": "STRING",
-          "description": "Document title."
+          "description": "Document title (required for create)."
         },
         "operation": {
           "type": "STRING",
-          "description": "Required: either 'create' or 'update'.",
+          "description": "Required: either 'create' or 'update'. Create writes a new Inbox note; update replaces an existing note or legacy document.",
           "enum": ["create", "update"]
+        },
+        "note": {
+          "type": "STRING",
+          "description": "Vault-relative .md path of the note to update (vault-backed update)."
+        },
+        "baseHash": {
+          "type": "STRING",
+          "description": "SHA-256 base hash returned by read_working_document for the note's current content. Required for a vault-backed update (compare-and-swap)."
         },
         "documentId": {
           "type": "STRING",
-          "description": "Existing temporary document id. Required for update and forbidden for create."
+          "description": "Existing legacy mode=document id. Accepted ONLY when it already resolves to a persisted legacy entry; rejected for create or unknown ids."
         },
         "revision": {
           "type": "STRING",
-          "description": "Revision returned by read_working_document. Required for update."
+          "description": "Revision returned by read_working_document for a legacy entry. Required for a legacy update."
         },
         "markdown": {
           "type": "STRING",
           "description": "The complete document body in markdown."
         }
       },
-      "required": ["operation", "title", "markdown"]
+      "required": ["operation", "markdown"]
     }
   },
   {
     "name": "read_working_document",
-    "description": "Read the complete markdown and current revision of a temporary working document before replacing it. Only mode=document entries are readable.",
+    "description": "Read the complete markdown and current revision/hash of a working document before replacing it. Vault-backed work uses { note } and returns { note, markdown, baseHash, title }; legacy mode=document entries use { documentId } and return { id, title, content, revision }. The returned baseHash/revision is required for the next update's compare-and-swap.",
     "parameters": {
       "type": "OBJECT",
       "properties": {
+        "note": {
+          "type": "STRING",
+          "description": "Vault-relative .md path of the note to read (vault-backed work)."
+        },
         "documentId": {
           "type": "STRING",
-          "description": "Existing temporary document id."
+          "description": "Existing legacy mode=document id (legacy compatibility only)."
         }
-      },
-      "required": ["documentId"]
+      }
     }
   },
   {

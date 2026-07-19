@@ -629,6 +629,14 @@ writeFileSync(
   "---\ntitle: Self\n---\n# Self\n\nBody text here.\n",
 );
 writeFileSync(join(VAULT, "excluded.md"), "# Excluded from scan\n");
+// Plan 020 U2: the vault catalog walks the filesystem (independent of
+// graph.nodes), so the qmd hit mapper now accepts any catalog note. The
+// graph fixture below pretends a.md/n1.md/d1.md are nodes; for the catalog
+// to know about them, the .md files must exist on disk. excluded.md is on
+// disk and NOT in graph.nodes — U2 R29 says qmd hits can now map to it.
+writeFileSync(join(VAULT, "a.md"), "# Note A\n");
+writeFileSync(join(VAULT, "notas", "n1.md"), "# N1\n");
+writeFileSync(join(VAULT, "docs", "d1.md"), "# D1\n");
 afterAll(() => rmSync(VAULT, { recursive: true, force: true }));
 
 const state: FakeState = {
@@ -654,7 +662,11 @@ beforeEach(() => {
 
 describe("GET /api/related", () => {
   it(
-    "returns in-graph related notes only, excluding the note itself (AE3, R5)",
+    // Plan 020 U2/R29: qmd hit mapping accepts any vault-catalog note.
+    // excluded.md is on disk and in the catalog (but not graph.nodes), so a
+    // qmd hit for it now survives. far/elsewhere is outside the vault, so it
+    // still drops. self.md is filtered out as the queried note itself.
+    "returns related catalog notes, dropping self and out-of-vault hits (AE3, R5, R29)",
     async () => {
       state.vsearchOut = JSON.stringify([
         { docid: "#1", score: 0.9, file: "qmd://vaultcol/a.md", snippet: "s" },
@@ -667,6 +679,7 @@ describe("GET /api/related", () => {
       expect(res.body.state).toBe("ready");
       expect(res.body.results.map((r: { id: string }) => r.id)).toEqual([
         "a.md",
+        "excluded.md",
       ]);
     },
     QMD_ROUTE_TIMEOUT,
@@ -755,7 +768,10 @@ describe("GET /api/related", () => {
 });
 
 describe("GET /api/semantic-search", () => {
-  it("maps qmd hits to graph nodes through the same pipeline (R9)", async () => {
+  // Plan 020 U2/R29: qmd hit mapping accepts any vault-catalog note. The
+  // `excluded.md` file is on disk and in the catalog (but not graph.nodes),
+  // so a qmd hit for it now survives the mapping step.
+  it("maps qmd hits to catalog notes through the same pipeline (R9, R29)", async () => {
     state.vsearchOut = JSON.stringify([
       { score: 0.9, file: "qmd://vaultcol/a.md", snippet: "x" },
       { score: 0.8, file: "qmd://vaultcol/excluded.md" },
@@ -764,7 +780,10 @@ describe("GET /api/semantic-search", () => {
       "/api/semantic-search?q=anything",
     );
     expect(res.status).toBe(200);
-    expect(res.body.results.map((r: { id: string }) => r.id)).toEqual(["a.md"]);
+    expect(res.body.results.map((r: { id: string }) => r.id)).toEqual([
+      "a.md",
+      "excluded.md",
+    ]);
     const subs = covered.fake.calls
       .filter(([c]) => c === QMD_BIN)
       .map(([, s]) => s);

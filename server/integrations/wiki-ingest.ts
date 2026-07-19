@@ -13,6 +13,7 @@ import {
   guardedMove,
   WriteError,
   type WriteDeps,
+  noteHash,
 } from "./write.js";
 
 const CONTRACT_LIMIT = 12_000;
@@ -25,6 +26,8 @@ export interface WikiIngestOperation {
   title?: string;
   raw?: boolean;
   sourceNote?: string;
+  /** Hash captured at proposal time for edit/move preflight. */
+  baseHash?: string;
 }
 
 export interface WikiIngestProposal {
@@ -111,10 +114,13 @@ export async function buildWikiIngestProposal(
   const derived = parseOperations(reply)
     .filter((op) => isContentProposal(wiki, op))
     .filter((op) => isInsideWikiTree(deps.vaultRoot, wiki, op.path));
-  const operations = validateWikiOperations(
+  const operations = withProposalHashes(
     deps.vaultRoot,
-    wiki,
-    raw ? [raw, ...derived] : derived,
+    validateWikiOperations(
+      deps.vaultRoot,
+      wiki,
+      raw ? [raw, ...derived] : derived,
+    ),
   );
   if (
     !operations.some(
@@ -195,7 +201,31 @@ export function applyWikiIngestOperations(
   for (const op of valid)
     if (op.type === "move" && op.sourceNote !== opts.sourceNote)
       throw new WriteError(400, "invalid source note move");
-  return [...raw, ...valid.filter((op) => !op.raw)].map((op) => {
+
+  // Preflight the complete approval before the first write. Creates must still
+  // be absent; edits and the Inbox source must match proposal-time hashes.
+  for (const op of valid) {
+    const full = resolve(
+      vaultRoot,
+      op.type === "move" ? op.sourceNote! : op.path,
+    );
+    if (op.type === "create") {
+      if (existsSync(full))
+        throw new WriteError(409, `stale create target: ${op.path}`);
+      continue;
+    }
+    if (!existsSync(full))
+      throw new WriteError(409, `stale target: ${op.path}`);
+    const currentHash = noteHash(readFileSync(full, "utf8"));
+    if (!op.baseHash || currentHash !== op.baseHash)
+      throw new WriteError(
+        409,
+        `stale target: ${op.type === "move" ? op.sourceNote : op.path}`,
+      );
+  }
+
+  // Derived writes first; moving the Inbox source to RAW is the final action.
+  return [...valid.filter((op) => !op.raw), ...raw].map((op) => {
     const result =
       op.type === "move"
         ? guardedMove(writeDeps, {
@@ -210,6 +240,7 @@ export function applyWikiIngestOperations(
               id: op.path,
               content: op.content!,
               actor: opts.actor ?? "user",
+              baseHash: op.baseHash,
               mode: "approval",
             })
           : guardedCreate(writeDeps, {
@@ -290,7 +321,22 @@ export function validateWikiOperations(
       title: typeof o.title === "string" ? o.title : undefined,
       raw: o.raw === true,
       sourceNote: typeof o.sourceNote === "string" ? o.sourceNote : undefined,
+      baseHash: typeof o.baseHash === "string" ? o.baseHash : undefined,
     };
+  });
+}
+
+function withProposalHashes(
+  vaultRoot: string,
+  operations: WikiIngestOperation[],
+): WikiIngestOperation[] {
+  return operations.map((op) => {
+    if (op.type === "create") return op;
+    const id = op.type === "move" ? op.sourceNote : op.path;
+    if (!id) return op;
+    const full = resolve(vaultRoot, id);
+    if (!existsSync(full)) throw new WriteError(409, `source changed: ${id}`);
+    return { ...op, baseHash: noteHash(readFileSync(full, "utf8")) };
   });
 }
 

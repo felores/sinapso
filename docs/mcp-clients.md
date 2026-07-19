@@ -40,6 +40,11 @@ values across modes or engines.
 
 **Discovery discipline (applies to MCP and CLI too):** follow
 Discover → Verify → Act for any answer about the vault.
+- **Current context**: `current_view` returns the latest note or Research view
+  published by the active Sinapso window. Call it first for "what am I
+  reading?" or "this research"; then use `read_note` when the reader note
+  needs more context. If `viewStateKnown` is false, no Sinapso window has
+  published an active view.
 - **Discover**: `browse_folder` (top-down) when scope is unknown;
   `search_vault` for concepts/topics. A subfolder's `count` is the TOTAL
   notes anywhere under it (recursive); `notes` lists up to 40 DIRECT

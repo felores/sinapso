@@ -35,7 +35,8 @@ function stubManager() {
           sessionId,
           state: "succeeded",
           task: "t",
-          documentId: "doc-1",
+          notePath: "inbox/delegate-note.md",
+          baseHash: "hash-1",
           title: "Doc",
           error: null,
           startedAt: 0,
@@ -68,11 +69,12 @@ describe("wireDelegation (faked session)", () => {
       "INTERRUPT",
     );
     expect((fr.response as { result: string }).result).toContain("finished");
-    // the finished document opens in the research panel
+    // the finished note opens in the research panel via open_saved_note (the
+    // pin-aware Inbox arrival action — plan 020 U5).
     expect(send).toHaveBeenCalledWith({
       type: "action",
-      action: "open_research",
-      id: "doc-1",
+      action: "open_saved_note",
+      note: "inbox/delegate-note.md",
     });
   });
 

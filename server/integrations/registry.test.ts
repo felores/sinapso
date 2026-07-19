@@ -54,19 +54,25 @@ describe("registry → voice derivation (characterization, U4)", () => {
 });
 
 describe("registry surfaces and routes", () => {
-  it("scopes browser-bound tools to voice only", () => {
-    const voiceOnly = [
-      "current_view",
-      "open_note",
-      "open_resource",
-      "open_last_note",
-      "open_last_research",
-    ];
+  it("keeps browser actions voice-only while exposing the active view everywhere", () => {
+    const voiceOnly = ["open_resource", "open_last_note", "open_last_research"];
     const mcpNames = toolsForSurface("mcp").map((e) => e.name);
     for (const name of voiceOnly) {
       expect(entryFor(name)?.surfaces).toEqual(["voice"]);
       expect(mcpNames).not.toContain(name);
     }
+    expect(entryFor("current_view")?.surfaces).toEqual(["voice", "mcp", "cli"]);
+    expect(entryFor("current_view")?.route).toMatchObject({
+      method: "GET",
+      path: "/api/current-view",
+      tokenRequired: true,
+    });
+    expect(entryFor("open_note")?.surfaces).toEqual(["voice", "mcp", "cli"]);
+    expect(entryFor("open_note")?.route).toMatchObject({
+      method: "POST",
+      path: "/api/current-view/open-note",
+      tokenRequired: true,
+    });
   });
 
   it("exposes search + write tools on mcp with route bindings", () => {
@@ -74,6 +80,7 @@ describe("registry surfaces and routes", () => {
     const names = mcp.map((e) => e.name);
     for (const expected of [
       "search_vault",
+      "current_view",
       "read_note",
       "browse_folder",
       "list_wikis",
@@ -216,7 +223,12 @@ describe("token-required dispatch (mutating routes send the header)", () => {
 
   it("every voice entry with a token-required route sends x-sinapso-token", async () => {
     const tokenTools = toolsForSurface("voice").filter(
-      (e) => e.route?.tokenRequired,
+      // current_view is served directly from the voice session; its route is
+      // for MCP/CLI to read the frontend-published snapshot.
+      (e) =>
+        e.route?.tokenRequired &&
+        e.name !== "current_view" &&
+        e.name !== "open_note",
     );
     expect(tokenTools.length).toBeGreaterThanOrEqual(6);
     for (const entry of tokenTools) {

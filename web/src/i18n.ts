@@ -363,6 +363,25 @@ const EN: Dict = {
   "research.deepBusy":
     "researching deeply — synthesizing an answer from multiple sources, this can take up to a minute…",
   "research.webBusy": "searching the web…",
+  "research.collection.research": "Research",
+  "research.collection.inbox": "Inbox",
+  "research.transfer.blockedConflict":
+    "This note has a conflict in the other panel. Resolve it there before switching.",
+  "research.transfer.blockedError":
+    "This note failed to save in the other panel. Retry there before switching.",
+  // Inbox collection (plan 020 U4)
+  "inbox.title": "Inbox",
+  "inbox.empty": "No Inbox notes yet. Create one to get started.",
+  "inbox.loading": "loading Inbox…",
+  "inbox.refresh": "Refresh Inbox",
+  "inbox.new": "New Inbox note",
+  "inbox.create.placeholder": "Title for the new note",
+  "inbox.create.ok": "Create",
+  "inbox.create.cancel": "Cancel",
+  "inbox.create.required": "Enter a title first.",
+  "inbox.creating": "creating…",
+  "inbox.createFail": "create failed — retry",
+  "inbox.openedFail": "could not open the new note",
   "wiki.approveWrites": "Approve writes",
   "wiki.reject": "Reject",
   "wiki.rejected": "Rejected. No files written.",
@@ -746,6 +765,25 @@ const ES: Dict = {
   "research.deepBusy":
     "investigando a fondo — sintetizando una respuesta de varias fuentes, puede tardar hasta un minuto…",
   "research.webBusy": "buscando en la web…",
+  "research.collection.research": "Investigación",
+  "research.collection.inbox": "Inbox",
+  "research.transfer.blockedConflict":
+    "Esta nota tiene un conflicto en el otro panel. Resuélvelo allí antes de cambiar.",
+  "research.transfer.blockedError":
+    "Esta nota falló al guardar en el otro panel. Reintenta allí antes de cambiar.",
+  // Inbox collection (plan 020 U4)
+  "inbox.title": "Inbox",
+  "inbox.empty": "Aún no hay notas en Inbox. Crea una para empezar.",
+  "inbox.loading": "cargando Inbox…",
+  "inbox.refresh": "Refrescar Inbox",
+  "inbox.new": "Nueva nota en Inbox",
+  "inbox.create.placeholder": "Título de la nueva nota",
+  "inbox.create.ok": "Crear",
+  "inbox.create.cancel": "Cancelar",
+  "inbox.create.required": "Escribe un título primero.",
+  "inbox.creating": "creando…",
+  "inbox.createFail": "error al crear — reintentar",
+  "inbox.openedFail": "no se pudo abrir la nueva nota",
   "wiki.approveWrites": "Aprobar escrituras",
   "wiki.reject": "Rechazar",
   "wiki.rejected": "Rechazado. No se escribió ningún archivo.",

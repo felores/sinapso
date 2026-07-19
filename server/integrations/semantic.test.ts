@@ -77,4 +77,29 @@ describe("mutualKnnEdges (F031)", () => {
     const only = edges[0];
     expect([only.source, only.target].sort()).toEqual(["c", "n1"]);
   });
+
+  it("plan 020 U2/R29: semantic graph edges stay graph-only even when the catalog has more notes", async () => {
+    // Two close notes in the graph; two close notes outside the graph (think:
+    // RAW/history/catalog-only). All four have qmd vectors. The semantic edge
+    // set must ONLY connect graph nodes — the catalog-only pair contributes
+    // nothing, even though their vectors are nearly identical to a graph pair.
+    const docs = new Map<string, Float32Array>([
+      ["graph/a.md", v(1, 0, 0)],
+      ["graph/b.md", v(0.99, 0.14, 0)],
+      ["raw/only-a.md", v(1, 0, 0)], // identical to graph/a.md
+      ["raw/only-b.md", v(0.99, 0.14, 0)], // identical to graph/b.md
+    ]);
+    // nodeIds comes from graph.nodes — the catalog-only RAW notes are absent.
+    const nodeIds = new Set(["graph/a.md", "graph/b.md"]);
+    const edges = await mutualKnnEdges(docs, nodeIds, DEFAULT_K, 0.5);
+    // Graph pair connects; RAW pair never appears in any edge.
+    expect(edges).toEqual([
+      { source: "graph/a.md", target: "graph/b.md", score: expect.any(Number) },
+    ]);
+    expect(
+      edges.some(
+        (e) => e.source.startsWith("raw/") || e.target.startsWith("raw/"),
+      ),
+    ).toBe(false);
+  });
 });

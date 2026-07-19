@@ -42,12 +42,17 @@ export interface VoiceToolSession {
   setBrowserContext(context: unknown): void;
   setSelectedContext(context: unknown): void;
   /**
-   * Adopt the server-minted working document id after a delegation job
-   * completes. The delegate job creates the document through /api/document
-   * and the id only exists then, so this is the moment to bind it as the
-   * session's active working document. No-op if the id is missing.
+   * Adopt the server-minted vault note path the delegation job just wrote
+   * (plan 020 U5: durable Inbox note via /api/agent/notes). The note path
+   * only exists after the job's create succeeds, so this is the moment to
+   * bind it as the session's active working note. The optional baseHash is
+   * the SHA-256 of the content the job wrote, so a follow-up update can
+   * pass compare-and-swap without another read. No-op if the path is missing.
    */
-  adoptDelegationDocument(id: string | null | undefined): void;
+  adoptDelegationDocument(
+    notePath: string | null | undefined,
+    baseHash?: string | null,
+  ): void;
   close(): void;
 }
 
@@ -221,6 +226,10 @@ export function createVoiceToolSession(
   let activeResearchId: string | null = null;
   const knownDocumentIds = new Set<string>();
   const documentRevisions = new Map<string, string>();
+  /** Plan 020 U5: vault-backed working notes track their last-seen baseHash
+   *  so a follow-up write_document update can pass compare-and-swap without
+   *  another read. Keyed by vault-relative .md path. */
+  const noteHashes = new Map<string, string>();
   let selectedContext = emptySelectedContext();
   let browserView: BrowserViewState | null = null;
   const displayAcks = new Map<
@@ -337,6 +346,40 @@ export function createVoiceToolSession(
     activeWorkingDocId = id;
     activeResearchId = id;
     return d;
+  }
+
+  /** Read a vault-backed working note for read_working_document({note}). The
+   *  route now returns { id, markdown, baseHash } so the caller can chain a
+   *  baseHash-CAS update. Synthesizes a title from the first H1 (mirrors the
+   *  open_note preview shape) so the tool result is self-describing. */
+  async function readWorkingNote(note: string): Promise<VoiceResult> {
+    try {
+      const u = new URL(`${base}/api/note`);
+      u.searchParams.set("id", note);
+      u.searchParams.set("nolog", "1");
+      const r = await fetchFn(u);
+      const d = (await r.json().catch(() => ({}))) as {
+        id?: string;
+        markdown?: string;
+        baseHash?: string;
+        error?: string;
+      };
+      if (!r.ok) return { error: String(d.error ?? "note not found") };
+      const md = d.markdown ?? "";
+      const h1 = md.match(/^#\s+(.+)$/m);
+      const title = (h1?.[1] ?? note.split("/").pop() ?? note).replace(
+        /\.md$/i,
+        "",
+      );
+      return {
+        note: d.id ?? note,
+        title,
+        markdown: md,
+        baseHash: d.baseHash ?? "",
+      };
+    } catch {
+      return { error: `could not read ${note}` };
+    }
   }
 
   function webResults(
@@ -604,72 +647,143 @@ export function createVoiceToolSession(
       return callTool(name, args);
     }
     if (name === "read_working_document") {
+      // Plan 020 U5: vault-backed work uses { note } (returns baseHash);
+      // legacy mode=document entries use { documentId } (returns revision).
+      // The server-side boundary guarantees unknown legacy ids reject.
+      const note = clean(args.note);
       const documentId = clean(args.documentId);
-      if (!documentId) return { error: "documentId required" };
+      if (note && documentId)
+        return { error: "pass either note or documentId, not both" };
+      if (note) return readWorkingNote(note);
+      if (!documentId) return { error: "note or documentId required" };
       return readWorkingDocument(documentId);
     }
     if (name === "write_document") {
-      const title = String(args.title ?? "").trim() || "Untitled";
+      const title = String(args.title ?? "").trim();
       send({ type: "status", key: "voice.status.writingDocument", title });
       const content = String(args.markdown ?? "");
-      const requestedId = clean(args.documentId);
       const operation = args.operation;
       if (operation !== "create" && operation !== "update") {
         return { error: "operation must be create or update" };
       }
-      if (operation === "create" && requestedId) {
-        return { error: "documentId is not allowed when creating a document" };
+      if (operation === "create" && !title)
+        return { error: "title required to create a note" };
+      const note = clean(args.note);
+      const requestedId = clean(args.documentId);
+      if (note && requestedId)
+        return { error: "pass either note or documentId, not both" };
+
+      // Legacy update path: { documentId, revision }. The route rejects
+      // unknown supplied ids, so this only succeeds for already-persisted
+      // mode=document entries. Legacy create is no longer possible here.
+      if (operation === "update" && requestedId) {
+        const revision = clean(args.revision);
+        if (!revision)
+          return { error: "revision required to update a document" };
+        if (documentRevisions.get(requestedId) !== revision)
+          return { error: "read_working_document required before update" };
+        const r = await fetchFn(`${base}/api/document`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-sinapso-token": getSessionToken(),
+          },
+          body: JSON.stringify({
+            id: requestedId,
+            title,
+            content,
+            revision,
+          }),
+        });
+        const d = (await r.json().catch(() => ({}))) as {
+          id?: string;
+          revision?: string;
+          error?: string;
+        };
+        if (!r.ok || !d.id || !d.revision)
+          return { error: d.error ?? "could not save the document" };
+        knownDocumentIds.add(d.id);
+        documentRevisions.set(d.id, d.revision);
+        activeWorkingDocId = d.id;
+        activeResearchId = d.id;
+        const display = await requestResearchDisplay("show_document", d.id, {
+          title,
+          content,
+          revision: d.revision,
+        });
+        return {
+          ok: true,
+          id: d.id,
+          revision: d.revision,
+          chars: content.length,
+          display,
+        };
       }
-      if (operation === "update" && !requestedId) {
-        return { error: "documentId required to update a document" };
+
+      // Vault-backed path: durable Inbox note via /api/agent/notes.
+      // Create: title + complete markdown. Update: { note, baseHash } after
+      // a prior read_working_document({note}). Stale baseHash → 409 from the
+      // route; surface the error verbatim.
+      if (operation === "update") {
+        if (!note) return { error: "note required to update a note" };
+        const baseHash = clean(args.baseHash) ?? noteHashes.get(note);
+        if (!baseHash)
+          return { error: "read_working_document required before update" };
+        const r = await fetchFn(`${base}/api/agent/notes`, {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+            "x-sinapso-token": getSessionToken(),
+          },
+          body: JSON.stringify({ id: note, content, baseHash }),
+        });
+        const d = (await r.json().catch(() => ({}))) as {
+          id?: string;
+          baseHash?: string;
+          error?: string;
+        };
+        if (!r.ok || !d.id || !d.baseHash)
+          return { error: d.error ?? "could not save the note" };
+        noteHashes.set(d.id, d.baseHash);
+        activeWorkingDocId = d.id;
+        activeResearchId = d.id;
+        send({ type: "action", action: "open_saved_note", note: d.id });
+        return {
+          ok: true,
+          path: d.id,
+          baseHash: d.baseHash,
+          chars: content.length,
+        };
       }
-      const revision = clean(args.revision);
-      if (operation === "update" && !revision) {
-        return { error: "revision required to update a document" };
-      }
-      if (
-        operation === "update" &&
-        requestedId &&
-        documentRevisions.get(requestedId) !== revision
-      ) {
-        return { error: "read_working_document required before update" };
-      }
-      const r = await fetchFn(`${base}/api/document`, {
+
+      // operation === "create": vault-backed Inbox note.
+      const r = await fetchFn(`${base}/api/agent/notes`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           "x-sinapso-token": getSessionToken(),
         },
-        body: JSON.stringify({
-          id: requestedId,
-          title,
-          content,
-          revision,
-        }),
+        body: JSON.stringify({ title, content }),
       });
       const d = (await r.json().catch(() => ({}))) as {
         id?: string;
-        revision?: string;
+        baseHash?: string;
         error?: string;
       };
-      if (!r.ok || !d.id || !d.revision) {
-        return { error: d.error ?? "could not save the document" };
-      }
-      knownDocumentIds.add(d.id);
-      documentRevisions.set(d.id, d.revision);
+      if (!r.ok || !d.id || !d.baseHash)
+        return { error: d.error ?? "could not save the note" };
+      noteHashes.set(d.id, d.baseHash);
       activeWorkingDocId = d.id;
       activeResearchId = d.id;
-      const display = await requestResearchDisplay("show_document", d.id, {
-        title,
-        content,
-        revision: d.revision,
-      });
+      // open_saved_note is the existing pin-aware Inbox arrival action; the
+      // frontend opens the new path in the research panel and the browser
+      // context's pin still rules what stays visible.
+      send({ type: "action", action: "open_saved_note", note: d.id });
       return {
         ok: true,
-        id: d.id,
-        revision: d.revision,
+        path: d.id,
+        baseHash: d.baseHash,
         chars: content.length,
-        display,
       };
     }
     if (name === "save_research_to_inbox") {
@@ -877,11 +991,20 @@ export function createVoiceToolSession(
     run: (name, args) => runTool(name, args),
     setBrowserContext,
     setSelectedContext: setBrowserContext,
-    adoptDelegationDocument(id) {
-      if (!id) return;
-      knownDocumentIds.add(id);
-      activeWorkingDocId = id;
-      activeResearchId = id;
+    /** Plan 020 U5: adopt the server-minted vault note path the delegation
+     *  job just wrote. The delegate now writes through /api/agent/notes,
+     *  so `notePath` is a vault-relative .md path; `baseHash` is the SHA-256
+     *  of the content the job wrote (so a follow-up write_document update
+     *  can pass compare-and-swap without another read). */
+    adoptDelegationDocument(
+      notePath: string | null | undefined,
+      baseHash?: string | null,
+    ) {
+      if (!notePath) return;
+      knownDocumentIds.add(notePath);
+      activeWorkingDocId = notePath;
+      activeResearchId = notePath;
+      if (baseHash) noteHashes.set(notePath, baseHash);
     },
     close() {
       for (const pending of displayAcks.values()) {

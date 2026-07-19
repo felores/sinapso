@@ -47,11 +47,22 @@ let documentSequence = 0;
 function documentResponse(_url: string, init?: RequestInit): Response {
   const body = JSON.parse(String(init?.body ?? "{}")) as {
     id?: string;
+    title?: string;
   };
+  // Plan 020 U5: vault-backed /api/agent/notes returns { ok, id, baseHash }.
+  // The server picks the path under the configured Inbox; the test fake
+  // synthesizes one from the title so callers can deterministically
+  // assert the returned path.
+  const seq = ++documentSequence;
+  const slug = String(body.title ?? "doc")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const id = body.id ?? `inbox/${slug || "doc"}-${seq}.md`;
   return jsonResponse({
     ok: true,
-    id: body.id ?? `doc-generated-${++documentSequence}`,
-    revision: `revision-${documentSequence}`,
+    id,
+    baseHash: `hash-${seq}`,
   });
 }
 
@@ -413,28 +424,28 @@ describe("createVoiceToolSession — write_document", () => {
     vi.setSystemTime(new Date("2025-01-01T00:00:00Z"));
   });
 
-  it("creates without an id and adopts the server id and revision", async () => {
+  it("creates without an id and adopts the server path and baseHash", async () => {
     const { ctx, fake } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
+    fake.on((url) => url === `${BASE}/api/agent/notes`, documentResponse);
     const session = createVoiceToolSession(ctx);
 
     const out = (await session.run("write_document", {
       operation: "create",
       title: "My Note!",
       markdown: "body",
-    })) as { ok: boolean; id: string; revision: string; chars: number };
+    })) as {
+      ok: boolean;
+      path: string;
+      baseHash: string;
+      chars: number;
+    };
 
     expect(out.ok).toBe(true);
-    expect(out.id).toMatch(/^doc-generated-\d+$/);
-    expect(out.revision).toMatch(/^revision-\d+$/);
+    expect(out.path).toMatch(/^inbox\/my-note-\d+\.md$/);
+    expect(out.baseHash).toMatch(/^hash-\d+$/);
     expect(out.chars).toBe(4);
     const body = JSON.parse(fake.calls[0].init?.body as string);
-    expect(body).toEqual({
-      id: undefined,
-      title: "My Note!",
-      content: "body",
-      revision: undefined,
-    });
+    expect(body).toEqual({ title: "My Note!", content: "body" });
     const headers = fake.calls[0].init?.headers as Record<string, string>;
     expect(headers["x-sinapso-token"]).toBe(TEST_TOKEN);
   });
@@ -450,7 +461,60 @@ describe("createVoiceToolSession — write_document", () => {
     expect(fake.calls).toHaveLength(0);
   });
 
-  it("reads a document before replacing it with its current revision", async () => {
+  it("reads a vault note before replacing it with its current baseHash (plan 020 U5)", async () => {
+    const { ctx, fake } = makeCtx();
+    fake.on(
+      (url) => url.startsWith(`${BASE}/api/note?`),
+      () =>
+        jsonResponse({
+          id: "inbox/existing.md",
+          markdown: "# Existing\none",
+          baseHash: "hash-1",
+        }),
+    );
+    fake.on(
+      (url, init) =>
+        url === `${BASE}/api/agent/notes` && init?.method === "PUT",
+      (_url, init) => {
+        const body = JSON.parse(String(init?.body));
+        return jsonResponse({ ok: true, id: body.id, baseHash: "hash-2" });
+      },
+    );
+    const session = createVoiceToolSession(ctx);
+
+    const read = await session.run("read_working_document", {
+      note: "inbox/existing.md",
+    });
+    expect(read).toMatchObject({
+      note: "inbox/existing.md",
+      markdown: "# Existing\none",
+      baseHash: "hash-1",
+      title: "Existing",
+    });
+    const out = await session.run("write_document", {
+      operation: "update",
+      note: "inbox/existing.md",
+      baseHash: "hash-1",
+      title: "Existing",
+      markdown: "# Existing\none edited",
+    });
+
+    expect(out).toMatchObject({
+      ok: true,
+      path: "inbox/existing.md",
+      baseHash: "hash-2",
+    });
+    const write = fake.calls.find(
+      (c) => c.url === `${BASE}/api/agent/notes` && c.init?.method === "PUT",
+    )!;
+    expect(JSON.parse(String(write.init?.body))).toEqual({
+      id: "inbox/existing.md",
+      content: "# Existing\none edited",
+      baseHash: "hash-1",
+    });
+  });
+
+  it("legacy mode=document: reads with documentId then updates through /api/document", async () => {
     const { ctx, fake } = makeCtx();
     fake.on(
       (url) => url === `${BASE}/api/document/doc-existing`,
@@ -496,7 +560,35 @@ describe("createVoiceToolSession — write_document", () => {
     });
   });
 
-  it("rejects update without a prior full read", async () => {
+  it("rejects vault update without a prior full read (no baseHash)", async () => {
+    const { ctx, fake } = makeCtx();
+    const session = createVoiceToolSession(ctx);
+    const out = await session.run("write_document", {
+      operation: "update",
+      note: "inbox/fresh.md",
+      title: "A",
+      markdown: "x",
+    });
+    expect(out).toEqual({
+      error: "read_working_document required before update",
+    });
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("rejects legacy update without revision", async () => {
+    const { ctx, fake } = makeCtx();
+    const session = createVoiceToolSession(ctx);
+    const out = await session.run("write_document", {
+      operation: "update",
+      documentId: "doc-existing",
+      title: "A",
+      markdown: "x",
+    });
+    expect(out).toEqual({ error: "revision required to update a document" });
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("rejects legacy update without a prior full read", async () => {
     const { ctx, fake } = makeCtx();
     const session = createVoiceToolSession(ctx);
     const out = await session.run("write_document", {
@@ -512,23 +604,10 @@ describe("createVoiceToolSession — write_document", () => {
     expect(fake.calls).toHaveLength(0);
   });
 
-  it("rejects update without revision", async () => {
-    const { ctx, fake } = makeCtx();
-    const session = createVoiceToolSession(ctx);
-    const out = await session.run("write_document", {
-      operation: "update",
-      documentId: "doc-existing",
-      title: "A",
-      markdown: "x",
-    });
-    expect(out).toEqual({ error: "revision required to update a document" });
-    expect(fake.calls).toHaveLength(0);
-  });
-
-  it("surfaces the document endpoint error when the write fails", async () => {
+  it("surfaces the agent note endpoint error when the create fails", async () => {
     const { ctx, fake } = makeCtx();
     fake.on(
-      (url) => url === `${BASE}/api/document`,
+      (url) => url === `${BASE}/api/agent/notes`,
       () => jsonResponse({ error: "boom" }, 500),
     );
     const session = createVoiceToolSession(ctx);
@@ -541,9 +620,9 @@ describe("createVoiceToolSession — write_document", () => {
     expect(out.error).toBe("boom");
   });
 
-  it("emits a show_document action to the browser with the new id, title, and content", async () => {
+  it("emits an open_saved_note action for pin-aware Inbox arrival on create", async () => {
     const { ctx, fake, sent } = makeCtx();
-    fake.on((url) => url === `${BASE}/api/document`, documentResponse);
+    fake.on((url) => url === `${BASE}/api/agent/notes`, documentResponse);
     const session = createVoiceToolSession(ctx);
 
     await session.run("write_document", {
@@ -552,72 +631,103 @@ describe("createVoiceToolSession — write_document", () => {
       markdown: "M",
     });
 
-    const show = sent.find(
+    // open_saved_note is the existing pin-aware Inbox arrival action; the
+    // browser context's pin still rules what stays visible. No display
+    // acknowledgment is requested for the vault-backed create (the
+    // machinery is reserved for legacy mode=document updates).
+    const open = sent.find(
       (s) =>
         typeof s === "object" &&
         s !== null &&
         (s as { type?: string }).type === "action" &&
-        (s as { action?: string }).action === "show_document",
-    ) as { id: string; title: string; content: string } | undefined;
-    expect(show).toBeDefined();
-    expect(show?.title).toBe("T");
-    expect(show?.content).toBe("M");
-    expect(show?.id).toMatch(/^doc-generated-\d+$/);
+        (s as { action?: string }).action === "open_saved_note",
+    ) as { note: string } | undefined;
+    expect(open).toBeDefined();
+    expect(open?.note).toMatch(/^inbox\/t-\d+\.md$/);
   });
 
-  it.each(["shown", "blocked-pinned"] as const)(
-    "waits for the browser display acknowledgment: %s",
-    async (decision) => {
-      const { ctx, fake, sent } = makeCtx();
-      fake.on((url) => url === `${BASE}/api/document`, documentResponse);
-      const session = createVoiceToolSession(ctx);
-      session.setBrowserContext({
-        view: {
-          readerNoteId: null,
-          researchPanelOpen: true,
-          visibleResearchId: "visible",
-          pinnedResearchId: decision === "blocked-pinned" ? "visible" : null,
-        },
-      });
+  it("legacy update still emits show_document with display acknowledgment (R23)", async () => {
+    // The legacy mode=document path keeps the show_document + display-ack
+    // contract. The display-ack machinery is preserved for it; new vault-
+    // backed create/update go through open_saved_note without an ack.
+    const { ctx, fake, sent } = makeCtx();
+    fake.on(
+      (url) => url === `${BASE}/api/document/doc-leg`,
+      () =>
+        jsonResponse({
+          id: "doc-leg",
+          title: "L",
+          content: "old",
+          revision: "rev-1",
+        }),
+    );
+    fake.on(
+      (url) => url === `${BASE}/api/document`,
+      () => jsonResponse({ ok: true, id: "doc-leg", revision: "rev-2" }),
+    );
+    const session = createVoiceToolSession(ctx);
+    session.setBrowserContext({
+      view: {
+        readerNoteId: null,
+        researchPanelOpen: true,
+        visibleResearchId: null,
+        pinnedResearchId: null,
+      },
+    });
 
-      const pending = session.run("write_document", {
-        operation: "create",
-        title: "T",
-        markdown: "M",
-      });
-      let action: object | undefined;
-      await vi.waitFor(() => {
-        action = sent.find(
-          (value) =>
-            value !== null &&
-            typeof value === "object" &&
-            "action" in value &&
-            value.action === "show_document",
-        );
-        expect(action).toBeDefined();
-      });
-      if (!action || !("requestId" in action))
-        throw new Error("missing requestId");
-      session.setBrowserContext({
-        displayAcknowledgment: {
-          requestId: action.requestId,
-          decision,
-          visibleId: decision === "shown" ? "doc-generated-1" : "visible",
-          pinnedId: decision === "blocked-pinned" ? "visible" : null,
-        },
-      });
+    await session.run("read_working_document", { documentId: "doc-leg" });
+    const pending = session.run("write_document", {
+      operation: "update",
+      documentId: "doc-leg",
+      revision: "rev-1",
+      title: "L",
+      markdown: "new",
+    });
+    let action: object | undefined;
+    await vi.waitFor(() => {
+      action = sent.find(
+        (value) =>
+          value !== null &&
+          typeof value === "object" &&
+          "action" in value &&
+          value.action === "show_document",
+      );
+      expect(action).toBeDefined();
+    });
+    if (!action || !("requestId" in action))
+      throw new Error("missing requestId");
+    session.setBrowserContext({
+      displayAcknowledgment: {
+        requestId: action.requestId,
+        decision: "shown",
+        visibleId: "doc-leg",
+        pinnedId: null,
+      },
+    });
 
-      await expect(pending).resolves.toMatchObject({
-        display: { decision },
-      });
-    },
-  );
+    await expect(pending).resolves.toMatchObject({
+      display: { decision: "shown" },
+    });
+  });
 
-  it("bounds display acknowledgment waits and clears them on session close", async () => {
+  it("bounds legacy display acknowledgment waits and clears them on session close", async () => {
     vi.useFakeTimers();
     try {
       const { ctx, fake } = makeCtx();
-      fake.on((url) => url === `${BASE}/api/document`, documentResponse);
+      fake.on(
+        (url) => url === `${BASE}/api/document/doc-leg`,
+        () =>
+          jsonResponse({
+            id: "doc-leg",
+            title: "L",
+            content: "old",
+            revision: "rev-1",
+          }),
+      );
+      fake.on(
+        (url) => url === `${BASE}/api/document`,
+        () => jsonResponse({ ok: true, id: "doc-leg", revision: "rev-2" }),
+      );
       const session = createVoiceToolSession(ctx);
       session.setBrowserContext({
         view: {
@@ -627,9 +737,12 @@ describe("createVoiceToolSession — write_document", () => {
           pinnedResearchId: null,
         },
       });
+      await session.run("read_working_document", { documentId: "doc-leg" });
       const timedOut = session.run("write_document", {
-        operation: "create",
-        title: "T",
+        operation: "update",
+        documentId: "doc-leg",
+        revision: "rev-1",
+        title: "L",
         markdown: "M",
       });
       await vi.advanceTimersByTimeAsync(5_000);
@@ -637,10 +750,13 @@ describe("createVoiceToolSession — write_document", () => {
         display: { decision: "display-timeout" },
       });
 
+      await session.run("read_working_document", { documentId: "doc-leg" });
       const closing = session.run("write_document", {
-        operation: "create",
-        title: "Second",
-        markdown: "M",
+        operation: "update",
+        documentId: "doc-leg",
+        revision: "rev-1",
+        title: "L",
+        markdown: "Second",
       });
       await vi.advanceTimersByTimeAsync(0);
       session.close();

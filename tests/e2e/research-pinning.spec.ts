@@ -1,4 +1,7 @@
 import { expect, test, type Page, type WebSocketRoute } from "@playwright/test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { captureBrowserDiagnostics } from "./diagnostics";
 
 interface SessionResponse {
@@ -68,13 +71,27 @@ async function createEvidence(page: Page, term: string, label: string) {
 }
 
 async function createDocument(page: Page, title: string, content: string) {
-  const response = await page.request.post("/api/document", {
-    headers: { "x-sinapso-token": await token(page) },
-    data: { title, content },
-  });
-  expect(response.ok()).toBe(true);
-  const body: DocumentResponse = await response.json();
-  return body;
+  // Plan 020 U7: /api/document no longer accepts first-party creates. The
+  // E2E suite still exercises the legacy revision-CAS / show_document flow,
+  // so seed a mode=document entry directly in the hermetic vault's app-local
+  // research directory (the same place the route reads/writes it).
+  const id = `doc-e2e-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 6)}`;
+  const revision = `rev-${Date.now().toString(36)}`;
+  const researchDir = join(tmpdir(), "sinapso-e2e", "research");
+  mkdirSync(researchDir, { recursive: true });
+  writeFileSync(
+    join(researchDir, `${id}.json`),
+    JSON.stringify({
+      id,
+      ts: new Date().toISOString(),
+      mode: "document",
+      query: title,
+      document: { title, content, revision },
+    }),
+  );
+  return { id, revision, title, content };
 }
 
 async function updateDocument(
@@ -338,43 +355,50 @@ test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user nav
   }
 });
 
-test("working document creation, editing, and autosave persist through the real API", async ({
+test("plan 020: titled creation writes a durable Inbox note and opens it in research", async ({
   page,
 }) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {
+    // The new-doc button lives inside the research panel header. Open the
+    // research panel via the voice-action harness (mirrors the prior test's
+    // setup), then click the now-visible new-doc button.
     const harness = await installVoiceHarness(page);
     const resultA = await createEvidence(
       page,
       "Alpha",
-      "Open panel for document creation",
+      "Open panel for new-doc",
     );
     await harness.show(resultA);
     await page.locator("#new-doc-btn").click();
-    await expect(page.locator(".research-document-title")).toBeVisible();
-    await page
-      .locator(".research-document-title")
-      .fill("Browser-authored working document");
-    const editor = page.locator(".research-document-editor .cm-content");
+    const title = `Inbox E2E ${Date.now()}`;
+    const titleInput = page.locator(".inbox-create-row input");
+    await expect(titleInput).toBeVisible();
+    await titleInput.fill(title);
+    await page.locator(".inbox-create-row button.primary").click();
+    const editor = page.locator("#research .cm-content");
+    await expect(editor).toBeVisible({ timeout: 10_000 });
     await editor.click();
-    await page.keyboard.type(
-      "A complete editable draft created in the browser.",
-    );
-    await expect(page.locator(".research-document-save-state")).toHaveText(
+    await page.keyboard.type("Browser-authored durable body.");
+    // Autosave flushes through PUT /api/notes (baseHash CAS).
+    await expect(page.locator("#research-vault-save-state")).toHaveText(
       "saved",
       {
         timeout: 10_000,
       },
     );
-
+    // The note is durable on disk under the configured Inbox; no new
+    // mode=document research-history entry was created.
     const history = await page.request.get("/api/research/history");
     const body: HistoryResponse = await history.json();
-    const saved = body.entries.find((entry) => entry.mode === "document");
-    expect(saved).toBeDefined();
-    expect(saved?.document).toMatchObject({
-      title: "Browser-authored working document",
-      content: "A complete editable draft created in the browser.",
-    });
+    const newDoc = body.entries.find((entry) => entry.mode === "document");
+    expect(newDoc).toBeUndefined();
+    const noteResp = await page.request.get("/api/inbox?destination=inbox");
+    expect(noteResp.ok()).toBe(true);
+    const inboxBody = (await noteResp.json()) as {
+      entries: Array<{ id: string }>;
+    };
+    expect(inboxBody.entries.some((e) => e.id.startsWith("inbox/"))).toBe(true);
   } finally {
     await assertCleanBrowser();
   }
@@ -500,15 +524,11 @@ test("wiki ingest preparation preserves the visible document and surfaces an err
   }
 });
 
-test("save-to-inbox keeps the working document visible when the post-save rescan fails", async ({
+test("save-to-inbox opens the durable note without depending on rescan", async ({
   page,
 }) => {
-  // Regression: the save-to-inbox handler used to await openAfterIngest
-  // (which swallows the rescan failure) and then unconditionally call
-  // advanceResearchAfterRemoval, clearing the visible document even though
-  // the new note was not yet selectable. The server has already saved the
-  // note, so on rescan failure the panel must stay visible with the original
-  // content and surface a non-blocking "saved but not opened" error.
+  // RM001: Inbox membership and opening are graph-independent. A broken
+  // rescan must be irrelevant to evidence promotion.
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info(), {
     // The intentional /api/rescan 500 is the point of the test; the route
     // helper only flags HTTP >=500, so allow this URL explicitly.
@@ -539,14 +559,13 @@ test("save-to-inbox keeps the working document visible when the post-save rescan
     await expect(saveInbox).toBeVisible();
     await saveInbox.click();
 
-    // The non-blocking error surfaces the "saved but not opened" copy.
-    await expect(page.locator("#research-error")).toContainText(
-      /saved.*could not open|guardado.*no se pudo abrir/i,
-      { timeout: 15_000 },
+    await expect(page.locator("#research-collection-inbox")).toHaveClass(
+      /active/,
     );
-
-    // Frente B core contract: the visible document is NOT cleared.
-    await expectVisibleQuery(page, "PRESERVED AFTER SAVE content");
+    await expect(page.locator("#research .cm-content")).toContainText(
+      "PRESERVED AFTER SAVE content",
+    );
+    await expect(page.locator("#research-error")).toHaveClass(/hidden/);
 
     // And the server really did save the note (the panel was preserved only
     // because the rescan failed, not because the save did). safeName()
@@ -557,6 +576,43 @@ test("save-to-inbox keeps the working document visible when the post-save rescan
     expect(noteCheck.status()).toBe(200);
     const noteBody = (await noteCheck.json()) as { markdown?: string };
     expect(noteBody.markdown).toContain("PRESERVED AFTER SAVE content");
+  } finally {
+    await assertCleanBrowser();
+  }
+});
+
+test("save-to-inbox opens a catalog-only note absent from the graph", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  try {
+    const harness = await installVoiceHarness(page);
+    const doc = await createDocument(
+      page,
+      "Visible When Node Missing",
+      "PRESERVED WHEN NODE MISSING content",
+    );
+    await harness.show(doc.id);
+    await expectVisibleQuery(page, "PRESERVED WHEN NODE MISSING content");
+
+    const staleGraph = await (await page.request.get("/api/graph")).json();
+    await page.route("**/api/rescan", (route) =>
+      route.fulfill({ status: 200, json: { ok: true, graph: staleGraph } }),
+    );
+
+    await page.locator("#research-save-inbox").click();
+
+    await expect(page.locator("#research-collection-inbox")).toHaveClass(
+      /active/,
+    );
+    await expect(page.locator("#research .cm-content")).toContainText(
+      "PRESERVED WHEN NODE MISSING content",
+    );
+
+    const noteCheck = await page.request.get(
+      "/api/note?id=inbox/visible-when-node-missing.md",
+    );
+    expect(noteCheck.status()).toBe(200);
   } finally {
     await assertCleanBrowser();
   }

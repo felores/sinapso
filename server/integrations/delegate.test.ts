@@ -30,7 +30,15 @@ function loopbackFake() {
           { id: "r1", query: "prior research", answer: { content: "found X" } },
         ],
       });
-    if (url.includes("/api/document")) return jsonResponse({ ok: true });
+    if (url.includes("/api/agent/notes"))
+      // Real /api/agent/notes create semantics (plan 020 U5): server picks
+      // the Inbox path and returns it with the SHA-256 baseHash of the
+      // written content.
+      return jsonResponse({
+        ok: true,
+        id: "inbox/delegate-note.md",
+        baseHash: "hash-server-minted",
+      });
     return jsonResponse({});
   }) as typeof fetch;
   return { fn, calls };
@@ -59,7 +67,7 @@ const START = {
 };
 
 describe("delegate manager", () => {
-  it("happy path: gathers sources, writes the working document, succeeds", async () => {
+  it("happy path: gathers sources, writes the durable Inbox note, succeeds", async () => {
     const loop = loopbackFake();
     const llm = llmFake();
     const mgr = createDelegateManager({
@@ -71,24 +79,32 @@ describe("delegate manager", () => {
     const r = mgr.start({ ...START, title: "Connections" });
     if ("error" in r) throw new Error(r.error);
     expect(["queued", "running"]).toContain(r.job.state);
-    expect(r.job.documentId).toMatch(/^doc-/);
+    // notePath/baseHash start null: the server mints them on /api/agent/notes.
+    expect(r.job.notePath).toBeNull();
+    expect(r.job.baseHash).toBeNull();
     await vi.waitFor(() =>
       expect(mgr.status("sess-1")?.state).toBe("succeeded"),
     );
+    // The succeeded job adopted the server-generated path + baseHash.
+    expect(mgr.status("sess-1")?.notePath).toBe("inbox/delegate-note.md");
+    expect(mgr.status("sess-1")?.baseHash).toBe("hash-server-minted");
     // sources reached the thinker prompt
     expect(llm.bodies[0]).toContain("note body");
     expect(llm.bodies[0]).toContain("found X");
     expect(llm.bodies[0]).toContain("test/thinker");
-    // result written through the document upsert with the session token
-    const write = loop.calls.find((c) => c.url.endsWith("/api/document"));
+    // result written through the agent-actor Inbox note create with the
+    // session token; the job adopts the server-minted path + baseHash.
+    const write = loop.calls.find((c) => c.url.endsWith("/api/agent/notes"));
     expect(write).toBeDefined();
     const headers = write!.init?.headers as Record<string, string>;
     expect(headers["x-sinapso-token"]).toBe("tok");
-    expect(JSON.parse(String(write!.init?.body)).content).toContain(
-      "Synthesis",
-    );
+    const body = JSON.parse(String(write!.init?.body));
+    expect(body.id).toBeUndefined();
+    expect(body.content).toContain("Synthesis");
     expect(done).toHaveBeenCalledTimes(1);
     expect(done.mock.calls[0][0].state).toBe("succeeded");
+    expect(done.mock.calls[0][0].notePath).toBe("inbox/delegate-note.md");
+    expect(done.mock.calls[0][0].baseHash).toBe("hash-server-minted");
   });
 
   it("provider error marks the job failed with a message, session stays usable", async () => {
@@ -135,9 +151,11 @@ describe("delegate manager", () => {
     expect(mgr.status("sess-1")?.error).toContain("timed out");
     release?.();
     await new Promise((r2) => setTimeout(r2, 10));
-    // late completion neither flips the state nor writes the document
+    // late completion neither flips the state nor writes the note
     expect(mgr.status("sess-1")?.state).toBe("failed");
-    expect(loop.calls.some((c) => c.url.endsWith("/api/document"))).toBe(false);
+    expect(loop.calls.some((c) => c.url.endsWith("/api/agent/notes"))).toBe(
+      false,
+    );
   });
 
   it("rejects a second start while one job runs (409, R14)", async () => {

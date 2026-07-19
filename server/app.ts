@@ -53,6 +53,7 @@ import {
   runQmdQuery,
   vsearch,
   type QmdCollection,
+  type QmdGraphNodeLike,
   type QmdHit,
   type QmdQueryDeps,
 } from "./integrations/qmd.js";
@@ -148,6 +149,7 @@ import {
   guardedCreate,
   guardedEdit,
   guardedMove,
+  noteHash,
   WriteError,
 } from "./integrations/write.js";
 import { confineNoteId, noteFileOrFail } from "./integrations/paths.js";
@@ -175,6 +177,7 @@ import {
   type VaultSearchResponse,
   type VaultSearchResult,
 } from "./integrations/search-vault.js";
+import { createVoiceTraceStore } from "./integrations/voice-trace.js";
 import { discoverAndMerge } from "./integrations/wiki.js";
 import {
   applyWikiIngestOperations,
@@ -189,6 +192,12 @@ import {
   grepNote,
   type SearchIndex,
 } from "./integrations/notes-index.js";
+import {
+  buildVaultCatalog,
+  catalogHas,
+  listInbox,
+  type CatalogEntry,
+} from "./integrations/vault-catalog.js";
 import { buildContextualQuery } from "./integrations/contextual-query.js";
 
 interface GraphFile {
@@ -254,6 +263,11 @@ export interface IntegrationsOptions {
   qmdMcp?: Partial<QmdMcpDeps>;
   /** Electron-only native vault picker. Browser/CLI mode leaves this undefined. */
   pickVault?: () => Promise<string | null>;
+  /** Enable the dev-only voice trace store + routes. Defaults to the
+   *  `SINAPSO_VOICE_TRACE=1` env var so `npm run dev` opts in and `npm start`
+   *  / desktop stay opted out. Tests inject `true` explicitly to stay
+   *  deterministic and avoid global env leakage. */
+  voiceTraceEnabled?: boolean;
 }
 
 export function createApp(
@@ -292,12 +306,164 @@ export function createApp(
     llmOpts: integrations?.openrouter,
     timeoutMs: integrations?.delegateTimeoutMs,
   });
+  type PublishedView = {
+    clientId: string;
+    sequence: number;
+    updatedAt: string;
+    activation: number;
+    view: Record<string, unknown>;
+  };
+  const publishedViews = new Map<string, PublishedView>();
+  const pendingViewActions = new Map<
+    string,
+    Array<{ type: "open_note"; note: string }>
+  >();
+  let viewActivation = 0;
+  const stringOrNull = (value: unknown, max = 1_024) =>
+    typeof value === "string" ? value.slice(0, max) : null;
+  const publishedResearch = (value: unknown) => {
+    if (!value || typeof value !== "object") return undefined;
+    const raw = value as Record<string, unknown>;
+    const document = raw.document;
+    const article = raw.article;
+    return {
+      id: stringOrNull(raw.id),
+      mode: stringOrNull(raw.mode),
+      query: stringOrNull(raw.query),
+      ...(document && typeof document === "object"
+        ? {
+            document: {
+              title: stringOrNull((document as Record<string, unknown>).title),
+              content: stringOrNull(
+                (document as Record<string, unknown>).content,
+                3_000,
+              ),
+            },
+          }
+        : {}),
+      ...(article && typeof article === "object"
+        ? {
+            article: {
+              title: stringOrNull((article as Record<string, unknown>).title),
+              url: stringOrNull((article as Record<string, unknown>).url),
+            },
+          }
+        : {}),
+    };
+  };
+  const activePublishedView = () => {
+    const staleBefore = Date.now() - 45_000;
+    for (const [id, snapshot] of publishedViews) {
+      if (Date.parse(snapshot.updatedAt) < staleBefore)
+        publishedViews.delete(id);
+    }
+    return [...publishedViews.values()].sort(
+      (a, b) => b.activation - a.activation || b.sequence - a.sequence,
+    )[0];
+  };
   app.get("/api/session", (req, res) => {
     res.json(
       req.query.surface === "mcp"
         ? { token: mcpToken, surface: "mcp" }
         : { token: sessionToken },
     );
+  });
+  app.post(
+    "/api/current-view",
+    guarded,
+    express.json({ limit: "16kb" }),
+    (req, res) => {
+      const body = req.body as Record<string, unknown> | null;
+      const clientId = typeof body?.clientId === "string" ? body.clientId : "";
+      const sequence = body?.sequence;
+      const rawView = body?.view;
+      if (
+        !body ||
+        !clientId ||
+        clientId.length > 128 ||
+        !Number.isSafeInteger(sequence) ||
+        (sequence as number) < 0 ||
+        !rawView ||
+        typeof rawView !== "object"
+      ) {
+        res.status(400).json({ error: "invalid view context" });
+        return;
+      }
+      const previous = publishedViews.get(clientId);
+      if (previous && (sequence as number) <= previous.sequence) {
+        res.status(204).end();
+        return;
+      }
+      const view = rawView as Record<string, unknown>;
+      const activate = body.activate === true;
+      publishedViews.set(clientId, {
+        clientId,
+        sequence: sequence as number,
+        updatedAt: new Date().toISOString(),
+        activation: activate ? ++viewActivation : (previous?.activation ?? 0),
+        view: {
+          readerNoteId: stringOrNull(view.readerNoteId),
+          researchPanelOpen: view.researchPanelOpen === true,
+          visibleResearchId: stringOrNull(view.visibleResearchId),
+          pinnedResearchId: stringOrNull(view.pinnedResearchId),
+          ...(publishedResearch(view.recentResearch)
+            ? { research: publishedResearch(view.recentResearch) }
+            : {}),
+        },
+      });
+      res.status(204).end();
+    },
+  );
+  app.get("/api/current-view", guarded, (_req, res) => {
+    const current = activePublishedView();
+    res.json(
+      current
+        ? {
+            viewStateKnown: true,
+            updatedAt: current.updatedAt,
+            view: current.view,
+          }
+        : { viewStateKnown: false },
+    );
+  });
+  app.post(
+    "/api/current-view/open-note",
+    guarded,
+    express.json({ limit: "1kb" }),
+    (req, res) => {
+      const note = typeof req.body?.note === "string" ? req.body.note : "";
+      // R29a: validate against the confined vault catalog OR noteFileOrFail,
+      // NOT graph.nodes — MCP/CLI can explicitly open a catalog-only note
+      // (a note the scanner excludes from the presentation graph but the
+      // catalog still lists). The catalog check rejects phantom:, traversal,
+      // non-.md, and Admin-excluded ids. noteFileOrFail is the fallback for a
+      // note that's on disk but not in the cached catalog (rare race; it has
+      // its own path confinement).
+      if (!catalogHas(vaultCatalog, note)) {
+        try {
+          noteFileOrFail(vaultRoot, note);
+        } catch {
+          res.status(404).json({ error: "note not found" });
+          return;
+        }
+      }
+      const target = activePublishedView();
+      if (!target) {
+        res.status(409).json({ error: "no active Sinapso window" });
+        return;
+      }
+      const actions = pendingViewActions.get(target.clientId) ?? [];
+      actions.push({ type: "open_note", note });
+      pendingViewActions.set(target.clientId, actions);
+      res.status(202).json({ queued: true });
+    },
+  );
+  app.get("/api/current-view/actions", guarded, (req, res) => {
+    const clientId =
+      typeof req.query.clientId === "string" ? req.query.clientId : "";
+    const actions = pendingViewActions.get(clientId) ?? [];
+    pendingViewActions.delete(clientId);
+    res.json({ actions });
   });
 
   const configPath = integrations?.configPath ?? defaultConfigPath();
@@ -353,6 +519,52 @@ export function createApp(
     vaultRoot = graph.meta.vaultPath;
   };
   ensureConfiguredExcludesScanned();
+
+  // ---- Vault catalog (plan 020 U1, KTD6): filesystem-backed catalog of
+  // every non-excluded Markdown note in the vault. INDEPENDENT of graph.nodes
+  // so a note can be searchable/openable/Inbox-listed even when the scanner
+  // keeps it out of the presentation graph. Admin excludes are hard-excluded
+  // here too (AE9). The cache is keyed by (vaultRoot + adminExcludes), so any
+  // Admin config change (File → Admin) or vault switch invalidates it; any
+  // successful guarded write calls refreshVaultCatalog() to rebuild on the
+  // next read. ----
+  let vaultCatalog: CatalogEntry[] = [];
+  let vaultCatalogKey = "";
+  const vaultCatalogExcludeFingerprint = (cfg: SinapsoConfig) =>
+    effectiveExcludes(vaultRoot, cfg)
+      .map((e) => e.toLowerCase())
+      .sort()
+      .join("|");
+  const refreshVaultCatalog = () => {
+    const cfg = loadConfig(configPath);
+    const key = `${vaultRoot}\u0000${vaultCatalogExcludeFingerprint(cfg)}`;
+    if (key === vaultCatalogKey && vaultCatalog.length) return;
+    vaultCatalog = buildVaultCatalog({
+      vaultRoot,
+      adminExcludes: effectiveExcludes(vaultRoot, cfg),
+    });
+    vaultCatalogKey = key;
+  };
+  refreshVaultCatalog();
+
+  // GET /api/inbox (R6): recursive listing of the configured Inbox. Each
+  // entry carries path, title, modifiedAt, and baseHash; independent of
+  // graph membership; Admin/internal excludes applied; symlinks that escape
+  // the vault rejected. Not token-guarded (read-only).
+  app.get("/api/inbox", (_req, res) => {
+    try {
+      const cfg = loadConfig(configPath);
+      const entries = listInbox({
+        vaultRoot,
+        destination: cfg.writeDestination,
+        adminExcludes: effectiveExcludes(vaultRoot, cfg),
+      });
+      res.json({ entries, destination: cfg.writeDestination });
+    } catch (e) {
+      console.error("inbox list failed:", e);
+      res.status(500).json({ error: "inbox list failed" });
+    }
+  });
 
   // Detection is slow-ish (may spawn a login shell); cache in memory,
   // re-probe on ?refresh=1 (settings re-check). Wrapped in a ref so the
@@ -439,6 +651,9 @@ export function createApp(
   app.post("/api/integrations/config", guarded, express.json(), (req, res) => {
     try {
       const cfg = updateConfig(req.body ?? {}, configPath);
+      // Admin exclusion changes (File -> Admin) invalidate the catalog cache
+      // so catalog/search reflect the new hard excludes immediately (R27/AE9).
+      refreshAfterWrite();
       res.json({
         ok: true,
         consents: cfg.consents,
@@ -641,6 +856,7 @@ export function createApp(
           via: converted.via ?? "markitdown",
           destination: cfg.writeDestination,
         });
+        refreshAfterWrite();
         res.json({ ok: true, id: r.id });
       } catch (e) {
         writeFail(res, e, "ingest save");
@@ -683,6 +899,7 @@ export function createApp(
           destination,
         },
       );
+      refreshAfterWrite();
       res.json({ ok: true, id: r.id });
     } catch (e) {
       writeFail(res, e, "ingest");
@@ -726,6 +943,7 @@ export function createApp(
           { vaultRoot, dataDir: dirname(graphPath) },
           { name, bytes: req.body, destination },
         );
+        refreshAfterWrite();
         res.json({ ok: true, id: r.id });
       } catch (e) {
         writeFail(res, e, "ingest-upload");
@@ -789,6 +1007,13 @@ export function createApp(
   // bin resolution, the collection cache, and the warm-MCP/CLI-fallback
   // search. The merged function reads them through this small surface so the
   // route handlers stay thin adapters.
+  // Plan 020 U2/R29: qmd node-result mapping consumes the vault catalog (a
+  // superset of graph.nodes), so semantic-search can return any catalog note
+  // qmd has covered, including notes the scanner keeps out of the
+  // presentation graph. Semantic edge construction (semantic.ts) is separate
+  // and stays graph-only.
+  const catalogAsNodes = (): QmdGraphNodeLike[] =>
+    vaultCatalog.map((e) => ({ id: e.id, title: e.title }));
   const qmdDeps = (bin: string | null): QmdQueryDeps => ({
     bin,
     setupState: () => qmdSetup.state(),
@@ -798,7 +1023,7 @@ export function createApp(
     getCollections: (b) => collections(b),
     search: (b, q, l, scope) => qmdSearch(b, q, l, scope),
     vaultRoot,
-    graphNodes: graph.nodes,
+    graphNodes: catalogAsNodes(),
   });
 
   // GET /api/qmd/status: missing | uncovered | indexing | error | ready(+collections)
@@ -1081,11 +1306,14 @@ export function createApp(
     }
     try {
       if (mode === "path") {
+        // Plan 020 U2/R26: path mode consumes the vault catalog (superset of
+        // graph.nodes) so a catalog-only note (RAW, loose on disk, etc.) is
+        // discoverable by path/basename/title.
         res.json({
           mode,
           source: "path",
           results: tagRanked(
-            pathMatch(graph.nodes, queries, scope, limit),
+            pathMatch(catalogAsNodes(), queries, scope, limit),
             "path",
             limit,
           ),
@@ -1305,26 +1533,36 @@ export function createApp(
 
   // Working documents live in app-local research history. Evidence entries are
   // immutable, and document replacement is compare-and-swap by revision.
+  // POST /api/document: legacy revision-CAS update ONLY (plan 020 U7). The
+  // first-party create path was removed; new agent/UI documents go through
+  // POST /api/notes or POST /api/agent/notes (durable Inbox notes). The route
+  // accepts a supplied id IFF it already resolves to a persisted mode=document
+  // entry; unknown supplied ids are rejected (404) so a caller cannot invent
+  // a fresh legacy document here.
   app.post("/api/document", guarded, express.json(), (req, res) => {
     const requestedId =
       typeof req.body?.id === "string" && req.body.id ? req.body.id : null;
-    if (requestedId && !/^[a-z0-9-]+$/.test(requestedId)) {
+    if (!requestedId) {
+      res.status(400).json({ error: "document-create-removed" });
+      return;
+    }
+    if (!/^[a-z0-9-]+$/.test(requestedId)) {
       res.status(400).json({ error: "bad-id" });
       return;
     }
-    const existing = requestedId ? getEntry(dataDir, requestedId) : null;
-    if (existing && (existing.mode !== "document" || !existing.document)) {
-      res.status(409).json({ error: "immutable-evidence" });
+    const existing = getEntry(dataDir, requestedId);
+    if (!existing) {
+      res.status(404).json({ error: "document-not-found" });
       return;
     }
-    if (requestedId && !existing) {
-      res.status(404).json({ error: "document-not-found" });
+    if (existing.mode !== "document" || !existing.document) {
+      res.status(409).json({ error: "immutable-evidence" });
       return;
     }
     const expectedRevision =
       typeof req.body?.revision === "string" ? req.body.revision : null;
     if (
-      existing?.document?.revision &&
+      existing.document.revision &&
       expectedRevision !== existing.document.revision
     ) {
       res.status(409).json({
@@ -1333,13 +1571,12 @@ export function createApp(
       });
       return;
     }
-    const id = requestedId ?? `doc-${randomUUID()}`;
     const title = String(req.body?.title ?? "").trim() || "Untitled";
     const content = String(req.body?.content ?? "");
     try {
       const revision = randomUUID();
       const entry = upsertEntry(dataDir, {
-        id,
+        id: requestedId,
         mode: "document",
         query: title,
         document: { title, content, revision },
@@ -1386,6 +1623,34 @@ export function createApp(
   app.delete("/api/reader-history", guarded, (_req, res) => {
     clearReaderHistory(dataDir);
     res.json({ ok: true });
+  });
+
+  // ---- Voice trace store (DEVELOPMENT TROUBLESHOOTING ONLY). Dev opt-in
+  // via `SINAPSO_VOICE_TRACE=1` env or the `voiceTraceEnabled` injection;
+  // `npm run dev` enables it, `npm start` and desktop do NOT. When disabled,
+  // no files are written, the relay gets no store, and the HTTP routes
+  // return a clean 404 so nothing in production advertises the feature. ----
+  const voiceTraceEnabled =
+    integrations?.voiceTraceEnabled ?? process.env.SINAPSO_VOICE_TRACE === "1";
+  const voiceTrace = voiceTraceEnabled
+    ? createVoiceTraceStore(dataDir)
+    : undefined;
+  app.get("/api/voice/sessions", (_req, res) => {
+    if (!voiceTrace) return res.status(404).json({ enabled: false });
+    res.json({ sessions: voiceTrace.listSessions() });
+  });
+  app.get("/api/voice/sessions/:id/events", (req, res) => {
+    if (!voiceTrace) return res.status(404).json({ enabled: false });
+    const events = voiceTrace.readEvents(String(req.params.id ?? ""));
+    if (!events) {
+      res.status(400).json({ error: "bad session id" });
+      return;
+    }
+    res.json({ events });
+  });
+  app.delete("/api/voice/sessions", guarded, (_req, res) => {
+    if (!voiceTrace) return res.status(404).json({ enabled: false });
+    res.json({ cleared: voiceTrace.clearAll() });
   });
 
   // ---- Guarded vault writes (U7): the single sanctioned write path ----
@@ -1630,6 +1895,7 @@ export function createApp(
         actor: "user",
       });
       deleteEntry(dataDir, entry.id);
+      refreshAfterWrite();
       res.json({ ok: true, id: saved.id, removedHistory: true });
     } catch (e) {
       writeFail(res, e, "research save inbox");
@@ -1670,6 +1936,7 @@ export function createApp(
           actor: "user",
         });
         deleteEntry(dataDir, entry.id);
+        refreshAfterWrite();
         res.json({ ok: true, id: created.id, removedHistory: true });
       } catch (e) {
         writeFail(res, e, "research save raw source");
@@ -1841,8 +2108,9 @@ export function createApp(
           b.operations,
           { sourceNote, existingRaw },
         );
+        refreshAfterWrite();
         if (sourceNote) {
-          const move = ids[0];
+          const move = ids.at(-1);
           if (move) res.json({ ok: true, ids, id: move });
           else res.json({ ok: true, ids });
           return;
@@ -1857,6 +2125,8 @@ export function createApp(
 
   // POST /api/notes: create a note (save-as-note, approved agent creates).
   // Defaults to the configured destination (inbox/); never overwrites.
+  // Returns baseHash so callers (editor autosave, agent tools) can chain a
+  // future baseHash-CAS update without an extra read (plan 020 U5).
   app.post(
     "/api/notes",
     guarded,
@@ -1885,14 +2155,16 @@ export function createApp(
               : cfg.writeDestination,
           actor: "user",
         });
-        res.json({ ok: true, id: r.id });
+        refreshAfterWrite();
+        res.json({ ok: true, id: r.id, baseHash: noteHash(content) });
       } catch (e) {
         writeFail(res, e, "create");
       }
     },
   );
 
-  // PUT /api/notes: full-content edit of an existing note.
+  // PUT /api/notes: full-content edit of an existing note. Returns the new
+  // baseHash after success so the caller can chain another CAS update.
   app.put("/api/notes", guarded, express.json({ limit: "5mb" }), (req, res) => {
     try {
       const { id, content, baseHash } = (req.body ?? {}) as Record<
@@ -1909,11 +2181,82 @@ export function createApp(
         actor: "user",
         baseHash: typeof baseHash === "string" ? baseHash : undefined,
       });
-      res.json({ ok: true, id: r.id });
+      if (!r.unchanged) refreshAfterWrite();
+      res.json({ ok: true, id: r.id, baseHash: noteHash(content) });
     } catch (e) {
       writeFail(res, e, "edit");
     }
   });
+
+  // POST /api/agent/notes + PUT /api/agent/notes (plan 020 U5/R5): the
+  // agent-actor twins of the user-actor routes above. The server selects
+  // `actor: "agent"` from the route — never from a body field — so voice,
+  // delegation, MCP, and CLI note writes are journaled as agent activity
+  // while the user-facing editor keeps `actor: "user"`. Same guards, same
+  // writer, same hash-CAS contract, same refresh.
+  app.post(
+    "/api/agent/notes",
+    guarded,
+    express.json({ limit: "5mb" }),
+    (req, res) => {
+      try {
+        const { title, path, content, destination } = (req.body ??
+          {}) as Record<string, unknown>;
+        if (
+          typeof content !== "string" ||
+          (typeof title !== "string" && typeof path !== "string")
+        ) {
+          res
+            .status(400)
+            .json({ error: "content plus title or path required" });
+          return;
+        }
+        const cfg = loadConfig(configPath);
+        const r = guardedCreate(writeDeps(), {
+          content,
+          path: typeof path === "string" ? path : undefined,
+          title: typeof title === "string" ? title : undefined,
+          destination:
+            typeof destination === "string"
+              ? destination
+              : cfg.writeDestination,
+          actor: "agent",
+        });
+        refreshAfterWrite();
+        res.json({ ok: true, id: r.id, baseHash: noteHash(content) });
+      } catch (e) {
+        writeFail(res, e, "agent create");
+      }
+    },
+  );
+
+  app.put(
+    "/api/agent/notes",
+    guarded,
+    express.json({ limit: "5mb" }),
+    (req, res) => {
+      try {
+        const { id, content, baseHash } = (req.body ?? {}) as Record<
+          string,
+          unknown
+        >;
+        if (typeof id !== "string" || typeof content !== "string") {
+          res.status(400).json({ error: "id and content required" });
+          return;
+        }
+        const r = guardedEdit(writeDeps(), {
+          id,
+          content,
+          actor: "agent",
+          baseHash: typeof baseHash === "string" ? baseHash : undefined,
+        });
+        if (!r.unchanged) refreshAfterWrite();
+        res.json({ ok: true, id: r.id, baseHash: noteHash(content) });
+      } catch (e) {
+        writeFail(res, e, "agent edit");
+      }
+    },
+  );
 
   app.post(
     "/api/archive",
@@ -1932,6 +2275,7 @@ export function createApp(
           destination: cfg.archiveDestination,
           actor: "user",
         });
+        refreshAfterWrite();
         res.json({ ok: true, id: r.id });
       } catch (e) {
         writeFail(res, e, "archive");
@@ -1986,6 +2330,7 @@ export function createApp(
     }
     try {
       const r = guardedAppendLink(writeDeps(), { id, target, actor: "user" });
+      if (r.added) refreshAfterWrite();
       res.json(r);
     } catch (e) {
       if (e instanceof WriteError) {
@@ -2492,6 +2837,7 @@ export function createApp(
           actor: "user",
           mode: "full",
         });
+        if (!r.unchanged) refreshAfterWrite();
         res.json({ ok: true, id: r.id });
       } catch (e) {
         writeFail(res, e, "note version restore");
@@ -2647,13 +2993,15 @@ export function createApp(
       return;
     }
 
-    // Return the note's raw markdown content
+    // Return the note's raw markdown content. baseHash is included so agent
+    // tools (read_working_document for a vault-backed note) can compute the
+    // compare-and-swap identity without a second read (plan 020 U5).
     try {
       const markdown = readFileSync(full, "utf-8");
       // Log the open for the reader history, unless this is a history-nav
       // re-open (?nolog=1) which must not reorder the log.
       if (req.query.nolog !== "1") logReaderOpen(dataDir, id);
-      res.json({ id, markdown });
+      res.json({ id, markdown, baseHash: noteHash(markdown) });
     } catch (e) {
       console.error(`Failed to read note ${id}:`, e);
       res.status(500).json({ error: "read failed" });
@@ -2759,9 +3107,28 @@ export function createApp(
   });
 
   // Full-text index over note content (titles boosted). Built lazily on the
-  // first search (~1-2s for ~2k notes), held in memory, invalidated by
-  // reload(). Contents stay in local memory for snippet extraction.
-  let searchIndex: SearchIndex = buildSearchIndex(graph.nodes, vaultRoot);
+  // first search (~1-2s for ~2k notes), held in memory, rebuilt by
+  // refreshAfterWrite() after a successful write (R7/R10) so newly created
+  // notes appear immediately without a rescan. Contents stay in local memory
+  // for snippet extraction.
+  //
+  // Plan 020 U2/R26: keyword/exact/path inputs come from the vault catalog
+  // (a superset of graph.nodes). A note the scanner keeps out of the
+  // presentation graph (RAW, history) still appears in keyword/exact/path
+  // search; an Admin-excluded note is absent from both graph and catalog.
+  let searchIndex: SearchIndex = buildSearchIndex(catalogAsNodes(), vaultRoot);
+
+  // Refresh the vault catalog AND rebuild the MiniSearch index. Called after
+  // every successful guarded write (R7), after Admin config changes, and after
+  // a vault switch/rescan. The index reads disk content lazily on its first
+  // search(); rebuilding the handle here ensures the next search sees the
+  // fresh catalog (a static `nodes` snapshot inside the old handle would have
+  // frozen out newly written notes).
+  const refreshAfterWrite = () => {
+    vaultCatalogKey = ""; // force a catalog rebuild regardless of fingerprint
+    refreshVaultCatalog();
+    searchIndex = buildSearchIndex(catalogAsNodes(), vaultRoot);
+  };
 
   // GET /api/search?q=...: Full-text search over note titles and content
   // Returns top 20 matches sorted by relevance score with text snippets
@@ -2832,9 +3199,12 @@ export function createApp(
   const reload = () => {
     graph = JSON.parse(readFileSync(graphPath, "utf-8"));
     vaultRoot = graph.meta.vaultPath;
-    // New handle with the new graph's nodes; the MiniSearch index inside
-    // is built lazily on the next /api/search call.
-    searchIndex = buildSearchIndex(graph.nodes, vaultRoot);
+    // Plan 020 U2: the search index consumes the vault catalog (superset of
+    // graph.nodes). The catalog is rebuilt below; the index inside is built
+    // lazily on the next /api/search call.
+    vaultCatalogKey = ""; // force catalog rebuild with the new vaultRoot
+    refreshVaultCatalog();
+    searchIndex = buildSearchIndex(catalogAsNodes(), vaultRoot);
     colCache = null;
     maintIdxCache = null;
     relatedCache.clear(); // related notes may change with the graph (F015)
@@ -2932,6 +3302,11 @@ export function createApp(
   }
 
   const attachVoice = (server: Server) =>
-    attachVoiceRelay(server, { sessionToken, configPath, delegate });
+    attachVoiceRelay(server, {
+      sessionToken,
+      configPath,
+      delegate,
+      trace: voiceTrace,
+    });
   return { app, reload, meta: () => graph.meta, attachVoice };
 }

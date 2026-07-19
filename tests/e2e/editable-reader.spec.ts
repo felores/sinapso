@@ -106,8 +106,8 @@ test("note properties toggle without reserving collapsed space", async ({
       page.locator("#reader-editor .cm-line", { hasText: "type: test" }),
     ).toHaveCount(0);
   } finally {
-    await removeTestNote(page, file);
     await assertCleanBrowser();
+    await removeTestNote(page, file);
   }
 });
 
@@ -135,8 +135,8 @@ test("AE1: typing autosaves; only the edit differs, frontmatter byte-identical",
       ),
     );
   } finally {
-    await removeTestNote(page, file);
     await assertCleanBrowser();
+    await removeTestNote(page, file);
   }
 });
 
@@ -156,8 +156,8 @@ test("AE1b: opening and closing without edits never touches the file", async ({
     await page.waitForTimeout(2500);
     expect(readFileSync(file, "utf-8")).toBe(NOTE_CONTENT);
   } finally {
-    await removeTestNote(page, file);
     await assertCleanBrowser();
+    await removeTestNote(page, file);
   }
 });
 
@@ -198,8 +198,8 @@ test("code blocks own horizontal overflow regardless of language", async ({
     expect(metrics.blockScroll).toBeGreaterThan(metrics.blockClient);
     expect(metrics.blockOverflow).toBe("auto");
   } finally {
-    await removeTestNote(page, file);
     await assertCleanBrowser();
+    await removeTestNote(page, file);
   }
 });
 
@@ -239,8 +239,8 @@ test("AE2: external disk change surfaces the conflict banner, no clobber", async
     );
     expect(readFileSync(file, "utf-8")).toBe(external);
   } finally {
-    await removeTestNote(page, file);
     await assertCleanBrowser();
+    await removeTestNote(page, file);
   }
 });
 
@@ -265,8 +265,8 @@ test("AE3: selection shows the floating toolbar; Bold wraps in ** and renders", 
       .poll(() => readFileSync(file, "utf-8"), { timeout: 10_000 })
       .toContain("stays **untouched**");
   } finally {
-    await removeTestNote(page, file);
     await assertCleanBrowser();
+    await removeTestNote(page, file);
   }
 });
 
@@ -285,7 +285,7 @@ test("flush on close: an edit right before closing the reader still lands", asyn
       .poll(() => readFileSync(file, "utf-8"), { timeout: 10_000 })
       .toContain("last-second words");
   } finally {
-    await removeTestNote(page, file);
     await assertCleanBrowser();
+    await removeTestNote(page, file);
   }
 });

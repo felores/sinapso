@@ -22,7 +22,15 @@ export interface DelegateJob {
   sessionId: string;
   state: DelegateState;
   task: string;
-  documentId: string;
+  /**
+   * The vault-relative .md path the job wrote (plan 020 U5: durable Inbox
+   * note through /api/agent/notes). Null until the server returns the path
+   * on the first successful create; the completion relay opens this path.
+   * `baseHash` is the SHA-256 of the job's written content, copied from the
+   * route response so a follow-up update can pass compare-and-swap.
+   */
+  notePath: string | null;
+  baseHash: string | null;
   title: string;
   error: string | null;
   startedAt: number;
@@ -36,14 +44,18 @@ export interface DelegateStartParams {
   notes?: string[];
   /** Research-history entry ids to include as sources. */
   researchIds?: string[];
-  /** Working document to write into; a new one is minted when absent. */
+  /**
+   * Unused for create — the server mints the path on /api/agent/notes and
+   * the job adopts it from the response. Kept on the type for call-site
+   * stability and for tests that still pass it through.
+   */
   documentId?: string;
   title?: string;
   /** Thinker resolution from resolveTier() (worker fallback per R5). */
   llm: ResolvedTier;
-  /** Loopback base for the reader + document routes. */
+  /** Loopback base for the reader + agent note routes. */
   base: string;
-  /** Session token for the guarded document upsert. */
+  /** Session token for the guarded agent note create. */
   token: string;
 }
 
@@ -73,16 +85,6 @@ const SYNTHESIS_PROMPT =
   "provided sources: headings, short paragraphs, bullet lists where useful, [[Note Title]] " +
   "wikilinks when referencing the provided vault notes, and inline source links for web " +
   "material. Return only the document body in markdown, no preamble.";
-
-function slug(s: string): string {
-  return (
-    s
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 32) || "doc"
-  );
-}
 
 export function createDelegateManager(
   opts: DelegateManagerOptions = {},
@@ -169,19 +171,31 @@ export function createDelegateManager(
       const markdown = await tierCompletion(p.llm, messages, opts.llmOpts);
       if (!markdown.trim()) throw new Error("the reasoner returned nothing");
       if (job.state !== "running") return; // timed out while thinking
-      const r = await fetchFn(`${p.base}/api/document`, {
+      // Plan 020 U5: durable Inbox note create through the agent-actor route.
+      // The server mints the vault-relative path; the job adopts path+baseHash
+      // from the response. The relay opens job.notePath and adopts the same
+      // pair into the voice tool session.
+      const r = await fetchFn(`${p.base}/api/agent/notes`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           "x-sinapso-token": p.token,
         },
         body: JSON.stringify({
-          id: job.documentId,
           title: job.title,
           content: markdown,
         }),
       });
-      if (!r.ok) throw new Error("could not write the working document");
+      const d = (await r.json().catch(() => ({}))) as {
+        id?: string;
+        baseHash?: string;
+        error?: string;
+      };
+      if (!r.ok || !d.id || !d.baseHash) {
+        throw new Error(d.error ?? "could not write the working note");
+      }
+      job.notePath = d.id;
+      job.baseHash = d.baseHash;
       finish(job, "succeeded");
     } catch (e) {
       finish(job, "failed", e instanceof Error ? e.message : String(e));
@@ -211,9 +225,10 @@ export function createDelegateManager(
         sessionId,
         state: "queued",
         task,
-        documentId:
-          params.documentId?.trim() ||
-          `doc-${now().toString(36)}-${slug(title)}`,
+        // Null until the server returns the created note path + baseHash; the
+        // relay and tool session adopt the real values on completion.
+        notePath: null,
+        baseHash: null,
         title,
         error: null,
         startedAt: now(),

@@ -26,10 +26,12 @@ import { GoogleGenAI, Modality } from "@google/genai";
 import { effectivePrompts, loadConfig, type SinapsoConfig } from "./config";
 import { isLocalHost, isLocalOrigin } from "./security";
 import { createVoiceToolSession, VOICE_TOOLS } from "./voice-tools";
+import type { VoiceArgs, VoiceResult } from "./voice-tools";
 import { toolsForSurface } from "./registry";
 import type { DelegateManager } from "./delegate";
 import type { FunctionDeclaration } from "@google/genai";
 import { Behavior, FunctionResponseScheduling } from "@google/genai";
+import type { VoiceTraceStore } from "./voice-trace";
 
 const GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview";
 /** Selectable Gemini live models (KTD5). Empirically verified 2026-07-09
@@ -212,15 +214,45 @@ export function wireDelegation(opts: {
   sendToolResponse: (r: {
     functionResponses: Array<Record<string, unknown>>;
   }) => void;
+  /** Called with the server-minted vault note path (and the baseHash of the
+   *  content the job wrote) once a delegation succeeds, so the voice tool
+   *  session can bind it as its active working note (the start response
+   *  omits the path until it exists). */
+  onDocumentReady?: (notePath: string, baseHash?: string) => void;
+  /** Trace hook fired when the delegate_to_thinker tool call is observed. */
+  onDelegationStart?: () => void;
+  /** Trace hook fired when the delegation job reaches a terminal state. */
+  onDelegationTerminal?: (info: {
+    phase: "succeeded" | "failed";
+    jobId: string;
+    notePath?: string;
+    baseHash?: string;
+    error?: string;
+  }) => void;
 }): DelegationRelay {
   let pending: { id?: string; name?: string } | null = null;
   const unsubscribe = opts.delegate?.subscribe(opts.sessionId, (job) => {
-    if (job.state === "succeeded") {
-      // Surface the finished document in the research panel on every model.
+    if (job.state === "succeeded" || job.state === "failed") {
+      opts.onDelegationTerminal?.({
+        phase: job.state,
+        jobId: job.id,
+        notePath: job.notePath ?? undefined,
+        baseHash: job.baseHash ?? undefined,
+        error: job.error ?? undefined,
+      });
+    }
+    if (job.state === "succeeded" && job.notePath) {
+      // Plan 020 U5: bind the real vault note path + baseHash into the tool
+      // session BEFORE any spoken heads-up, so a quick follow-up
+      // write/save targets the right note path with a fresh baseHash.
+      opts.onDocumentReady?.(job.notePath, job.baseHash ?? undefined);
+      // Surface the finished note in the research panel on every model.
+      // open_saved_note is the pin-aware Inbox arrival action; the browser
+      // context's pin still rules what stays visible.
       opts.send({
         type: "action",
-        action: "open_research",
-        id: job.documentId,
+        action: "open_saved_note",
+        note: job.notePath,
       });
     }
     if (!opts.asyncCapable) {
@@ -249,8 +281,10 @@ export function wireDelegation(opts: {
   });
   return {
     noteCall(fc) {
-      if (fc.name === "delegate_to_thinker")
+      if (fc.name === "delegate_to_thinker") {
         pending = { id: fc.id, name: fc.name };
+        opts.onDelegationStart?.();
+      }
     },
     dispose() {
       unsubscribe?.();
@@ -332,7 +366,7 @@ Answer anything about THEIR OWN notes/vault from the tools — never from your o
 - To find LITERAL occurrences of a precise word, name, number, or quote across the vault → search_vault with mode 'exact' (returns path, line, context, and matched terms). Add 'note' to restrict it to one note.
 - To see the vault's FOLDERS / how it's organized, or find WHERE a kind of note lives ("what folders do I have", "how is my vault organized", "¿qué hay en saas?", "my meetings / las reuniones de climatia") → browse_folder, drilling down folder by folder. Meetings usually sit in a "reuniones" subfolder, wikis under "wiki", etc.
 - Follow-ups about ONE specific note (the one open, or one you're already discussing) → keep answering FROM THAT NOTE by its path, do NOT re-search the whole vault: search_vault with 'note' for a concept or "what does it say about…" (mode 'exact' for a precise word/name/number/quote), read_note to expand context around a line you already have (it returns lines before AND after) or to page through the note. The opened-note preview is only the first ~250 words, so drill in with these for anything beyond it.
-- To DRAFT or BUILD something with them ("write up X", "synthesize these notes", "make a summary/outline", "combine what we found", "arma un documento", "find the gaps/relations across...") → write_document. Use operation=create for a separate new artifact, alternate version, second document, or different draft. Use operation=update with documentId when revising an existing temporary document. If the user just says to revise the current draft, update the active document. Each call must pass the COMPLETE new markdown (the prior body plus the requested change), because it replaces that document in place. Keep a mental copy of each active draft's body so you can amend it.
+- To DRAFT or BUILD something with them ("write up X", "synthesize these notes", "make a summary/outline", "combine what we found", "arma un documento", "find the gaps/relations across...") → write_document. Use operation=create with a title for a separate durable Inbox note. To revise vault-backed work, first read_working_document with its note path, then operation=update with note and baseHash. Use documentId/revision only for an existing legacy temporary document. Each call passes the COMPLETE new markdown because it replaces that note or legacy document in place.
 - DOCUMENT QUALITY RULES — every working document must be a complete, well-structured note from the first draft, BEFORE the user saves it to the vault:
   1. LINKS: Before writing, search_vault for related notes in the vault. Include [[Note Title]] wikilinks to every related note you find — connections are the whole point of the vault. A note with no wikilinks is incomplete; search harder before giving up. Wikilinks may target any known note anywhere in the vault, including outside the selected wiki, but never use absolute paths, ../ traversal, file: URLs, or files outside the vault. External sources remain normal https URLs.
   2. SOURCES: When the document cites web research, Exa results, or fetched articles, link each source with its URL inline. Never drop a fact without its source link.
@@ -386,6 +420,139 @@ interface VoiceRelayOpts {
   configPath: string;
   /** Thinker delegation manager (U6); absent in minimal test setups. */
   delegate?: DelegateManager;
+  /** Voice trace store (DEVELOPMENT TROUBLESHOOTING ONLY). Opt-in via
+   *  `SINAPSO_VOICE_TRACE=1`; absent in `npm start` / desktop and in minimal
+   *  test setups. When present, sessions, transcripts, tool calls, and
+   *  delegation lifecycle are recorded as JSONL under the app data dir for
+   *  offline reconstruction. The store owns its own directory; the relay
+   *  only needs the store handle. */
+  trace?: VoiceTraceStore;
+}
+
+/** Wrap a tool run so each call/result (or failure) is appended to the trace.
+ *  The inner `run` is the existing toolSession.run — its return value and the
+ *  provider-facing result are unchanged. */
+export function makeTracedToolRun(opts: {
+  run: (name: string, args: VoiceArgs) => Promise<VoiceResult>;
+  trace?: VoiceTraceStore;
+  sessionId: string;
+}): (name: string, args: VoiceArgs, callId?: unknown) => Promise<VoiceResult> {
+  const { trace, sessionId } = opts;
+  return async (name, args, callId) => {
+    const callIdStr = typeof callId === "string" && callId ? callId : undefined;
+    trace?.append(sessionId, {
+      type: "tool_call",
+      callId: callIdStr,
+      name,
+      args,
+    });
+    const start = Date.now();
+    let status: "ok" | "error" = "ok";
+    let result: VoiceResult;
+    try {
+      result = await opts.run(name, args);
+    } catch (e) {
+      result = {
+        error: e instanceof Error ? e.message : String(e),
+      };
+      status = "error";
+      trace?.append(sessionId, {
+        type: "tool_result",
+        callId: callIdStr,
+        name,
+        result,
+        durationMs: Date.now() - start,
+        status,
+      });
+      throw e;
+    }
+    if (result && typeof result === "object" && "error" in result)
+      status = "error";
+    trace?.append(sessionId, {
+      type: "tool_result",
+      callId: callIdStr,
+      name,
+      result,
+      durationMs: Date.now() - start,
+      status,
+    });
+    return result;
+  };
+}
+
+/** Accumulate streaming Gemini transcription chunks. Returns the new buffer
+ *  and, when `finished` is true, the completed transcript (cleared from the
+ *  buffer). Pure helper so the relay stays testable without a live socket.
+ *
+ *  Live probe against `gemini-3.1-flash-live-preview` (PCM speech,
+ *  `{inputAudioTranscription:{}, outputAudioTranscription:{}}`):
+ *  input transcription arrived once as `{text:"..."}` with no `finished`;
+ *  output arrived as multiple `{text:"..."}` chunks with no `finished`; and
+ *  no `finished` ever arrived after `serverContent.turnComplete`. The relay
+ *  therefore ALSO flushes buffers on turnComplete (see
+ *  `flushTranscriptionOnTurnComplete`). `finished` is still honored if a
+ *  model emits it. */
+export function accumulateTranscription(
+  prev: string,
+  next: { text?: string; finished?: boolean } | undefined,
+): { buffer: string; finished: string | null } {
+  // Append text first so a `{text, finished:true}` chunk flushes everything
+  // including its own text. A bare `{finished:true}` (no text) still flushes
+  // the existing buffer; both cases return `finished: null` when the buffer
+  // is empty so callers' `if (acc.finished)` checks stay exact.
+  const buffer = next?.text ? prev + next.text : prev;
+  if (next?.finished) {
+    if (!buffer) return { buffer: "", finished: null };
+    return { buffer: "", finished: buffer };
+  }
+  return { buffer, finished: null };
+}
+
+/** Flush any buffered transcript when the provider signals `turnComplete`.
+ *  Returns the final text (or null when nothing buffered) and clears the
+ *  buffer. Because `accumulateTranscription` already clears the buffer on a
+ *  `finished` chunk, calling this on every turnComplete cannot duplicate a
+ *  `finished` flush — empty buffer is a no-op. Pure helper for tests.
+ *
+ *  Also used to drain a partial assistant buffer on `serverContent.
+ *  interrupted` (barge-in): the returned text is emitted with
+ *  `interrupted: true` so it never merges into the next turn's buffer. */
+export function flushTranscriptionOnTurnComplete(buffer: string): {
+  text: string | null;
+  buffer: string;
+} {
+  if (!buffer) return { text: null, buffer: "" };
+  return { text: buffer, buffer: "" };
+}
+
+/** Build trace events for any buffered user/assistant text remaining at
+ *  session close, marked `incomplete: true`. Pure helper for tests; the
+ *  relay calls this behind a one-shot session-end guard so provider-close
+ *  and browser-close cannot duplicate each other. Returns an empty array
+ *  when both buffers are empty (clean
+ *  shutdown after a turnComplete/interrupted flush). */
+export function closeFlushEvents(
+  inputBuf: string,
+  outputBuf: string,
+): Array<{
+  type: "user_transcript" | "assistant_transcript";
+  text: string;
+  incomplete: true;
+}> {
+  const out: Array<{
+    type: "user_transcript" | "assistant_transcript";
+    text: string;
+    incomplete: true;
+  }> = [];
+  if (inputBuf)
+    out.push({ type: "user_transcript", text: inputBuf, incomplete: true });
+  if (outputBuf)
+    out.push({
+      type: "assistant_transcript",
+      text: outputBuf,
+      incomplete: true,
+    });
+  return out;
 }
 
 /** This server's own loopback base URL, read at connection time (when the
@@ -441,10 +608,7 @@ async function bridge(
   base: string,
   opts: VoiceRelayOpts,
 ): Promise<void> {
-  const send = (obj: object) => {
-    if (browser.readyState === WebSocket.OPEN)
-      browser.send(JSON.stringify(obj));
-  };
+  const trace = opts.trace;
 
   // Tool dispatch (working-document id, read_wiki_contract gating, the
   // loopback fetch bodies) lives in ./voice-tools and is testable without
@@ -452,11 +616,48 @@ async function bridge(
   const sessionId = `voice-${Date.now().toString(36)}-${Math.random()
     .toString(36)
     .slice(2, 8)}`;
+  // Wrap `send` so browser-bound action/status/error frames are mirrored into
+  // the trace. `rawSend` is the original ws.send path. The wrapper preserves
+  // delivery exactly; tracing is a side effect and must never block the send.
+  const rawSend = (obj: object) => {
+    if (browser.readyState === WebSocket.OPEN)
+      browser.send(JSON.stringify(obj));
+  };
+  const send = (obj: object) => {
+    if (trace) {
+      const o = obj as Record<string, unknown>;
+      const t = typeof o.type === "string" ? o.type : "";
+      // Strip the wire `type` and record the rest under a trace kind. Audio
+      // frames are explicitly NOT traced (raw audio bytes are out of scope).
+      if (t === "action") {
+        const { type: _drop, ...rest } = o;
+        void _drop;
+        trace.append(sessionId, { type: "browser_action", ...rest });
+      } else if (t === "status") {
+        const { type: _drop, ...rest } = o;
+        void _drop;
+        trace.append(sessionId, { type: "browser_status", ...rest });
+      } else if (t === "error") {
+        trace.append(sessionId, {
+          type: "browser_error",
+          message: o.message,
+        });
+      }
+    }
+    return rawSend(obj);
+  };
   const toolSession = createVoiceToolSession({
     base,
     fetchFn: globalThis.fetch.bind(globalThis),
     getSessionToken: () => opts.sessionToken,
     send,
+    sessionId,
+  });
+  // Traced wrapper around the tool dispatch (used by both Gemini and
+  // realtime call sites). No-op when no trace is configured.
+  const tracedRun = makeTracedToolRun({
+    run: (name, args) => toolSession.run(name, args),
+    trace,
     sessionId,
   });
 
@@ -480,6 +681,8 @@ async function bridge(
     await bridgeGemini(browser, cfg, systemInstruction, toolSession, send, {
       sessionId,
       delegate: opts.delegate,
+      trace,
+      tracedRun,
     });
   } else {
     bridgeRealtime(
@@ -489,6 +692,11 @@ async function bridge(
       systemInstruction,
       toolSession,
       send,
+      {
+        sessionId,
+        trace,
+        tracedRun,
+      },
     );
   }
 }
@@ -499,8 +707,18 @@ async function bridgeGemini(
   systemInstruction: string,
   toolSession: ReturnType<typeof createVoiceToolSession>,
   send: (obj: object) => void,
-  delegation: { sessionId: string; delegate?: DelegateManager },
+  delegation: {
+    sessionId: string;
+    delegate?: DelegateManager;
+    trace?: VoiceTraceStore;
+    tracedRun: (
+      name: string,
+      args: VoiceArgs,
+      callId?: unknown,
+    ) => Promise<VoiceResult>;
+  },
 ): Promise<void> {
+  const { sessionId, trace } = delegation;
   const key = cfg.voice.keys.gemini;
   if (!key) {
     send({
@@ -516,17 +734,45 @@ async function bridgeGemini(
   console.log(
     `[voice] session start: provider=gemini voice=${voice} model=${model}`,
   );
+  trace?.start(sessionId, {
+    provider: "gemini",
+    model,
+    voice,
+    systemPrompt: systemInstruction,
+  });
   const ai = new GoogleGenAI({ apiKey: key });
 
   // Session is assigned in connect(); onmessage may fire tool calls that need it.
   let session: Awaited<ReturnType<typeof ai.live.connect>> | undefined;
+  // Streaming transcription buffers. A final transcript is emitted when the
+  // provider signals `finished: true` on a chunk OR when `turnComplete`
+  // arrives with buffered text (the probed Gemini model only does the
+  // latter). Both paths clear the buffer, so they cannot duplicate.
+  let inputBuf = "";
+  let outputBuf = "";
+  let ended = false;
+  function endSession(): void {
+    if (ended) return;
+    ended = true;
+    for (const ev of closeFlushEvents(inputBuf, outputBuf))
+      trace?.append(sessionId, ev);
+    inputBuf = "";
+    outputBuf = "";
+    trace?.append(sessionId, { type: "session_ended" });
+  }
 
   const delegationRelay = wireDelegation({
     delegate: delegation.delegate,
-    sessionId: delegation.sessionId,
+    sessionId,
     asyncCapable: GEMINI_ASYNC_FC_MODELS.has(model),
     send,
     sendToolResponse: (r) => session?.sendToolResponse(r),
+    onDocumentReady: (notePath, baseHash) =>
+      toolSession.adoptDelegationDocument(notePath, baseHash),
+    onDelegationStart: () =>
+      trace?.append(sessionId, { type: "delegation", phase: "start" }),
+    onDelegationTerminal: (info) =>
+      trace?.append(sessionId, { type: "delegation", ...info }),
   });
 
   const onServerMessage = async (msg: {
@@ -537,6 +783,8 @@ async function bridgeGemini(
       };
       interrupted?: boolean;
       turnComplete?: boolean;
+      inputTranscription?: { text?: string; finished?: boolean };
+      outputTranscription?: { text?: string; finished?: boolean };
     };
     toolCall?: {
       functionCalls?: Array<{
@@ -547,12 +795,70 @@ async function bridgeGemini(
     };
   }) => {
     const sc = msg.serverContent;
-    if (sc?.interrupted) send({ type: "interrupted" });
+    if (sc?.interrupted) {
+      send({ type: "interrupted" });
+    }
     for (const part of sc?.modelTurn?.parts ?? []) {
       if (part.inlineData?.data)
         send({ type: "audio", data: part.inlineData.data });
     }
-    if (sc?.turnComplete) send({ type: "turnComplete" });
+    // Provider-native transcription events (no Groq, no separate VAD path).
+    // Accumulate chunks; append one final transcript per finished turn.
+    if (sc?.inputTranscription) {
+      const acc = accumulateTranscription(inputBuf, sc.inputTranscription);
+      inputBuf = acc.buffer;
+      if (acc.finished)
+        trace?.append(sessionId, {
+          type: "user_transcript",
+          text: acc.finished,
+        });
+    }
+    if (sc?.outputTranscription) {
+      const acc = accumulateTranscription(outputBuf, sc.outputTranscription);
+      outputBuf = acc.buffer;
+      if (acc.finished)
+        trace?.append(sessionId, {
+          type: "assistant_transcript",
+          text: acc.finished,
+        });
+    }
+    if (sc?.interrupted) {
+      // Barge-in: the assistant's in-flight transcript is partial. Flush it
+      // marked `interrupted: true` AFTER this message's chunks are appended,
+      // so the partial text is captured once and never merges into the next
+      // turn's buffer. No-op when outputTranscription already emitted a
+      // `finished` flush (buffer cleared). User input buffer is left alone
+      // — the barge-in's input transcription arrives on a later message and
+      // a fresh turn's turnComplete will flush it.
+      const outInt = flushTranscriptionOnTurnComplete(outputBuf);
+      if (outInt.text)
+        trace?.append(sessionId, {
+          type: "assistant_transcript",
+          text: outInt.text,
+          interrupted: true,
+        });
+      outputBuf = outInt.buffer;
+    }
+    if (sc?.turnComplete) {
+      send({ type: "turnComplete" });
+      // The probed Gemini model never emits `finished`; flush after processing
+      // this message's chunks so a final chunk sharing turnComplete is kept.
+      // No-op when `finished` already cleared a buffer.
+      const inFin = flushTranscriptionOnTurnComplete(inputBuf);
+      if (inFin.text)
+        trace?.append(sessionId, {
+          type: "user_transcript",
+          text: inFin.text,
+        });
+      inputBuf = inFin.buffer;
+      const outFin = flushTranscriptionOnTurnComplete(outputBuf);
+      if (outFin.text)
+        trace?.append(sessionId, {
+          type: "assistant_transcript",
+          text: outFin.text,
+        });
+      outputBuf = outFin.buffer;
+    }
     const calls = msg.toolCall?.functionCalls;
     if (calls?.length && session) {
       const functionResponses = [];
@@ -561,7 +867,11 @@ async function bridgeGemini(
           `[voice] tool ${fc.name}(${JSON.stringify(fc.args ?? {})})`,
         );
         delegationRelay.noteCall(fc);
-        const response = await toolSession.run(fc.name ?? "", fc.args ?? {});
+        const response = await delegation.tracedRun(
+          fc.name ?? "",
+          fc.args ?? {},
+          fc.id,
+        );
         functionResponses.push({ id: fc.id, name: fc.name, response });
       }
       session.sendToolResponse({ functionResponses });
@@ -580,6 +890,12 @@ async function bridgeGemini(
         },
         systemInstruction,
         tools: [{ functionDeclarations: geminiToolDeclarations(model) }],
+        // Provider-native live transcription: chunks stream via
+        // serverContent.input/outputTranscription on every turn. Empty
+        // config objects select provider defaults; audio behavior is
+        // unchanged.
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
       },
       callbacks: {
         onopen: () => {
@@ -592,24 +908,28 @@ async function bridgeGemini(
             "[voice] gemini error:",
             e instanceof Error ? e.message : e,
           );
-          send({
-            type: "error",
-            message: e instanceof Error ? e.message : "provider error",
-          });
+          const message = e instanceof Error ? e.message : "provider error";
+          trace?.append(sessionId, { type: "provider_error", message });
+          send({ type: "error", message });
           browser.close();
         },
         onclose: (event) => {
           const message = geminiCloseError(event);
-          if (message) send({ type: "error", message });
+          if (message) {
+            trace?.append(sessionId, { type: "provider_error", message });
+            send({ type: "error", message });
+          }
+          endSession();
           browser.close();
         },
       },
     });
   } catch (e) {
-    send({
-      type: "error",
-      message: e instanceof Error ? e.message : "failed to connect to Gemini",
-    });
+    const message =
+      e instanceof Error ? e.message : "failed to connect to Gemini";
+    trace?.append(sessionId, { type: "provider_error", message });
+    send({ type: "error", message });
+    endSession();
     browser.close();
     return;
   }
@@ -627,12 +947,17 @@ async function bridgeGemini(
         audio: { data: m.data, mimeType: "audio/pcm;rate=16000" },
       });
     } else if (m.type === "context") {
+      trace?.append(sessionId, {
+        type: "browser_context",
+        view: m.context,
+      });
       toolSession.setBrowserContext(m.context);
     }
   });
 
   browser.on("close", () => {
     console.log("[voice] session ended (mic off)");
+    endSession();
     delegationRelay.dispose();
     toolSession.close();
     try {
@@ -650,7 +975,17 @@ function bridgeRealtime(
   systemInstruction: string,
   toolSession: ReturnType<typeof createVoiceToolSession>,
   send: (obj: object) => void,
+  rt: {
+    sessionId: string;
+    trace?: VoiceTraceStore;
+    tracedRun: (
+      name: string,
+      args: VoiceArgs,
+      callId?: unknown,
+    ) => Promise<VoiceResult>;
+  },
 ): void {
+  const { sessionId, trace } = rt;
   const key = cfg.voice.keys[provider];
   if (!key) {
     send({
@@ -663,6 +998,12 @@ function bridgeRealtime(
 
   const voice = voiceNameForProvider(provider, cfg.voice.voice);
   const model = realtimeModel(provider, cfg);
+  trace?.start(sessionId, {
+    provider,
+    model,
+    voice,
+    systemPrompt: systemInstruction,
+  });
   const url =
     provider === "openai"
       ? `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`
@@ -676,7 +1017,14 @@ function bridgeRealtime(
     },
   });
   let ready = false;
+  let ended = false;
   const toolState = { needsResponse: false };
+
+  const endSession = () => {
+    if (ended) return;
+    ended = true;
+    trace?.append(sessionId, { type: "session_ended" });
+  };
 
   const sendProvider = (obj: object) => {
     if (providerWs.readyState === WebSocket.OPEN)
@@ -709,7 +1057,7 @@ function bridgeRealtime(
     void handleRealtimeMessage(
       data.toString(),
       providerWs,
-      toolSession,
+      rt.tracedRun,
       toolState,
       send,
       () => {
@@ -719,14 +1067,23 @@ function bridgeRealtime(
         }
       },
       closeBrowser,
+      (info) =>
+        trace?.append(sessionId, {
+          type:
+            info.kind === "user" ? "user_transcript" : "assistant_transcript",
+          text: info.text,
+          correlationId: info.correlationId,
+        }),
+      (message) =>
+        trace?.append(sessionId, { type: "provider_error", message }),
     );
   });
 
   providerWs.on("error", (e) => {
-    send({
-      type: "error",
-      message: e instanceof Error ? e.message : `${provider} connection error`,
-    });
+    const message =
+      e instanceof Error ? e.message : `${provider} connection error`;
+    trace?.append(sessionId, { type: "provider_error", message });
+    send({ type: "error", message });
     closeBrowser();
   });
   providerWs.on("unexpected-response", (_req, res) => {
@@ -735,9 +1092,11 @@ function bridgeRealtime(
       body += chunk.toString();
     });
     res.on("end", () => {
+      const message = `${provider} realtime rejected connection (${res.statusCode}): ${body || res.statusMessage || "unknown error"}`;
+      trace?.append(sessionId, { type: "provider_error", message });
       send({
         type: "error",
-        message: `${provider} realtime rejected connection (${res.statusCode}): ${body || res.statusMessage || "unknown error"}`,
+        message,
       });
       closeBrowser();
     });
@@ -746,6 +1105,7 @@ function bridgeRealtime(
     console.warn(
       `[voice] provider ws closed: code=${code} reason=${reason.toString()}`,
     );
+    endSession();
     closeBrowser();
   });
 
@@ -762,12 +1122,17 @@ function bridgeRealtime(
         audio: resamplePcm16Base64(m.data, 16000, 24000),
       });
     } else if (m.type === "context") {
+      trace?.append(sessionId, {
+        type: "browser_context",
+        view: m.context,
+      });
       toolSession.setBrowserContext(m.context);
     }
   });
 
   browser.on("close", () => {
     console.log(`[voice] session ended (mic off): provider=${provider}`);
+    endSession();
     toolSession.close();
     try {
       providerWs.close();
@@ -794,6 +1159,12 @@ export function realtimeSessionConfig(
           input: {
             format: { type: "audio/pcm", rate: 24000 },
             turn_detection: { type: "server_vad" },
+            // Provider-native input transcription using an official supported
+            // model; the result is delivered as
+            // `conversation.item.input_audio_transcription.completed`. xAI is
+            // intentionally not configured (no verified field); events are
+            // still captured below when the provider emits them.
+            transcription: { model: "gpt-4o-mini-transcribe" },
           },
           output: {
             format: { type: "audio/pcm", rate: 24000 },
@@ -813,14 +1184,66 @@ export function realtimeSessionConfig(
       };
 }
 
+interface RealtimeTranscriptInfo {
+  kind: "user" | "assistant";
+  text: string;
+  /** Item / call / response id from the provider, used as a correlation id. */
+  correlationId?: string;
+}
+
+/** Pure parser for OpenAI/xAI Realtime final-transcript events.
+ *  Returns the normalized `{kind, text, correlationId}` or null when the
+ *  message is not a final transcript event or has no usable text.
+ *
+ *  Contract (official event shapes):
+ *  - User: `conversation.item.input_audio_transcription.completed` carries
+ *    the final user speech text in the TOP-LEVEL `transcript` field (NOT
+ *    `transcription`); `item_id` correlates it to the conversation item.
+ *  - Assistant: `response.output_audio_transcript.done` carries the final
+ *    assistant text in `transcript`; `item_id` is preferred as the
+ *    correlation id, falling back to `response_id`.
+ *
+ *  Wrong/missing fields return null so the caller never emits an empty
+ *  or mis-correlated transcript. */
+export function parseRealtimeTranscriptEvent(
+  msg: Record<string, unknown>,
+): RealtimeTranscriptInfo | null {
+  const type = typeof msg.type === "string" ? msg.type : "";
+  if (type === "conversation.item.input_audio_transcription.completed") {
+    const t = msg.transcript;
+    if (typeof t !== "string" || !t) return null;
+    const correlationId =
+      typeof msg.item_id === "string" ? msg.item_id : undefined;
+    return { kind: "user", text: t, correlationId };
+  }
+  if (type === "response.output_audio_transcript.done") {
+    const t = msg.transcript;
+    if (typeof t !== "string" || !t) return null;
+    const correlationId =
+      typeof msg.item_id === "string"
+        ? msg.item_id
+        : typeof msg.response_id === "string"
+          ? msg.response_id
+          : undefined;
+    return { kind: "assistant", text: t, correlationId };
+  }
+  return null;
+}
+
 async function handleRealtimeMessage(
   raw: string,
   providerWs: WebSocket,
-  toolSession: ReturnType<typeof createVoiceToolSession>,
+  runTool: (
+    name: string,
+    args: VoiceArgs,
+    callId?: unknown,
+  ) => Promise<VoiceResult>,
   toolState: { needsResponse: boolean },
   send: (obj: object) => void,
   markReady: () => void,
   closeBrowser: () => void,
+  onTranscript?: (info: RealtimeTranscriptInfo) => void,
+  onProviderError?: (message: string) => void,
 ): Promise<void> {
   let msg: Record<string, unknown>;
   try {
@@ -840,19 +1263,24 @@ async function handleRealtimeMessage(
     const delta = typeof msg.delta === "string" ? msg.delta : msg.audio;
     if (typeof delta === "string") send({ type: "audio", data: delta });
   }
+  // Provider-native final transcripts (no chunking/VAD path of our own).
+  // The official-shape parser handles both user and assistant events and
+  // returns null for anything it cannot match, so the trace only records
+  // real transcripts with their correlation ids.
+  const transcript = parseRealtimeTranscriptEvent(msg);
+  if (transcript) onTranscript?.(transcript);
   if (type === "error" || type === "invalid_request_error") {
     console.warn(`[voice] provider error:`, raw);
     const error = msg.error as Record<string, unknown> | undefined;
-    send({
-      type: "error",
-      message: String(error?.message ?? msg.message ?? "provider error"),
-    });
+    const message = String(error?.message ?? msg.message ?? "provider error");
+    onProviderError?.(message);
+    send({ type: "error", message });
     closeBrowser();
   }
   if (type === "response.function_call_arguments.done") {
     await runRealtimeToolCall(
       providerWs,
-      toolSession,
+      runTool,
       String(msg.name ?? ""),
       msg.arguments,
       msg.call_id,
@@ -879,7 +1307,7 @@ async function handleRealtimeMessage(
   for (const call of calls) {
     await runRealtimeToolCall(
       providerWs,
-      toolSession,
+      runTool,
       String(call.name ?? ""),
       call.arguments,
       call.call_id,
@@ -891,13 +1319,19 @@ async function handleRealtimeMessage(
 
 async function runRealtimeToolCall(
   providerWs: WebSocket,
-  toolSession: ReturnType<typeof createVoiceToolSession>,
+  runTool: (
+    name: string,
+    args: VoiceArgs,
+    callId?: unknown,
+  ) => Promise<VoiceResult>,
   name: string,
   args: unknown,
   callId: unknown,
 ): Promise<void> {
   console.log(`[voice] tool ${name}(${String(args ?? "{}")})`);
-  const result = await toolSession.run(name, parseToolArgs(args));
+  const result = await runTool(name, parseToolArgs(args), callId);
+  // The provider-facing output is unchanged; the traced wrapper already
+  // recorded the call and result for offline reconstruction.
   providerWs.send(
     JSON.stringify({
       type: "conversation.item.create",

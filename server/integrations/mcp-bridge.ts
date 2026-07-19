@@ -94,6 +94,56 @@ function fillPath(
   return { path, consumed };
 }
 
+/**
+ * Plan 020 U5: write_document and read_working_document span the new
+ * vault-backed flow (POST /api/agent/notes / PUT /api/agent/notes /
+ * GET /api/note) and the legacy mode=document flow (POST /api/document /
+ * GET /api/document/:id). The registry binds the primary (vault-backed)
+ * route; this override selects the legacy route only when the caller
+ * supplied a legacy `{ documentId }`. Returns null when the registry's
+ * bound route should be used as-is.
+ */
+function legacyRouteFor(
+  entry: RegistryEntry,
+  args: Record<string, unknown>,
+): RouteBinding | null {
+  if (entry.name === "write_document") {
+    if (typeof args.documentId === "string" && args.documentId)
+      return {
+        method: "POST",
+        path: "/api/document",
+        tokenRequired: true,
+        body: {
+          documentId: "id",
+          revision: "revision",
+          title: "title",
+          markdown: "content",
+        },
+      };
+    if (args.operation === "update" && typeof args.note === "string")
+      return {
+        method: "PUT",
+        path: "/api/agent/notes",
+        tokenRequired: true,
+        body: {
+          note: "id",
+          markdown: "content",
+          baseHash: "baseHash",
+        },
+      };
+    return null; // default POST /api/agent/notes create binding
+  }
+  if (entry.name === "read_working_document") {
+    if (typeof args.documentId === "string" && args.documentId)
+      return {
+        method: "GET",
+        path: "/api/document/{documentId}",
+      };
+    return null; // default GET /api/note?id=... binding
+  }
+  return null;
+}
+
 export function createMcpBridge(opts: McpBridgeOptions) {
   const fetchFn: typeof fetch =
     opts.fetchFn ?? globalThis.fetch.bind(globalThis);
@@ -113,7 +163,7 @@ export function createMcpBridge(opts: McpBridgeOptions) {
     args: Record<string, unknown>,
     tok: string,
   ): Promise<Response> {
-    const route = entry.route;
+    const route = legacyRouteFor(entry, args) ?? entry.route;
     if (!route) throw new Error(`tool ${entry.name} has no route binding`);
     const { path, consumed } = fillPath(route, args);
     if (route.method === "GET") {

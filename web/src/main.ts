@@ -56,9 +56,22 @@ import { BOT_ICON_SVG, type ToolbarExtras } from "./editor-toolbar";
 import { startVoice, type VoiceSession } from "./voice";
 import {
   clearStaleResearchPin,
+  crossCollectionArrival,
   decideAgentResearchDisplay,
+  moveCursor,
+  pinMatchesVisible,
+  setCursorTo,
+  type CollectionCursor,
+  type ResearchCollection,
   type ResearchDisplayAcknowledgment,
 } from "./research-state";
+import {
+  decideTransfer,
+  GenerationToken,
+  isTransferBlocked,
+  type EditorOwner,
+  type EditorSaveState,
+} from "./vault-note-session";
 import { nextIngestMenuOpen, ingestMenuHidden } from "./research-menu";
 import {
   THEMES,
@@ -3377,33 +3390,17 @@ async function boot() {
   // ---- configuration (left stack) → admin modal ----
   $("#config-btn").addEventListener("click", () => void openAdmin());
   // ---- new document (right stack) ----
+  // Plan 020 U4: creation starts with an inline required title in Inbox.
+  // Cancelling the title step writes nothing; there is no placeholder file.
   $("#new-doc-btn").addEventListener("click", async () => {
-    openResearch("document");
-    if (!(await teardownResearchDocument())) return;
-    const created = await createResearchDocument(
-      {
-        async create(title, content) {
-          const result = await api<{ id: string; revision: string }>(
-            "/api/document",
-            { json: { title, content } },
-          );
-          return { id: result.id, title, content, revision: result.revision };
-        },
-        read: async () => {
-          throw new Error("unused");
-        },
-        save: async () => {
-          throw new Error("unused");
-        },
-      },
-      i18n.t("research.newDocument"),
-    );
-    await loadHistory();
-    const entry = researchHistory.find((item) => item.id === created.id);
-    if (entry) {
-      historyIdx = researchHistory.indexOf(entry);
-      await showHistoryEntry(entry);
+    openResearch(researchMode ?? "keyword");
+    if (researchCollection !== "inbox") await setResearchCollection("inbox");
+    else {
+      await loadInbox();
+      showCollectionChrome();
+      $("#research-title").textContent = i18n.t("inbox.title");
     }
+    renderInboxCreateRow($("#research-body"));
   });
   document.addEventListener("click", (e) => {
     const target = e.target as Node;
@@ -3658,6 +3655,8 @@ async function boot() {
   const selectionToggle = $("#selection-context-toggle") as HTMLInputElement;
   let selectionContextState: SelectionContextState = emptySelectionState();
   let includeSelectionContext = true;
+  const viewClientId = crypto.randomUUID();
+  let viewSequence = 0;
 
   function currentSelectionSnapshot(): SelectionSnapshot {
     return buildSelectionSnapshot(selectionContextState);
@@ -4946,17 +4945,23 @@ async function boot() {
   }
 
   function recentResearchContext() {
-    const entry = researchHistory[0];
+    const entry = researchHistory.find(
+      (candidate) => candidate.id === currentVisibleResearchId(),
+    );
     if (!entry) return null;
+    const document =
+      entry.mode === "document" && researchDocumentController
+        ? researchDocumentController.document()
+        : entry.document;
     return {
       id: entry.id,
       mode: entry.mode,
       query: entry.query,
-      ...(entry.document
+      ...(document
         ? {
             document: {
-              title: entry.document.title,
-              content: entry.document.content.slice(0, 3_000),
+              title: document.title,
+              content: document.content.slice(0, 3_000),
             },
           }
         : {}),
@@ -4975,21 +4980,52 @@ async function boot() {
     displayAcknowledgment?: ResearchDisplayAcknowledgment & {
       requestId?: string;
     },
+    activate = document.hasFocus(),
   ) {
-    voiceSession?.sendContext({
+    const view = {
+      readerNoteId: $("#reader").classList.contains("hidden")
+        ? null
+        : openNodeId,
+      researchPanelOpen: !$("#research").classList.contains("hidden"),
+      visibleResearchId: currentVisibleResearchId(),
+      pinnedResearchId: pinnedResearchEntryId,
+      recentResearch: recentResearchContext(),
+    };
+    const context = {
       ...currentSelectionSnapshot(),
-      view: {
-        readerNoteId: $("#reader").classList.contains("hidden")
-          ? null
-          : openNodeId,
-        researchPanelOpen: !$("#research").classList.contains("hidden"),
-        visibleResearchId: currentVisibleResearchId(),
-        pinnedResearchId: pinnedResearchEntryId,
-        recentResearch: recentResearchContext(),
-      },
+      view,
       ...(displayAcknowledgment ? { displayAcknowledgment } : {}),
-    });
+    };
+    voiceSession?.sendContext(context);
+    // One local snapshot serves MCP/CLI. It omits selected text and uses a
+    // window id + sequence so stale or out-of-order updates cannot win.
+    void api("/api/current-view", {
+      json: {
+        clientId: viewClientId,
+        sequence: ++viewSequence,
+        activate,
+        view,
+      },
+    }).catch(() => {});
   }
+  window.addEventListener("focus", () => syncVoiceContext(undefined, true));
+  window.setInterval(() => syncVoiceContext(undefined, false), 15_000);
+  async function runPendingViewActions() {
+    const { actions } = await api<{
+      actions: Array<{ type: string; note?: string }>;
+    }>(
+      `/api/current-view/actions?clientId=${encodeURIComponent(viewClientId)}`,
+      {
+        token: true,
+      },
+    );
+    for (const action of actions) {
+      if (action.type !== "open_note" || !action.note) continue;
+      const node = byId.get(action.note);
+      if (node) select(node);
+    }
+  }
+  window.setInterval(() => void runPendingViewActions().catch(() => {}), 750);
 
   function renderVoiceConfig() {
     const v = integrations?.voice;
@@ -5242,7 +5278,29 @@ async function boot() {
             });
           } else if (action === "open_saved_note") {
             const note = String(p.note ?? "");
-            if (note) void openAfterIngest(note).then(loadHistory);
+            if (note) {
+              await loadInbox();
+              const visibleId = currentVisibleResearchId();
+              const decision = crossCollectionArrival(
+                pinnedResearchEntryId,
+                visibleId
+                  ? { collection: researchCollection, id: visibleId }
+                  : null,
+                { collection: "inbox", id: note },
+              );
+              if (decision === "shown") {
+                openResearch(researchMode ?? "keyword");
+                if (researchCollection !== "inbox")
+                  await setResearchCollection("inbox");
+                await openInboxNote(note);
+              }
+              syncVoiceContext({
+                decision,
+                requestId: String(p.requestId ?? ""),
+                visibleId: currentVisibleResearchId(),
+                pinnedId: pinnedResearchEntryId,
+              });
+            }
           } else if (action === "archived_note") {
             clearSelection();
             void rescan(false);
@@ -5683,6 +5741,33 @@ async function boot() {
   let researchDocumentController: ResearchDocumentController | null = null;
   let pinnedResearchEntryId: string | null = null;
 
+  // ---- Inbox collection (plan 020 U4) + research-side vault-note editor ----
+  // The right panel has two navigation collections ("research" history and
+  // "inbox" notes) sharing chrome but keeping independent arrays/cursors.
+  // An Inbox note mounts a vault-note editor in the right panel via the
+  // single-host transfer table (vault-note-session.ts); the reader keeps
+  // its own editor and the table routes transfers between them. The pin
+  // identity is path-or-history so R10 holds across collections.
+  type InboxEntry = {
+    id: string; // vault-relative .md path
+    title: string;
+    modifiedAt: string;
+    baseHash: string;
+  };
+  let researchCollection: ResearchCollection = "research";
+  let inboxCursorState: CollectionCursor<InboxEntry> = {
+    items: [],
+    cursor: -1,
+  };
+  let inboxPathOpen: string | null = null; // vault path mounted in the right panel
+  let researchVaultEditor: NoteEditor | null = null;
+  let researchVaultAutosave: Autosave | null = null;
+  let researchVaultPath: string | null = null;
+  let researchVaultBaseHashHex: string | null = null;
+  // Stale async-open protection (R17): each open captures a generation; a
+  // slow note-fetch that resolves after a newer open must bail.
+  const vaultSessionToken = new GenerationToken();
+
   function teardownResearchArticle() {
     researchArticleEditor?.destroy();
     researchArticleEditor = null;
@@ -5707,7 +5792,11 @@ async function boot() {
   }
 
   function currentVisibleResearchId(): string | null {
-    return $("#research").classList.contains("hidden") ? null : currentEntryId;
+    if ($("#research").classList.contains("hidden")) return null;
+    // R10: the visible right-panel item, regardless of collection. When an
+    // Inbox note is mounted in the right panel, its vault path is the id.
+    if (researchCollection === "inbox") return inboxPathOpen;
+    return currentEntryId;
   }
 
   function announceResearch(message: string) {
@@ -5969,6 +6058,7 @@ async function boot() {
 
   async function closeResearch() {
     if (!(await teardownResearchDocument())) return;
+    await teardownResearchVaultEditor({ flush: true });
     researchMode = null;
     hideEvidenceBubble();
     $("#research").classList.add("hidden");
@@ -5980,6 +6070,570 @@ async function boot() {
     syncVoiceContext();
   }
   $("#research-close").addEventListener("click", () => void closeResearch());
+
+  // ---- Inbox collection + research-side vault-note editor (plan 020 U3/U4) ----
+  //
+  // The Inbox is a vault location (KTD1): each entry is a real Markdown note
+  // under the configured writeDestination. We render it as a navigation list
+  // in the right panel; clicking an item mounts a vault-note editor in the
+  // research panel via the same guarded save path as the reader. The
+  // transfer table (vault-note-session.ts) routes panel-to-panel moves:
+  // clean = immediate, saving = await, dirty = flush, conflict/error =
+  // block + focus the existing owner (no discard). One canonical path has
+  // at most one mounted editor across both panels (R12-R17).
+
+  function researchVaultState(): EditorSaveState | null {
+    if (!researchVaultAutosave || !researchVaultPath) return null;
+    return researchVaultAutosave.state();
+  }
+
+  function readerVaultState(): EditorSaveState | null {
+    if (!noteAutosave || !editorNoteId) return null;
+    return noteAutosave.state();
+  }
+
+  /** Lookup the current ownership + save state for a canonical path. */
+  function currentOwnership(path: string): {
+    path: string;
+    owner: EditorOwner;
+    state: EditorSaveState;
+  } | null {
+    if (editorNoteId === path && noteAutosave)
+      return { path, owner: "reader", state: noteAutosave.state() };
+    if (researchVaultPath === path && researchVaultAutosave)
+      return {
+        path,
+        owner: "research",
+        state: researchVaultAutosave.state(),
+      };
+    return null;
+  }
+
+  /** Flush-before-destroy for the research-side vault editor (R17).
+   *  Await in-flight save, flush dirty, mirror conflict/error. */
+  async function teardownResearchVaultEditor(opts: {
+    flush: boolean;
+  }): Promise<void> {
+    const editor = researchVaultEditor;
+    const autosave = researchVaultAutosave;
+    const path = researchVaultPath;
+    if (!editor || !autosave || !path) {
+      researchVaultEditor = null;
+      researchVaultAutosave = null;
+      researchVaultPath = null;
+      researchVaultBaseHashHex = null;
+      inboxPathOpen = null;
+      return;
+    }
+    if (opts.flush) {
+      const state = autosave.state();
+      if (state === "saving") {
+        // Wait for the in-flight save to land before tearing down so a
+        // pending debounced save is not orphaned to the mirror.
+        try {
+          await autosave.flush();
+        } catch {
+          /* flush reports its own error via onState */
+        }
+      } else if (state === "dirty" || state === "error") {
+        try {
+          await autosave.flush();
+        } catch {
+          /* keep going to mirror fallback */
+        }
+      } else if (state === "conflict") {
+        // Cannot auto-resolve; preserve the local content in the mirror so
+        // the user does not lose work. The conflict banner re-appears on
+        // re-open via the same path as the reader (prefs.getEditorMirror).
+        prefs.setEditorMirror({
+          vault: activeVaultPath(),
+          noteId: path,
+          content: editor.getContent(),
+          at: Date.now(),
+        });
+      }
+    }
+    autosave.dispose();
+    editor.destroy();
+    researchVaultEditor = null;
+    researchVaultAutosave = null;
+    researchVaultPath = null;
+    researchVaultBaseHashHex = null;
+    inboxPathOpen = null;
+  }
+
+  async function saveVaultNote(
+    path: string,
+    content: string,
+    base: string | null,
+  ): Promise<"saved" | "conflict"> {
+    try {
+      const json: Record<string, string> = { id: path, content };
+      if (base !== null) json.baseHash = await sha256Hex(base);
+      await api("/api/notes", { method: "PUT", json });
+      void sha256Hex(content).then((h) => (researchVaultBaseHashHex = h));
+      const m = prefs.getEditorMirror();
+      if (m && m.noteId === path && m.vault === activeVaultPath())
+        prefs.clearEditorMirror();
+      return "saved";
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) return "conflict";
+      throw e;
+    }
+  }
+
+  function renderResearchVaultSaveState(state: AutosaveState) {
+    const stateEl = $("#research-vault-save-state");
+    stateEl.classList.remove("hidden");
+    stateEl.className = `research-document-save-state save-${state}`;
+    if (state === "clean") {
+      stateEl.textContent = i18n.t("editor.saveState.saved");
+    } else if (state === "conflict") {
+      stateEl.textContent = "";
+      showResearchVaultConflict();
+    } else {
+      stateEl.textContent = i18n.t(`editor.saveState.${state}`);
+    }
+  }
+
+  function showResearchVaultConflict() {
+    researchBanner(
+      i18n.t("editor.conflict.message"),
+      {
+        label: i18n.t("editor.conflict.reload"),
+        run: () => void reloadResearchVaultFromDisk(),
+      },
+      {
+        label: i18n.t("editor.conflict.overwrite"),
+        run: () => void researchVaultAutosave?.overwrite(),
+      },
+    );
+  }
+
+  async function reloadResearchVaultFromDisk() {
+    if (!researchVaultPath || !researchVaultEditor || !researchVaultAutosave)
+      return;
+    try {
+      const { markdown } = await api<{ markdown: string }>(
+        `/api/note?id=${encodeURIComponent(researchVaultPath)}&nolog=1`,
+      );
+      researchVaultEditor.setContent(markdown);
+      researchVaultAutosave.reset(markdown);
+      researchVaultBaseHashHex = null;
+      void sha256Hex(markdown).then((h) => (researchVaultBaseHashHex = h));
+    } catch {
+      /* note gone or unreachable; editor keeps local content */
+    }
+  }
+
+  /** Refresh the inbox list from /api/inbox (R6/R7). Returns the entries so
+   *  callers can sync a freshly created note's id into the cursor. */
+  async function loadInbox(): Promise<InboxEntry[]> {
+    try {
+      const data = await api<{
+        entries: InboxEntry[];
+        destination: string;
+      }>("/api/inbox");
+      inboxCursorState = { items: data.entries ?? [], cursor: -1 };
+      return inboxCursorState.items;
+    } catch {
+      inboxCursorState = { items: [], cursor: -1 };
+      return [];
+    }
+  }
+
+  function renderInboxListInto(body: HTMLElement) {
+    body.innerHTML = "";
+    const toolbar = document.createElement("div");
+    toolbar.className = "inbox-toolbar";
+    const newBtn = document.createElement("button");
+    newBtn.type = "button";
+    newBtn.textContent = i18n.t("inbox.new");
+    newBtn.title = i18n.t("inbox.new");
+    const refreshBtn = document.createElement("button");
+    refreshBtn.type = "button";
+    refreshBtn.textContent = i18n.t("inbox.refresh");
+    refreshBtn.title = i18n.t("inbox.refresh");
+    toolbar.append(newBtn, refreshBtn);
+    body.appendChild(toolbar);
+    const slot = document.createElement("div");
+    slot.className = "inbox-list";
+    body.appendChild(slot);
+    const renderItems = () => {
+      slot.innerHTML = "";
+      if (!inboxCursorState.items.length) {
+        const empty = document.createElement("p");
+        empty.className = "inbox-empty muted";
+        empty.textContent = i18n.t("inbox.empty");
+        slot.appendChild(empty);
+        return;
+      }
+      for (const entry of inboxCursorState.items) {
+        const row = document.createElement("div");
+        row.className = "inbox-list-item";
+        if (entry.id === inboxPathOpen) row.classList.add("active");
+        const title = document.createElement("span");
+        title.className = "inbox-item-title";
+        title.textContent = entry.title || entry.id;
+        const meta = document.createElement("span");
+        meta.className = "inbox-item-meta";
+        meta.textContent = `${entry.id} · ${new Date(entry.modifiedAt).toLocaleString()}`;
+        row.append(title, meta);
+        row.addEventListener(
+          "click",
+          () =>
+            void openInboxNote(entry.id).catch(() => {
+              /* surfaced inside */
+            }),
+        );
+        slot.appendChild(row);
+      }
+    };
+    renderItems();
+    newBtn.addEventListener("click", () => renderInboxCreateRow(body));
+    refreshBtn.addEventListener("click", async () => {
+      await loadInbox();
+      renderInboxListInto(body);
+    });
+  }
+
+  function renderInboxCreateRow(body: HTMLElement) {
+    body.innerHTML = "";
+    const row = document.createElement("div");
+    row.className = "inbox-create-row";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = i18n.t("inbox.create.placeholder");
+    input.setAttribute("aria-label", i18n.t("inbox.create.placeholder"));
+    const ok = document.createElement("button");
+    ok.type = "button";
+    ok.className = "primary";
+    ok.textContent = i18n.t("inbox.create.ok");
+    ok.disabled = true;
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = i18n.t("inbox.create.cancel");
+    const err = document.createElement("div");
+    err.className = "inbox-create-error hidden";
+    row.append(input, ok, cancel);
+    body.append(row, err);
+    input.focus();
+    input.addEventListener("input", () => {
+      ok.disabled = input.value.trim().length === 0;
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !ok.disabled) {
+        event.preventDefault();
+        void createInboxNote(input.value.trim(), body, err);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        renderInboxListInto(body);
+      }
+    });
+    cancel.addEventListener("click", () => renderInboxListInto(body));
+    ok.addEventListener(
+      "click",
+      () => void createInboxNote(input.value.trim(), body, err),
+    );
+  }
+
+  async function createInboxNote(
+    title: string,
+    body: HTMLElement,
+    errEl: HTMLElement,
+  ) {
+    if (!title) {
+      errEl.textContent = i18n.t("inbox.create.required");
+      errEl.classList.remove("hidden");
+      return;
+    }
+    errEl.classList.add("hidden");
+    const creating = i18n.t("inbox.creating");
+    // Disable controls during the round-trip.
+    const buttons = body.querySelectorAll<HTMLButtonElement>("button");
+    buttons.forEach((b) => {
+      b.disabled = true;
+    });
+    const inputEl = body.querySelector<HTMLInputElement>("input[type=text]");
+    if (inputEl) inputEl.disabled = true;
+    const prevErr = errEl.textContent;
+    errEl.textContent = creating;
+    errEl.classList.remove("hidden");
+    try {
+      // POST /api/notes with empty content; server selects actor "user"
+      // (R5) and the configured writeDestination. No untitled placeholder
+      // is ever written (KTD2): an empty title is rejected above.
+      const result = await api<{ ok: boolean; id: string }>("/api/notes", {
+        method: "POST",
+        json: { title, content: "" },
+      });
+      await loadInbox();
+      const opened = await openInboxNote(result.id);
+      if (!opened) {
+        // Rare: the new note did not appear in the listing (rescan lag, or
+        // an exclude rule). Surface a soft error; the user can refresh.
+        errEl.textContent = i18n.t("inbox.openedFail");
+        errEl.classList.remove("hidden");
+        renderInboxListInto(body);
+      }
+    } catch (e) {
+      const bodyErr =
+        e instanceof ApiError
+          ? ((e.body as { error?: string } | null)?.error ?? null)
+          : null;
+      errEl.textContent =
+        bodyErr ?? prevErr ?? creating ?? i18n.t("inbox.createFail");
+      errEl.classList.remove("hidden");
+      buttons.forEach((b) => {
+        b.disabled = false;
+      });
+      if (inputEl) inputEl.disabled = false;
+    }
+  }
+
+  /** Open a vault note in the research panel using the transfer table. */
+  async function openInboxNote(path: string): Promise<boolean> {
+    if (researchCollection !== "inbox") return false;
+    const decision = decideTransfer("research", currentOwnership(path));
+    if (decision.kind === "already-owns") {
+      // Same note re-clicked in the list: focus the existing editor.
+      researchVaultEditor?.view.focus();
+      return true;
+    }
+    if (
+      decision.kind === "blocked-conflict" ||
+      decision.kind === "blocked-error"
+    ) {
+      // The other owner has a conflict/error. Keep + focus it; show a banner
+      // explaining why the click did not switch panels.
+      const from = decision.from;
+      const otherEl =
+        from === "reader" ? $("#reader-body") : $("#research-body");
+      otherEl.querySelector<HTMLElement>(".cm-editor")?.focus();
+      researchError(
+        i18n.t(
+          decision.kind === "blocked-conflict"
+            ? "research.transfer.blockedConflict"
+            : "research.transfer.blockedError",
+        ),
+      );
+      return false;
+    }
+    // Stale-open protection: each open captures a generation; a slower prior
+    // open that resolves later sees isCurrent(generation) === false and bails.
+    const generation = vaultSessionToken.next();
+    // For transfers: flush the other owner's editor before taking it over.
+    const fromOwner =
+      decision.kind === "transfer-clean" ||
+      decision.kind === "transfer-await-saving" ||
+      decision.kind === "transfer-flush-dirty"
+        ? decision.from
+        : null;
+    if (fromOwner) {
+      const ownerAutosave =
+        fromOwner === "reader" ? noteAutosave : researchVaultAutosave;
+      if (ownerAutosave) {
+        try {
+          await ownerAutosave.flush();
+        } catch {
+          /* surfaced via onState */
+        }
+      }
+    }
+    if (!vaultSessionToken.isCurrent(generation)) return false;
+    // After awaiting, the state may have moved to conflict/error. Re-check.
+    const redecision = decideTransfer("research", currentOwnership(path));
+    if (
+      redecision.kind === "blocked-conflict" ||
+      redecision.kind === "blocked-error"
+    ) {
+      const from = redecision.from;
+      const otherEl =
+        from === "reader" ? $("#reader-body") : $("#research-body");
+      otherEl.querySelector<HTMLElement>(".cm-editor")?.focus();
+      researchError(
+        i18n.t(
+          redecision.kind === "blocked-conflict"
+            ? "research.transfer.blockedConflict"
+            : "research.transfer.blockedError",
+        ),
+      );
+      return false;
+    }
+    // Tear down whichever side currently owns it (now clean), then mount.
+    if (editorNoteId === path && fromOwner === "reader") {
+      destroyNoteEditor();
+      $("#reader").classList.add("hidden");
+    } else if (fromOwner === "research") {
+      await teardownResearchVaultEditor({ flush: false });
+    }
+    if (!vaultSessionToken.isCurrent(generation)) return false;
+    // Fetch and mount in the research panel.
+    return mountResearchVaultNote(path, generation);
+  }
+
+  async function mountResearchVaultNote(
+    path: string,
+    generation: number,
+  ): Promise<boolean> {
+    if (!vaultSessionToken.isCurrent(generation)) return false;
+    const body = $("#research-body");
+    body.innerHTML = '<p class="muted">loading…</p>';
+    let markdown: string;
+    try {
+      ({ markdown } = await api<{ markdown: string }>(
+        `/api/note?id=${encodeURIComponent(path)}&nolog=1`,
+      ));
+    } catch {
+      if (!vaultSessionToken.isCurrent(generation)) return false;
+      body.innerHTML = '<p class="muted">could not load note</p>';
+      return false;
+    }
+    if (!vaultSessionToken.isCurrent(generation)) return false;
+    body.innerHTML = "";
+    // Mirror the reader layout: optional display-only title + the editor host.
+    const stripped = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+    const firstLine = stripped.split("\n").find((l) => l.trim());
+    if (!(firstLine && /^#\s+/.test(firstLine))) {
+      const titleEl = document.createElement("h1");
+      titleEl.className = "reader-note-title";
+      const entry = inboxCursorState.items.find((e) => e.id === path);
+      titleEl.textContent = entry?.title || path;
+      body.appendChild(titleEl);
+    }
+    const stateEl = document.createElement("span");
+    stateEl.id = "research-vault-save-state";
+    stateEl.className = "research-document-save-state";
+    body.appendChild(stateEl);
+    const editorHost = document.createElement("div");
+    editorHost.className = "inbox-editor note-editor";
+    body.appendChild(editorHost);
+    const editor = createNoteEditor(editorHost, {
+      content: markdown,
+      onWikiLinkClick: navigateWikiTarget,
+      onChange: () => {
+        researchVaultAutosave?.notifyChange();
+        updateBrandStats();
+        syncVoiceContext();
+      },
+    });
+    researchVaultEditor = editor;
+    researchVaultPath = path;
+    inboxPathOpen = path;
+    inboxCursorState = setCursorTo(inboxCursorState, path);
+    researchVaultAutosave = createAutosave({
+      baseContent: markdown,
+      getContent: () => researchVaultEditor?.getContent() ?? markdown,
+      save: (content, base) => saveVaultNote(path, content, base),
+      onState: renderResearchVaultSaveState,
+    });
+    renderResearchVaultSaveState("clean");
+    researchVaultBaseHashHex = null;
+    void sha256Hex(markdown).then((h) => (researchVaultBaseHashHex = h));
+    // Offer the crash-recovery mirror for this note (KTD4b, vault+path keyed).
+    const mirror = prefs.getEditorMirror();
+    if (
+      mirror &&
+      mirror.noteId === path &&
+      mirror.vault === activeVaultPath() &&
+      mirror.content !== markdown
+    ) {
+      researchBanner(
+        i18n.t("editor.mirror.message"),
+        {
+          label: i18n.t("editor.mirror.restore"),
+          run: () => {
+            researchVaultEditor?.setContent(mirror.content);
+            prefs.clearEditorMirror();
+            researchVaultAutosave?.notifyChange();
+          },
+        },
+        {
+          label: i18n.t("editor.mirror.discard"),
+          run: () => prefs.clearEditorMirror(),
+        },
+      );
+    }
+    syncVoiceContext();
+    updateBrandStats();
+    return true;
+  }
+
+  // Mirror the reader's beforeunload flush for the research-side editor.
+  window.addEventListener("blur", () => void researchVaultAutosave?.flush());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden")
+      void researchVaultAutosave?.flush();
+  });
+
+  function showCollectionChrome() {
+    const collections = $("#research-collections");
+    if (collections) collections.classList.remove("hidden");
+    const isResearch = researchCollection === "research";
+    // Research collection keeps the existing nav/footer/trash; Inbox hides
+    // them — Inbox has no trash semantics (R9) and its navigation is the
+    // list itself.
+    $("#research-nav").classList.toggle("hidden", !isResearch);
+    $("#research-trash").classList.toggle("hidden", !isResearch);
+    $("#research-footer").classList.toggle("hidden", !isResearch);
+    for (const id of [
+      "research-collection-research",
+      "research-collection-inbox",
+    ]) {
+      const btn = document.getElementById(id) as HTMLButtonElement | null;
+      if (!btn) continue;
+      const active =
+        (id === "research-collection-research" && isResearch) ||
+        (id === "research-collection-inbox" && !isResearch);
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", String(active));
+    }
+  }
+
+  /** Switch the right panel between Research history and Inbox. Flushes the
+   *  research-side vault editor first (R17). */
+  async function setResearchCollection(coll: ResearchCollection) {
+    if (researchCollection === coll) return;
+    // Flush-before-switch (R17): a dirty/saving Inbox editor cannot be
+    // orphaned silently; mirror only on conflict/error.
+    await teardownResearchVaultEditor({ flush: true });
+    researchCollection = coll;
+    inboxPathOpen = null;
+    researchError(null);
+    showCollectionChrome();
+    const body = $("#research-body");
+    body.innerHTML = "";
+    if (coll === "inbox") {
+      body.innerHTML = `<p class="muted">${i18n.t("inbox.loading")}</p>`;
+      await loadInbox();
+      if (researchCollection !== "inbox") return; // user switched again
+      renderInboxListInto(body);
+      $("#research-title").textContent = i18n.t("inbox.title");
+    } else {
+      // Back to research: re-show the current entry if any, else hide body.
+      $("#research-title").textContent = researchMode
+        ? i18n.t(`research.${researchMode}`)
+        : i18n.t("research.title");
+      if (currentEntryId) {
+        const entry = researchHistory.find((e) => e.id === currentEntryId);
+        if (entry) {
+          await showHistoryEntry(entry);
+        }
+      }
+      if (!currentEntryId) updateHistoryNav();
+    }
+    updateBrandStats();
+    syncVoiceContext();
+  }
+
+  $("#research-collection-research").addEventListener(
+    "click",
+    () => void setResearchCollection("research"),
+  );
+  $("#research-collection-inbox").addEventListener(
+    "click",
+    () => void setResearchCollection("inbox"),
+  );
 
   // ---- research footer: curate persisted research into Inbox or a wiki ----
   {
@@ -6106,11 +6760,17 @@ async function boot() {
         await flushWorkingDocument();
         if (!currentEntryId) throw new Error("research-not-active");
         const researchId = currentEntryId;
-        const data = await api<{ id: string }>(
+        const data = await api<{ id: string; baseHash: string }>(
           `/api/research/history/${encodeURIComponent(researchId)}/save-inbox`,
           { json: {} },
         );
-        const opened = await openAfterIngest(String(data.id));
+        if (pinnedResearchEntryId === researchId)
+          pinnedResearchEntryId = String(data.id);
+        await loadHistory();
+        await loadInbox();
+        if (researchCollection !== "inbox")
+          await setResearchCollection("inbox");
+        const opened = await openInboxNote(String(data.id));
         if (!opened) {
           // The note IS saved on the server, but the rescan/open failed, so
           // keep the visible research panel intact and surface a non-blocking
@@ -6120,7 +6780,7 @@ async function boot() {
           saveInbox.disabled = false;
           return;
         }
-        await advanceResearchAfterRemoval();
+        syncResearchPinUi();
       } catch (e) {
         footerFail(e, saveInbox);
       }
@@ -6730,6 +7390,7 @@ async function boot() {
       onChange: () => {
         researchDocumentController?.autosave.notifyChange();
         updateBrandStats();
+        syncVoiceContext();
       },
     });
     researchDocumentEditor = editor;
@@ -7281,11 +7942,15 @@ async function boot() {
     const ok = await rescan(false);
     if (!ok) return false; // pending-select kept as the reload fallback
     const n = byId.get(id);
-    if (n) {
-      sessionStorage.removeItem("sinapso-pending-select");
-      sessionStorage.removeItem("sinapso-pending-select-nolog");
-      select(n, undefined, logReader);
-    }
+    // Rescan reported success but the graph still omits the saved note (the
+    // scanner may be mid-rebuild, exclude rules skipped it, or the server's
+    // graph snapshot is stale). Return false so callers keep the visible
+    // document and surface "saved but not opened" — pending-select survives
+    // in sessionStorage for a reload to land on the note.
+    if (!n) return false;
+    sessionStorage.removeItem("sinapso-pending-select");
+    sessionStorage.removeItem("sinapso-pending-select-nolog");
+    select(n, undefined, logReader);
     return true;
   }
 

@@ -82,6 +82,55 @@ describe("mcp entries and schemas", () => {
 });
 
 describe("bridge proxying (AE4)", () => {
+  it("reads the active frontend note through current_view", async () => {
+    const browserToken = await fetch(`${base}/api/session`)
+      .then((r) => r.json() as Promise<{ token: string }>)
+      .then((body) => body.token);
+    await fetch(`${base}/api/current-view`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-sinapso-token": browserToken,
+      },
+      body: JSON.stringify({
+        clientId: "desktop-test",
+        sequence: 1,
+        activate: true,
+        view: {
+          readerNoteId: "notes/alpha.md",
+          researchPanelOpen: false,
+        },
+      }),
+    }).then((r) => expect(r.status).toBe(204));
+
+    const result = await createMcpBridge({ base }).call(
+      entryFor("current_view")!,
+      {},
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      body: {
+        viewStateKnown: true,
+        view: { readerNoteId: "notes/alpha.md" },
+      },
+    });
+
+    const opened = await createMcpBridge({ base }).call(
+      entryFor("open_note")!,
+      {
+        note: "notes/alpha.md",
+      },
+    );
+    expect(opened).toMatchObject({ ok: true, status: 202 });
+    const actions = await fetch(
+      `${base}/api/current-view/actions?clientId=desktop-test`,
+      { headers: { "x-sinapso-token": browserToken } },
+    ).then((r) => r.json() as Promise<{ actions: unknown[] }>);
+    expect(actions.actions).toEqual([
+      { type: "open_note", note: "notes/alpha.md" },
+    ]);
+  });
+
   it("creates a journaled vault note through the guarded route", async () => {
     const bridge = createMcpBridge({ base });
     const before = readChangeLog(DATA).length;

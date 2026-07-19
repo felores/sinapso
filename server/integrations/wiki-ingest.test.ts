@@ -276,7 +276,7 @@ describe("wiki ingest proposals", () => {
         }),
       ]),
     );
-    expect(readChangeLog(f.data)[0]).toMatchObject({
+    expect(readChangeLog(f.data).at(-1)).toMatchObject({
       action: "create",
       path: expect.stringMatching(/^raw\//),
       mode: "approval",
@@ -302,9 +302,9 @@ describe("wiki ingest proposals", () => {
       .send({ wikiId: "wiki", operations: proposed.body.operations });
 
     expect(applied.status).toBe(409);
-    expect(applied.body.error).toContain("exact note path already exists");
+    expect(applied.body.error).toContain("stale create target");
     expect(existsSync(join(f.vault, "wiki", "derived.md"))).toBe(false);
-  });
+  }, 10_000);
 
   it("runs synthesis on the thinker tier when configured (U2)", async () => {
     const f = fixture();
@@ -547,7 +547,7 @@ describe("wiki ingest proposals", () => {
     });
   });
 
-  it("moves an Inbox note to its exact RAW path before derived operations", async () => {
+  it("preflights all operations and moves an Inbox note to RAW last", async () => {
     const f = fixture({
       llm: '{"operations":[{"type":"create","path":"wiki/derived.md","content":"# Derived"}]}',
     });
@@ -584,8 +584,8 @@ describe("wiki ingest proposals", () => {
           { type: "edit", path: "wiki/missing.md", content: "x" },
         ],
       });
-    expect(failed.status).toBe(404);
-    expect(existsSync(join(f.vault, "inbox", "source.md"))).toBe(false);
+    expect(failed.status).toBe(409);
+    expect(existsSync(join(f.vault, "inbox", "source.md"))).toBe(true);
     const applied = await request(f.app)
       .post("/api/wiki-ingest/apply")
       .set(TOKEN_HEADER, t)

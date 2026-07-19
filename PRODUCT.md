@@ -1,93 +1,79 @@
+---
+name: Sinapso
+last_updated: 2026-07-18
+strategy_ref: STRATEGY.md
+---
+
 # Sinapso
 
-> Your whole knowledge world, ready to talk, research, and decide with you.
+## Product Promise
 
-## What This Is
+Sinapso makes a user-owned knowledge world available as a grounded partner for exploration, research, synthesis, and decisions while keeping portable Markdown and YAML files under the user's control.
 
-Sinapso is an independent knowledge platform for linked Markdown and YAML files you own. It turns a folder of notes into a living 3D galaxy: every note is a glowing node, every link a strand between them, and the clusters that emerge are your actual areas of knowledge. You fly through it, click a note to read it, and talk to it. A real-time voice assistant explores your notes with you, searches the web, pulls in new sources, drafts documents, and files them into your knowledge base, all by conversation. Obsidian compatibility and handoff are optional conveniences, not requirements.
+## Primary User and Job
 
-## The Origin Story
+Independent knowledge operators, including consultants, researchers, founders, and analysts, use Sinapso to recover relevant context, discover connections, and turn accumulated knowledge into durable work without rebuilding their history in every tool or conversation.
 
-Sinapso began as a repository with a single star. It was created by Fable, the most powerful AI in the world, which built the original 3D visualizer and left it open source. A human found it while hunting for a way to see a 5,000-note knowledge base that every other tool choked on - and this one flew. Fast camera, fluid zoom into clusters, beautiful. He audited it, adopted it, and has been evolving it ever since: voice, research, ingestion, versioning. Born from an AI, raised by a human, open to everyone. MIT licensed.
+## Product Principles
 
-## Who This Is For
+- **User ownership is non-negotiable.** Markdown and YAML remain portable and canonical.
+- **Local capability comes first.** Core reading, editing, search, and visualization work without a required account or managed service.
+- **Knowledge must act.** Research and decisions should produce durable artifacts, not disposable chat history.
+- **External action is explicit.** Network access, AI spending, and repository synchronization happen only through user-triggered paths.
+- **Vendor independence is a feature.** Obsidian and model providers are optional integrations, not foundations the product cannot outlive.
 
-**Primary audience: independent knowledge operators.** Consultants, researchers, founders, analysts, and other people who maintain substantial personal knowledge and need to turn it into research, decisions, and durable deliverables.
+## Current Experience
 
-- People who repeatedly reconstruct context before important work and still miss relevant knowledge they already possess.
-- People with years of linked notes who need to see patterns, gaps, and connections across a large collection.
-- People who collect sources from everywhere and need them connected, not piled up.
-- People who want Word documents, PDFs, and web sources converted into clean files that both humans and AI can use.
-- People who prefer their own pay-per-use AI keys over mandatory bundled AI subscriptions.
-- Tinkerers who want a knowledge base their AI agents can work with, not a vendor-controlled silo.
+The desktop and local web application scans a folder of linked Markdown into a navigable 3D graph. Users can open and edit notes beside the graph, search their vault, ingest external material, conduct grounded voice and text workflows, and preserve useful results as files in the same knowledge system.
 
-## The Problem It Solves
+## Current Capabilities
 
-You spent years building a knowledge base, but important research and decisions still begin with reconstructing context. Relevant knowledge is easy to miss, generic AI lacks your accumulated history, and useful work disappears into disposable conversations. A file tree, a search box, and an unreadable graph do not help your knowledge act when it matters.
+- Incremental scanning of linked Markdown and YAML metadata into a local graph.
+- Large-vault 3D navigation, filtering, grouping, clustering, and saved layouts.
+- An always-editable Markdown reader with guarded autosave and version recovery.
+- Keyword, literal, path, and optional local semantic discovery.
+- Explicit, user-triggered web research and model-assisted synthesis using user-provided keys.
+- Document and URL ingestion with preview and guarded writes into the vault.
+- Real-time voice navigation, discovery, research, drafting, and delegated thinking.
+- CLI and MCP access to the same loopback product tools.
+- Explicit Git commit and synchronization workflows for vaults that use Git.
 
-Sinapso turns your knowledge world into a place you can explore and a partner you can consult. Patterns you never noticed become visible. New material flows in clean: drop a URL or a document, preview the resulting note, and connect it to what you already have. Grounded conversation, research, synthesis, and decision support produce durable work instead of another chat transcript.
+## Planned Product
 
-## What You Can Do With It
+- Opt-in private synchronization, encrypted backup, recovery, and versioning as managed continuity services.
+- A mobile companion focused first on conversation, research, decisions, search, capture, and reading.
+- Selective document sharing that gives recipients immediate value and a path into their own Sinapso workspace.
 
-- **See your entire knowledge base at once** - thousands of notes, tens of thousands of links, smooth. Fly into a cluster and watch the labels fade in.
-- **Read without leaving the map** - click a note, it opens beside the graph. One more click sends it to Obsidian for hand-editing.
-- **Talk to your vault** - "show me what I have on temporal knowledge graphs" opens panels, finds notes, synthesizes answers. Interrupt it mid-sentence; it keeps up. It can draft a document with you and file it where it belongs.
-- **Search three ways** - by keyword, by meaning (finds notes that are *about* the same thing even with different words), or out on the web with an analysis of the results, not just links.
-- **Turn documents into notes** - a PDF, a Word file, a slide deck, a web page, a web result. Preview first, save when you approve, linked into your base.
-- **Use selected text as context** - highlight a passage and launch a research or expansion workflow from it. No chatbot wall-of-text; the result lands as something you keep.
-- **Keep versions** - every note has a history. Preview an old version, restore it if you liked it better. Nothing is ever silently overwritten.
-- **Make it yours** - ten themes, four node styles, your groups, your colors, filters that persist.
+Planned capabilities are not shipped commitments. `ROADMAP.md`, when present, owns their outcome sequence and status.
 
-## How It Feels to Use
+## Business Model
 
-Fast is the first thing you notice. Vaults that made other tools crawl feel weightless here - you orbit the whole galaxy, dive into a cluster, and it never stutters. The second thing is quiet: there's no chatbot pane nagging you, no feed, no wall of text. The interface is the map and a search field, and everything grows from there. Ask by voice and panels open themselves; results arrive as notes, not as chat scroll you'll lose tomorrow. It feels less like using an app and more like walking around inside your own head - with an assistant walking next to you.
+The local platform remains free, open source, and usable without an account. AI providers remain bring-your-own-key where applicable. Optional paid continuity earns recurring revenue by removing synchronization, recovery, backup, and mobile operational work rather than charging users to access their own files.
 
-## Talk to Your Second Brain
+## Trust and Ownership
 
-The voice assistant is not a gimmick bolted on top. It's the fastest way to drive the whole system:
+- The current core binds to loopback and keeps scanning, rendering, reading, and local search on the user's machine.
+- External Web, LLM, and Git actions require explicit user action and applicable consent or credentials.
+- Secrets stay outside the vault and are never returned by product APIs.
+- App-authored note writes use the guarded, journaled write path.
+- Managed continuity must preserve local files as canonical rather than replacing them with a cloud-only format.
 
-- "What do I have about agent memory? Open the strongest one."
-- "Search the web for what changed in that framework this year and give me the short version."
-- "Take this and the note I have open, draft a synthesis, and read it back to me."
-- "Save that as a document in my architecture wiki."
-- "Link this note to the one about knowledge graphs."
+## Design Context
 
-It answers in real time, accepts interruptions, corrects itself when you push back, and works in your language. You pick the voice and the provider - three of the best real-time voice engines available, using your own key. The difference from a chatbot: nothing gets lost in a scroll. What you produce together becomes notes, linked and saved, part of your base.
+- **Register:** product.
+- **Experience qualities:** fast, quiet, spatial, direct, and trustworthy.
+- **Interaction principle:** expose the knowledge and the next useful action without turning the interface into a chatbot transcript or activity feed.
+- **Accessibility:** preserve readable non-3D paths to notes and controls; no project-wide WCAG target is currently specified.
 
-## Free Local Core, Optional Paid Continuity
+## Deliberate Boundaries
 
-Sinapso's local platform is free and open source, with no account required. Optional smart features continue to run on **your own keys, pay-per-use**:
+The current strategic exclusions are maintained in `STRATEGY.md`: full real-time collaboration and complex permissions, enterprise administration, and full mobile 3D parity are deferred until their preceding demand signals are proven.
 
-- Web research costs cents - you load credits and they last.
-- The language models behind synthesis and document drafting are pay-as-you-go, with efficient, current models as the defaults.
-- Voice works the same way: your key and your usage.
-- Semantic search over your own notes is fully local and costs nothing.
+## Document Ownership
 
-Planned managed services will offer opt-in private synchronization, encrypted backup, recoverability, versioning, and mobile access as a paid subscription. That subscription is for continuity across devices, not mandatory AI access. The local core remains free forever and keeps user-owned Markdown and YAML as the source of truth.
-
-## Planned Companion and Sharing
-
-The planned mobile companion will focus first on grounded conversation, research, decisions, search, capture, and reading. Full mobile 3D parity comes later, only if the companion experience proves useful.
-
-Selective document sharing is the first planned collaboration and growth loop. Recipients should get immediate value from a shared document and an invitation to start their own Sinapso workspace. Live co-editing, presence, and complex permissions are deliberately deferred until sharing proves demand.
-
-## Why It's Different
-
-- **It stays fast where everything else breaks.** Big vaults are the point, not the edge case.
-- **The current local core stays on your machine.** Scanning, rendering, local search, and reading do not send vault data elsewhere. Existing Web, LLM, and Git actions run only when you explicitly trigger them, with consent or your own keys where required.
-- **Your notes stay yours** - plain Markdown files in your own folders. Sinapso never locks them in, never rewrites them behind your back, asks before it saves anything, and keeps a journal of every change.
-- **It is independent of Obsidian.** Any linked Markdown collection works. If you use Obsidian, one click can hand a note there for editing.
-- **Your AI gains a capability.** Sinapso isn't just a viewer - it's a surface agents can use: voice agents today, and a roadmap where your other AI assistants tap your knowledge base as grounded context for deep reasoning.
-- **Open source, MIT, built on open source** - the converter, the semantic engine, the visualizer, all of it inspectable.
-
-## A Day in the Life
-
-Mariana runs research for a small consultancy. Her vault is six years old and past five thousand notes; she stopped opening the graph view years ago because it froze her laptop.
-
-Monday morning she opens Sinapso. The galaxy loads instantly - green cluster for clients, orange for methods, a faint archipelago of old project notes she'd forgotten. She spots a bright strand between "pricing experiments" and a client from 2023 and clicks it. The note opens beside the map. Useful. She says, "find everything related to this and open the strongest three." The panels arrange themselves.
-
-A client sends her a 40-page PDF at noon. She drops it into the ingest bar, watches the clean preview appear, trims the target folder, saves. It's a note now - searchable, linked, ready for any model to read without choking on formatting garbage.
-
-Late afternoon, walking to get coffee with headphones on: "Search the web for what's changed in EU sustainability reporting this year. Summarize it against my compliance notes and save the draft to the client wiki." By the time she's back, the draft is in the vault, versioned, linked, waiting for her edits - in Obsidian, if she wants, one click away.
-
-She never wrote a wall-of-text prompt. She never lost an answer in a chat scroll. Her knowledge base just got denser, and she can *see* it.
+- `STRATEGY.md`: direction, metrics, tracks, and exclusions.
+- `PRODUCT.md`: product promise, current/planned experience, business model, and trust contract.
+- `ROADMAP.md`: mutable outcome sequence when created.
+- `CONTEXT.md`: optional canonical domain vocabulary when ambiguity exists.
+- `README.md`: installation, configuration, and usage documentation.
+- `docs/plans/` and `docs/solutions/`: durable implementation plans and tactical learnings.
