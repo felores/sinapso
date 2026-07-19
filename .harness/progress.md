@@ -479,3 +479,22 @@ F001-F061 are immutable historical completed features. Plans and work completed 
 
 **Verifier result:** required serial gate passed on current HEAD: `npm test` 773/773 (50 files), `npm run typecheck`, `npm run build`, and `npm run test:e2e` 13/13 with zero skips and clean browser diagnostics. Independent validator PASS. Features passing: 68/68 (100%).
 
+## Session 2026-07-19-142006
+
+**Features completed:**
+- F069-F070: deterministic local Inbox Review suggestions plus bounded atomic app-local decision/comment state.
+- F071-F072: manual review and metadata routes plus hash-revalidated Continue, Link, Merge, Archive, and proposal-only Ingest approval adapters through the sanctioned writer.
+- F073-F074: inline accessible EN/ES review cards, comments/dismissal, merge preview, wiki choice, stale handling, source/target editor ownership blocking, Inbox refresh, and archive pin teardown.
+- F075: hermetic narrow-viewport and conflicted-target browser proof.
+
+**Review fixes:** normalized expected stale review outcomes without browser diagnostics; blocked Merge when its target editor is non-clean; cleared a pin for an archived Inbox path; added contextual accessible names for repeated card controls.
+
+**Verifier result:** required serial gate passed: `npm test` 1015/1015 (59 files), `npm run typecheck`, `npm run build`, and `npm run test:e2e` 23/23 with zero skips. `test-results/browser-diagnostics.json` has empty entries/failures. Independent evaluator PASS. Features passing: 75/75 (100%). No commit or push requested.
+
+**Post-verification fixes:** LAN HTTP boot no longer depends on secure-context-only `crypto.randomUUID`; pending view-action polling backs off to 15 seconds while the backend is unavailable and resets after recovery; the right-panel toggle reopens the Inbox collection instead of crossing into research history. Added focused unit and browser regressions.
+
+**Final verifier result:** required serial gate passed: `npm test` 1016/1016 (59 files), `npm run typecheck`, `npm run build`, and `npm run test:e2e` 24/24 with zero skips. One unrelated active-view API test hit its existing 5-second timeout during an earlier gate attempt and passed in 36 ms when rerun alone; the final serial gate passed unchanged. No commit or push requested.
+
+**LAN startup recovery:** live Herdr console evidence showed Vite accepting LAN traffic before the backend bound port 5175; the one-shot `/api/graph` request then permanently rejected `boot()` and left the Mac Air without a 3D graph. Added bounded initial graph retries and a deterministic E2E that fails the first graph request. Live `http://192.168.1.11:5173/` verification rendered a 1280x720 canvas with 4,067 notes / 5,146 links and zero browser console errors. Final serial gate passed 1016/1016 Vitest, typecheck, build, and 25/25 Playwright tests.
+
+**Error-free dev restart:** changed `dev` and `dev:network` startup ordering so their Vite processes wait for a successful backend `/api/graph` response. A controlled restart in the live Herdr console showed backend readiness before Vite opened port 5173, with zero new proxy errors; the LAN `/api/graph` endpoint then returned successfully. `npm run typecheck` passed.

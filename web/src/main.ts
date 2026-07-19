@@ -59,6 +59,7 @@ import {
   crossCollectionArrival,
   decideAgentResearchDisplay,
   moveCursor,
+  nextViewActionPollDelay,
   pinMatchesVisible,
   setCursorTo,
   type CollectionCursor,
@@ -73,6 +74,12 @@ import {
   type EditorSaveState,
 } from "./vault-note-session";
 import { nextIngestMenuOpen, ingestMenuHidden } from "./research-menu";
+import {
+  findBlockingReviewOwnership,
+  pinAfterReviewMove,
+  updateReviewCard,
+  type InboxReviewCard,
+} from "./inbox-review-state";
 import {
   THEMES,
   PALETTE,
@@ -197,11 +204,27 @@ function sanitizeRenderedMarkdown(html: string): string {
 const EXT_ICON =
   '<svg class="ext-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/></svg>';
 
+async function loadGraph(): Promise<Graph> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const response = await apiRaw("/api/graph");
+      if (!response.ok)
+        throw new Error(`graph request failed: ${response.status}`);
+      return (await response.json()) as Graph;
+    } catch (error) {
+      if (attempt === 9) throw error;
+      await new Promise((resolve) =>
+        window.setTimeout(resolve, Math.min(250 * 2 ** attempt, 2_000)),
+      );
+    }
+  }
+}
+
 async function boot() {
   // Fetch graph data (scanned vault topology) and cached layout (node positions from previous session)
   // Layout cache is keyed by content fingerprint; if vault unchanged, positions are reused
   const [data, layout] = await Promise.all([
-    apiRaw("/api/graph").then((r) => r.json()) as Promise<Graph>,
+    loadGraph(),
     api<{
       fingerprint: string;
       positions: Record<string, number[]>;
@@ -3655,7 +3678,9 @@ async function boot() {
   const selectionToggle = $("#selection-context-toggle") as HTMLInputElement;
   let selectionContextState: SelectionContextState = emptySelectionState();
   let includeSelectionContext = true;
-  const viewClientId = crypto.randomUUID();
+  const viewClientId =
+    crypto.randomUUID?.() ??
+    `view-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   let viewSequence = 0;
 
   function currentSelectionSnapshot(): SelectionSnapshot {
@@ -5025,7 +5050,22 @@ async function boot() {
       if (node) select(node);
     }
   }
-  window.setInterval(() => void runPendingViewActions().catch(() => {}), 750);
+  let viewActionPollDelay = 750;
+  const pollPendingViewActions = async () => {
+    let succeeded = false;
+    try {
+      await runPendingViewActions();
+      succeeded = true;
+    } catch {
+      /* backend may be restarting; retry with bounded backoff */
+    }
+    viewActionPollDelay = nextViewActionPollDelay(
+      viewActionPollDelay,
+      succeeded,
+    );
+    window.setTimeout(pollPendingViewActions, viewActionPollDelay);
+  };
+  window.setTimeout(pollPendingViewActions, viewActionPollDelay);
 
   function renderVoiceConfig() {
     const v = integrations?.voice;
@@ -5764,6 +5804,9 @@ async function boot() {
   let researchVaultAutosave: Autosave | null = null;
   let researchVaultPath: string | null = null;
   let researchVaultBaseHashHex: string | null = null;
+  let inboxReviewCards: InboxReviewCard[] = [];
+  let inboxReviewNoteCount = 0;
+  let inboxReviewLoading = false;
   // Stale async-open protection (R17): each open captures a generation; a
   // slow note-fetch that resolves after a newer open must bail.
   const vaultSessionToken = new GenerationToken();
@@ -6254,7 +6297,13 @@ async function boot() {
     refreshBtn.type = "button";
     refreshBtn.textContent = i18n.t("inbox.refresh");
     refreshBtn.title = i18n.t("inbox.refresh");
-    toolbar.append(newBtn, refreshBtn);
+    const reviewBtn = document.createElement("button");
+    reviewBtn.type = "button";
+    reviewBtn.className = "inbox-review-trigger";
+    reviewBtn.textContent = i18n.t("inbox.review.run");
+    reviewBtn.title = i18n.t("inbox.review.run");
+    reviewBtn.disabled = inboxReviewLoading;
+    toolbar.append(newBtn, refreshBtn, reviewBtn);
     body.appendChild(toolbar);
     const slot = document.createElement("div");
     slot.className = "inbox-list";
@@ -6292,9 +6341,362 @@ async function boot() {
     renderItems();
     newBtn.addEventListener("click", () => renderInboxCreateRow(body));
     refreshBtn.addEventListener("click", async () => {
+      refreshBtn.disabled = true;
       await loadInbox();
       renderInboxListInto(body);
     });
+    reviewBtn.addEventListener("click", () => void runInboxReview(body));
+  }
+
+  async function runInboxReview(body: HTMLElement) {
+    if (inboxReviewLoading) return;
+    inboxReviewLoading = true;
+    renderInboxListInto(body);
+    const trigger = body.querySelector<HTMLButtonElement>(
+      ".inbox-review-trigger",
+    );
+    if (trigger) trigger.textContent = i18n.t("inbox.review.running");
+    announceResearch(i18n.t("inbox.review.running"));
+    try {
+      const result = await api<{ cards: InboxReviewCard[]; noteCount: number }>(
+        "/api/inbox/review",
+      );
+      inboxReviewCards = result.cards;
+      inboxReviewNoteCount = result.noteCount;
+      renderInboxReviewInto(body);
+      announceResearch(
+        i18n.t("inbox.review.loaded", { count: result.cards.length }),
+      );
+    } catch {
+      researchError(i18n.t("inbox.review.failed"));
+      renderInboxListInto(body);
+    } finally {
+      inboxReviewLoading = false;
+    }
+  }
+
+  function renderInboxReviewInto(body: HTMLElement) {
+    body.innerHTML = "";
+    const toolbar = document.createElement("div");
+    toolbar.className = "inbox-toolbar inbox-review-toolbar";
+    const back = document.createElement("button");
+    back.type = "button";
+    back.textContent = i18n.t("inbox.review.back");
+    const refresh = document.createElement("button");
+    refresh.type = "button";
+    refresh.textContent = i18n.t("inbox.review.refresh");
+    toolbar.append(back, refresh);
+    body.appendChild(toolbar);
+    back.addEventListener("click", () => renderInboxListInto(body));
+    refresh.addEventListener("click", () => void runInboxReview(body));
+
+    if (!inboxReviewCards.length) {
+      const empty = document.createElement("p");
+      empty.className = "inbox-empty muted";
+      empty.textContent = i18n.t(
+        inboxReviewNoteCount === 0
+          ? "inbox.review.emptyInbox"
+          : "inbox.review.emptySuggestions",
+      );
+      body.appendChild(empty);
+      return;
+    }
+
+    const list = document.createElement("div");
+    list.className = "inbox-review-list";
+    list.setAttribute("role", "list");
+    for (const card of inboxReviewCards)
+      list.appendChild(renderInboxReviewCard(card));
+    body.appendChild(list);
+  }
+
+  function renderInboxReviewCard(card: InboxReviewCard): HTMLElement {
+    const el = document.createElement("article");
+    el.className = `inbox-review-card state-${card.state}`;
+    el.dataset.cardId = card.id;
+    el.setAttribute("role", "listitem");
+    el.setAttribute(
+      "aria-label",
+      i18n.t("inbox.review.cardLabel", {
+        action: i18n.t(`inbox.review.action.${card.action}`),
+        title: card.note.title || card.note.path,
+      }),
+    );
+
+    const head = document.createElement("div");
+    head.className = "inbox-review-card-head";
+    const title = document.createElement("strong");
+    title.textContent = card.note.title || card.note.path;
+    const action = document.createElement("span");
+    action.className = "inbox-review-action";
+    action.textContent = i18n.t(`inbox.review.action.${card.action}`);
+    head.append(title, action);
+    const path = document.createElement("div");
+    path.className = "inbox-review-path";
+    path.textContent = card.note.path;
+    const reason = document.createElement("p");
+    reason.className = "inbox-review-reason";
+    reason.textContent = i18n.t(card.reasonKey, card.reasonArgs);
+    el.append(head, path, reason);
+
+    if (card.target) {
+      const target = document.createElement("div");
+      target.className = "inbox-review-target";
+      target.textContent = i18n.t("inbox.review.target", {
+        target: `${card.target.title} (${card.target.path})`,
+      });
+      el.appendChild(target);
+      if (card.action === "link") {
+        const link = document.createElement("code");
+        link.className = "inbox-review-link";
+        link.textContent = `[[${card.target.path.split("/").pop()?.replace(/\.md$/i, "")}]]`;
+        el.appendChild(link);
+      }
+    }
+    if (card.action === "merge" && card.preview) {
+      const details = document.createElement("details");
+      details.className = "inbox-review-preview";
+      const summary = document.createElement("summary");
+      summary.textContent = i18n.t("inbox.review.preview");
+      const pre = document.createElement("pre");
+      pre.textContent = card.preview;
+      details.append(summary, pre);
+      el.appendChild(details);
+    }
+
+    const commentRow = document.createElement("div");
+    commentRow.className = "inbox-review-comment";
+    const comment = document.createElement("textarea");
+    comment.rows = 2;
+    comment.value = card.comment ?? "";
+    comment.placeholder = i18n.t("inbox.review.commentPlaceholder");
+    comment.setAttribute("aria-label", i18n.t("inbox.review.commentLabel"));
+    const saveComment = document.createElement("button");
+    saveComment.type = "button";
+    saveComment.textContent = i18n.t("inbox.review.commentSave");
+    saveComment.setAttribute(
+      "aria-label",
+      i18n.t("inbox.review.commentSaveLabel", {
+        title: card.note.title || card.note.path,
+      }),
+    );
+    saveComment.addEventListener("click", async () => {
+      saveComment.disabled = true;
+      try {
+        await api(`/api/inbox/review/${card.id}`, {
+          method: "PUT",
+          json: { comment: comment.value },
+        });
+        inboxReviewCards = updateReviewCard(inboxReviewCards, card.id, {
+          comment: comment.value,
+        });
+        saveComment.textContent = i18n.t("inbox.review.commentSaved");
+      } catch {
+        saveComment.disabled = false;
+        saveComment.textContent = i18n.t("inbox.review.commentFailed");
+      }
+    });
+    commentRow.append(comment, saveComment);
+    el.appendChild(commentRow);
+
+    const controls = document.createElement("div");
+    controls.className = "inbox-review-controls";
+    const approve = document.createElement("button");
+    approve.type = "button";
+    approve.className = "primary";
+    approve.textContent = i18n.t("inbox.review.approve");
+    approve.setAttribute(
+      "aria-label",
+      i18n.t("inbox.review.approveLabel", {
+        action: i18n.t(`inbox.review.action.${card.action}`),
+        title: card.note.title || card.note.path,
+      }),
+    );
+    const dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.textContent = i18n.t("inbox.review.dismiss");
+    dismiss.setAttribute(
+      "aria-label",
+      i18n.t("inbox.review.dismissLabel", {
+        action: i18n.t(`inbox.review.action.${card.action}`),
+        title: card.note.title || card.note.path,
+      }),
+    );
+    controls.append(approve, dismiss);
+    el.appendChild(controls);
+
+    if (card.state === "approved") {
+      approve.textContent = i18n.t("inbox.review.approved");
+      approve.disabled = true;
+      dismiss.disabled = true;
+    } else if (card.state === "applying") {
+      approve.textContent = i18n.t("inbox.review.applying");
+      approve.disabled = true;
+      dismiss.disabled = true;
+    } else if (card.state === "stale") {
+      approve.textContent = i18n.t("inbox.review.stale");
+      approve.disabled = true;
+    }
+
+    dismiss.addEventListener("click", async () => {
+      dismiss.disabled = true;
+      try {
+        await api(`/api/inbox/review/${card.id}`, {
+          method: "PUT",
+          json: { state: "dismissed", comment: comment.value },
+        });
+        inboxReviewCards = inboxReviewCards.filter(
+          (item) => item.id !== card.id,
+        );
+        renderInboxReviewInto($("#research-body"));
+        announceResearch(i18n.t("inbox.review.dismissed"));
+      } catch {
+        dismiss.disabled = false;
+      }
+    });
+    approve.addEventListener(
+      "click",
+      () => void approveInboxReviewCard(card, el),
+    );
+    return el;
+  }
+
+  async function approveInboxReviewCard(
+    card: InboxReviewCard,
+    el: HTMLElement,
+  ) {
+    const ownership = currentOwnership(card.note.path);
+    const blockingOwnership = findBlockingReviewOwnership(card.action, [
+      ownership,
+      card.action === "merge" && card.target
+        ? currentOwnership(card.target.path)
+        : null,
+    ]);
+    if (blockingOwnership) {
+      researchError(i18n.t("inbox.review.blockedEditor"));
+      (blockingOwnership.owner === "reader"
+        ? $("#reader-body")
+        : $("#research-body")
+      )
+        .querySelector<HTMLElement>(".cm-editor")
+        ?.focus();
+      return;
+    }
+    if (card.action === "ingest") {
+      await renderInboxReviewWikiChoice(card, el);
+      return;
+    }
+    if (
+      card.action !== "continue" &&
+      !confirm(i18n.t(`inbox.review.confirm.${card.action}`))
+    )
+      return;
+    await applyInboxReviewCard(card);
+  }
+
+  async function renderInboxReviewWikiChoice(
+    card: InboxReviewCard,
+    el: HTMLElement,
+  ) {
+    const wikis = await loadEnabledWikis();
+    if (!wikis.length) {
+      researchError(i18n.t("inbox.review.noWiki"));
+      return;
+    }
+    const existing = el.querySelector(".inbox-review-wiki-choice");
+    existing?.remove();
+    const row = document.createElement("div");
+    row.className = "inbox-review-wiki-choice";
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", i18n.t("inbox.review.chooseWiki"));
+    for (const wiki of wikis) {
+      const option = document.createElement("option");
+      option.value = wiki.id;
+      option.textContent = wikiDisplayName(wiki);
+      select.appendChild(option);
+    }
+    const propose = document.createElement("button");
+    propose.type = "button";
+    propose.textContent = i18n.t("inbox.review.proposeIngest");
+    propose.addEventListener("click", async () => {
+      propose.disabled = true;
+      const applied = await applyInboxReviewCard(card);
+      if (applied)
+        await showWikiProposal(
+          { sourceNote: card.note.path, researchId: "" },
+          select.value,
+        );
+    });
+    row.append(select, propose);
+    el.appendChild(row);
+    select.focus();
+  }
+
+  async function applyInboxReviewCard(card: InboxReviewCard): Promise<boolean> {
+    inboxReviewCards = updateReviewCard(inboxReviewCards, card.id, {
+      state: "applying",
+    });
+    renderInboxReviewInto($("#research-body"));
+    try {
+      const result = await api<{
+        card?: InboxReviewCard;
+        resultPaths?: string[];
+        stale?: boolean;
+      }>(`/api/inbox/review/${card.id}/apply`, { json: {} });
+      if (result.stale) {
+        inboxReviewCards = updateReviewCard(inboxReviewCards, card.id, {
+          state: "stale",
+        });
+        renderInboxReviewInto($("#research-body"));
+        researchError(i18n.t("inbox.review.staleMessage"));
+        return false;
+      }
+      if (!result.card) throw new Error("review apply returned no card");
+      inboxReviewCards = updateReviewCard(inboxReviewCards, card.id, {
+        ...result.card,
+        state: "approved",
+      });
+      if (card.action === "continue") {
+        await openInboxNote(card.note.path);
+        return true;
+      }
+      if (
+        card.action === "archive" &&
+        currentOwnership(card.note.path)?.owner === "reader"
+      )
+        clearSelection();
+      if (card.action === "archive") {
+        const nextPin = pinAfterReviewMove(
+          pinnedResearchEntryId,
+          card.note.path,
+        );
+        if (nextPin !== pinnedResearchEntryId) {
+          pinnedResearchEntryId = nextPin;
+          syncResearchPinUi();
+          announceResearch(i18n.t("research.pinCleared"));
+          syncVoiceContext();
+        }
+      }
+      if (["link", "merge", "archive"].includes(card.action))
+        await rescan(false);
+      await loadInbox();
+      renderInboxReviewInto($("#research-body"));
+      announceResearch(i18n.t("inbox.review.approved"));
+      return true;
+    } catch (e) {
+      inboxReviewCards = updateReviewCard(inboxReviewCards, card.id, {
+        state: e instanceof ApiError && e.status === 409 ? "stale" : "pending",
+      });
+      renderInboxReviewInto($("#research-body"));
+      researchError(
+        i18n.t(
+          e instanceof ApiError && e.status === 409
+            ? "inbox.review.staleMessage"
+            : "inbox.review.applyFailed",
+        ),
+      );
+      return false;
+    }
   }
 
   function renderInboxCreateRow(body: HTMLElement) {
@@ -7736,9 +8138,17 @@ async function boot() {
     if (wasHidden) openReaderHistoryAt(0);
   });
   $("#reopen-research").addEventListener("click", async () => {
-    // Toggle: close the right panel if it's open, otherwise reopen last research.
+    // Toggle the right panel without crossing into the content-panel path.
     if (!$("#research").classList.contains("hidden")) {
       await closeResearch();
+      return;
+    }
+    if (researchCollection === "inbox") {
+      openResearch(researchMode ?? "keyword");
+      await loadInbox();
+      showCollectionChrome();
+      renderInboxListInto($("#research-body"));
+      $("#research-title").textContent = i18n.t("inbox.title");
       return;
     }
     if (!researchHistory.length) await loadHistory();

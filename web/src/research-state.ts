@@ -100,3 +100,10 @@ export function pinMatchesVisible(
   if (!pinnedId || !visible) return false;
   return pinnedId === visible.id;
 }
+
+export function nextViewActionPollDelay(
+  currentMs: number,
+  succeeded: boolean,
+): number {
+  return succeeded ? 750 : Math.min(Math.max(currentMs, 750) * 2, 15_000);
+}

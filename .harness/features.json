@@ -1,7 +1,7 @@
 {
   "project": "sinapso-architecture-deepening",
   "created": "2026-07-02T04:37:20Z",
-  "updated": "2026-07-13T04:29:08Z",
+  "updated": "2026-07-19T14:20:06Z",
   "features": [
     {
       "id": "F001",
@@ -1781,6 +1781,174 @@
       "implemented_at": "2026-07-13T03:30:33Z",
       "verified_by": "Main",
       "verified_at": "2026-07-13T03:46:23Z"
+    },
+    {
+      "id": "F069",
+      "priority": 69,
+      "category": "Inbox Review Core",
+      "behavior": "A pure deterministic Inbox Review engine emits conservative continue, link, merge, archive, and explicit ingest advisory cards from current Inbox bytes plus optional cached semantic edges, with hash-derived identities and no external calls.",
+      "verification": {
+        "command": "npm test -- --run server/integrations/inbox-review.test.ts",
+        "expected": "All deterministic signal, omission, identity, threshold, duplicate, and unavailable-semantic tests pass."
+      },
+      "state": "passing",
+      "depends_on": [],
+      "files_touched": ["server/integrations/inbox-review.ts", "server/integrations/inbox-review.test.ts"],
+      "estimated_lines": 300,
+      "chained_pr": false,
+      "chain_strategy": null,
+      "confidence": "needs-review",
+      "context_note": "Conservative omission beats weak advice. Review generation is local/read-only and capped at 50 cards.",
+      "spec_ref": "docs/plans/2026-07-18-021-feat-manual-inbox-review-plan.md#u1-pure-suggestion-engine (RM002)",
+      "evidence": "PASS 2026-07-19: inbox-review and state focused suites passed 17/17; npm run typecheck passed.",
+      "implemented_by": "OpenCode",
+      "implemented_at": "2026-07-19T12:12:02Z",
+      "verified_by": "OpenCode focused verification",
+      "verified_at": "2026-07-19T12:12:02Z"
+    },
+    {
+      "id": "F070",
+      "priority": 70,
+      "category": "Inbox Review State",
+      "behavior": "Inbox Review decisions and comments persist in an atomic app-local JSON store, join by hash-derived card identity, recover from corruption, and prune to the newest 500 records without storing note bodies.",
+      "verification": {
+        "command": "npm test -- --run server/integrations/inbox-review-state.test.ts",
+        "expected": "Persistence, comment, dismissal, approval, corruption fallback, and pruning tests pass."
+      },
+      "state": "passing",
+      "depends_on": ["F069"],
+      "files_touched": ["server/integrations/inbox-review-state.ts", "server/integrations/inbox-review-state.test.ts"],
+      "estimated_lines": 220,
+      "chained_pr": false,
+      "chain_strategy": null,
+      "confidence": "autonomous",
+      "context_note": "Runtime metadata belongs under data/, never in vault Markdown/frontmatter.",
+      "spec_ref": "docs/plans/2026-07-18-021-feat-manual-inbox-review-plan.md#u2-bounded-app-local-review-state (RM002)",
+      "evidence": "PASS 2026-07-19: inbox-review and state focused suites passed 17/17; npm run typecheck passed.",
+      "implemented_by": "OpenCode",
+      "implemented_at": "2026-07-19T12:12:02Z",
+      "verified_by": "OpenCode focused verification",
+      "verified_at": "2026-07-19T12:12:02Z"
+    },
+    {
+      "id": "F071",
+      "priority": 71,
+      "category": "Inbox Review API",
+      "behavior": "Manual Inbox Review GET and token-guarded metadata PUT routes compute a fresh local snapshot from the configured Inbox, cached semantics, and enabled-wiki availability without startup/background/provider work.",
+      "verification": {
+        "command": "npm test -- --run server/app.test.ts",
+        "expected": "Manual route, empty/local fallback, metadata token, state join, and Admin exclusion tests pass."
+      },
+      "state": "passing",
+      "depends_on": ["F069", "F070"],
+      "files_touched": ["server/app.ts", "server/app.test.ts"],
+      "estimated_lines": 260,
+      "chained_pr": false,
+      "chain_strategy": null,
+      "confidence": "needs-review",
+      "context_note": "Reuse vault-catalog Inbox listing and readSemanticCache(); GET remains read-only, metadata PUT is token-guarded.",
+      "spec_ref": "docs/plans/2026-07-18-021-feat-manual-inbox-review-plan.md#u3-review-and-metadata-routes (RM002)",
+      "evidence": "PASS 2026-07-19: app route suite passed 101/101; corrected full serial gate passed 1015 Vitest, typecheck, build, and 23 Playwright tests.",
+      "implemented_by": "OpenCode",
+      "implemented_at": "2026-07-19T14:20:06Z",
+      "verified_by": "Harness pass-state gate + independent evaluator",
+      "verified_at": "2026-07-19T14:20:06Z"
+    },
+    {
+      "id": "F072",
+      "priority": 72,
+      "category": "Inbox Review Approval",
+      "behavior": "Review approval re-derives cards, validates source and target hashes, and delegates continue, CAS-safe link, deterministic target-only merge, guarded archive move, or proposal-only wiki ingest handoff to sanctioned paths.",
+      "verification": {
+        "command": "npm test -- --run server/integrations/write.test.ts server/app.test.ts server/integrations/wiki-ingest.test.ts",
+        "expected": "Stale no-op, idempotent link, merge bytes/line endings/source preservation, archive move, continue, and proposal-only ingest tests pass."
+      },
+      "state": "passing",
+      "depends_on": ["F071"],
+      "files_touched": ["server/integrations/write.ts", "server/app.ts", "server/integrations/wiki-ingest.ts", "server/integrations/write.test.ts", "server/app.test.ts", "server/integrations/wiki-ingest.test.ts"],
+      "estimated_lines": 390,
+      "chained_pr": false,
+      "chain_strategy": null,
+      "confidence": "needs-review",
+      "context_note": "write.ts remains the only vault writer. Merge preserves source; archive never deletes; ingest never auto-applies.",
+      "spec_ref": "docs/plans/2026-07-18-021-feat-manual-inbox-review-plan.md#u4-cas-safe-approval-adapters (RM002)",
+      "evidence": "PASS 2026-07-19: write/app/wiki-ingest focused suites passed 164/164; stale, link, merge, archive, continue, and ingest boundaries covered; full serial gate passed.",
+      "implemented_by": "OpenCode",
+      "implemented_at": "2026-07-19T14:20:06Z",
+      "verified_by": "Harness pass-state gate + independent evaluator",
+      "verified_at": "2026-07-19T14:20:06Z"
+    },
+    {
+      "id": "F073",
+      "priority": 73,
+      "category": "Inbox Review UI",
+      "behavior": "The Inbox list exposes a user-clicked Review Inbox action and accessible inline advisory cards with approve, dismiss, comment, stale, applying, approved, and explanatory empty states in English and Spanish.",
+      "verification": {
+        "command": "npm test -- --run web/src/inbox-review-state.test.ts web/src/research-state.test.ts && npm run typecheck",
+        "expected": "Frontend state/comment/stale/control tests and typecheck pass with matching EN/ES keys."
+      },
+      "state": "passing",
+      "depends_on": ["F071", "F072"],
+      "files_touched": ["web/index.html", "web/src/main.ts", "web/src/inbox-review-state.ts", "web/src/inbox-review-state.test.ts", "web/src/style.css", "web/src/i18n.ts"],
+      "estimated_lines": 390,
+      "chained_pr": false,
+      "chain_strategy": null,
+      "confidence": "needs-review",
+      "context_note": "Inline right-panel list, one action per card, existing panel vocabulary; no modal or toast stack.",
+      "spec_ref": "docs/plans/2026-07-18-021-feat-manual-inbox-review-plan.md#u5-inline-review-cards (RM002)",
+      "evidence": "PASS 2026-07-19: Inbox Review frontend state tests passed; EN/ES, contextual accessible labels, typecheck, build, and E2E passed.",
+      "implemented_by": "OpenCode",
+      "implemented_at": "2026-07-19T14:20:06Z",
+      "verified_by": "Harness pass-state gate + independent evaluator",
+      "verified_at": "2026-07-19T14:20:06Z"
+    },
+    {
+      "id": "F074",
+      "priority": 74,
+      "category": "Inbox Review UX",
+      "behavior": "Action-specific Inbox Review UX opens Continue notes, previews links and full deterministic merges, confirms archive, hands Ingest to wiki selection/proposal, blocks non-clean owned editors, and preserves RM001 teardown/pin/refresh behavior.",
+      "verification": {
+        "command": "npm test -- --run web/src/inbox-review-state.test.ts && npm run typecheck && npm run build",
+        "expected": "Action transitions, dirty ownership blocking, cancel/stale paths, and production gates pass."
+      },
+      "state": "passing",
+      "depends_on": ["F073"],
+      "files_touched": ["web/src/main.ts", "web/src/inbox-review-state.ts", "web/src/inbox-review-state.test.ts", "web/src/i18n.ts"],
+      "estimated_lines": 300,
+      "chained_pr": false,
+      "chain_strategy": null,
+      "confidence": "needs-review",
+      "context_note": "Browser ownership block is advisory; server hash CAS is authoritative. Reuse the existing wiki proposal UI.",
+      "spec_ref": "docs/plans/2026-07-18-021-feat-manual-inbox-review-plan.md#u6-action-specific-ux (RM002)",
+      "evidence": "PASS 2026-07-19: client tests cover dirty merge target and pin clearing; E2E covers stale, archive pin teardown, conflicted target blocking, and proposal handoff.",
+      "implemented_by": "OpenCode",
+      "implemented_at": "2026-07-19T14:20:06Z",
+      "verified_by": "Harness pass-state gate + independent evaluator",
+      "verified_at": "2026-07-19T14:20:06Z"
+    },
+    {
+      "id": "F075",
+      "priority": 75,
+      "category": "End-to-End Verification",
+      "behavior": "A hermetic narrow-viewport Playwright flow proves manual-only review, deterministic cards, comment/dismiss persistence, stale protection, one safe mutation, wiki proposal handoff, and zero browser diagnostics.",
+      "verification": {
+        "command": "npm test && npm run typecheck && npm run build && npm run test:e2e",
+        "expected": "All Vitest, typecheck, build, and Chromium E2E gates pass with zero skips and clean browser diagnostics."
+      },
+      "state": "passing",
+      "depends_on": ["F069", "F070", "F071", "F072", "F073", "F074"],
+      "files_touched": ["tests/e2e/inbox-review.spec.ts", "tests/e2e/smoke.spec.ts"],
+      "estimated_lines": 260,
+      "chained_pr": false,
+      "chain_strategy": null,
+      "confidence": "needs-review",
+      "context_note": "Use hermetic ports/fixtures and diagnostics; never depend on qmd, providers, Git, or development services.",
+      "spec_ref": "docs/plans/2026-07-18-021-feat-manual-inbox-review-plan.md#u7-browser-diagnostics-proof (RM002)",
+      "evidence": "PASS 2026-07-19: final serial gate passed 1016/1016 Vitest, typecheck, build, and 25/25 Chromium E2E tests, including two RM002 scenarios plus LAN HTTP boot, initial-backend-unavailable recovery, and independent panel-toggle coverage; live LAN verification rendered 4,067 notes with zero browser console errors.",
+      "implemented_by": "OpenCode",
+      "implemented_at": "2026-07-19T14:20:06Z",
+      "verified_by": "Harness pass-state gate + independent evaluator",
+      "verified_at": "2026-07-19T14:20:06Z"
     }
   ]
 }

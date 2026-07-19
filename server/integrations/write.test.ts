@@ -265,6 +265,24 @@ describe("write module edge cases", () => {
       "source",
     );
   });
+
+  it("guardedMove rejects a stale source hash without moving", () => {
+    writeFileSync(join(VAULT, "stale-move.md"), "current");
+    expect(() =>
+      guardedMove(
+        { vaultRoot: VAULT, dataDir: DATA },
+        {
+          id: "stale-move.md",
+          destination: "done",
+          baseHash: noteHash("older"),
+          actor: "user",
+        },
+      ),
+    ).toThrowError(
+      expect.objectContaining({ status: 409 }) as unknown as WriteError,
+    );
+    expect(existsSync(join(VAULT, "stale-move.md"))).toBe(true);
+  });
 });
 
 describe("guardedAppendLink (F034 orphan linker)", () => {
@@ -317,6 +335,24 @@ describe("guardedAppendLink (F034 orphan linker)", () => {
     ).toThrowError(
       expect.objectContaining({ status: 400 }) as unknown as WriteError,
     );
+  });
+
+  it("rejects a stale source hash before appending", () => {
+    writeFileSync(join(VAULT, "stale-link.md"), "current");
+    expect(() =>
+      guardedAppendLink(
+        { vaultRoot: VAULT, dataDir: DATA },
+        {
+          id: "stale-link.md",
+          target: "X",
+          baseHash: noteHash("older"),
+          actor: "user",
+        },
+      ),
+    ).toThrowError(
+      expect.objectContaining({ status: 409 }) as unknown as WriteError,
+    );
+    expect(readFileSync(join(VAULT, "stale-link.md"), "utf8")).toBe("current");
   });
 });
 

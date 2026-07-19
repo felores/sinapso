@@ -193,6 +193,65 @@ test("mobile rail exposes menus and panels above the bottom bar", async ({
   }
 });
 
+test("LAN-style HTTP boot and side toggles work without crypto.randomUUID", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  try {
+    await page.addInitScript(() => {
+      localStorage.setItem("sinapso-qmd-prompted", "1");
+      Object.defineProperty(Crypto.prototype, "randomUUID", {
+        configurable: true,
+        value: undefined,
+      });
+    });
+    await page.goto("/?node=alpha-note.md");
+    await expect(page.locator("#graph canvas")).toBeVisible();
+    await expect(page.locator("#reader")).not.toHaveClass(/hidden/, {
+      timeout: 15_000,
+    });
+
+    await page.keyboard.press("a");
+    await expect(page.locator("#reader")).toHaveClass(/hidden/);
+    await page.keyboard.press("a");
+    await expect(page.locator("#reader")).not.toHaveClass(/hidden/);
+    await expect(page.locator("#reader")).toHaveClass(/ctx-left/);
+    await expect(page.locator("#research")).toHaveClass(/hidden/);
+    await page.keyboard.press("a");
+    await expect(page.locator("#reader")).toHaveClass(/hidden/);
+
+    await page.locator("#new-doc-btn").click();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.locator("#research")).not.toHaveClass(/hidden/);
+    await page.keyboard.press("d");
+    await expect(page.locator("#research")).toHaveClass(/hidden/);
+    await expect(page.locator("#reader")).toHaveClass(/hidden/);
+    await page.keyboard.press("d");
+    await expect(page.locator("#research")).not.toHaveClass(/hidden/);
+    await expect(page.locator("#reader")).toHaveClass(/hidden/);
+  } finally {
+    await assertCleanBrowser();
+  }
+});
+
+test("recovers when the backend is unavailable during initial LAN boot", async ({
+  page,
+}) => {
+  let graphRequests = 0;
+  await page.route("**/api/graph", async (route) => {
+    graphRequests += 1;
+    if (graphRequests === 1) {
+      await route.fulfill({ status: 503, body: "backend starting" });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#graph canvas")).toBeVisible({ timeout: 15_000 });
+  expect(graphRequests).toBeGreaterThanOrEqual(2);
+});
+
 test("opens a node from the URL", async ({ page }) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {

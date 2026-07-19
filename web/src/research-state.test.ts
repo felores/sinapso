@@ -4,10 +4,20 @@ import {
   crossCollectionArrival,
   decideAgentResearchDisplay,
   moveCursor,
+  nextViewActionPollDelay,
   pinMatchesVisible,
   setCursorTo,
   type CollectionCursor,
 } from "./research-state.js";
+
+describe("nextViewActionPollDelay", () => {
+  it("backs off failed polling and resets after recovery", () => {
+    expect(nextViewActionPollDelay(750, false)).toBe(1_500);
+    expect(nextViewActionPollDelay(7_500, false)).toBe(15_000);
+    expect(nextViewActionPollDelay(15_000, false)).toBe(15_000);
+    expect(nextViewActionPollDelay(15_000, true)).toBe(750);
+  });
+});
 
 const base = {
   targetId: "B",

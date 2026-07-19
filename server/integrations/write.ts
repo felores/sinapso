@@ -252,6 +252,8 @@ export interface MoveOptions {
   exact?: boolean;
   /** Allow an already-completed exact move only when target matches this. */
   expectedContent?: string;
+  /** Refuse the move when the current source bytes changed. */
+  baseHash?: string;
   actor: ChangeLogEntry["actor"];
 }
 
@@ -281,6 +283,11 @@ export function guardedMove(
     }
     throw new WriteError(404, "note not found");
   }
+  if (
+    opts.baseHash !== undefined &&
+    noteHash(readFileSync(full, "utf-8")) !== opts.baseHash
+  )
+    throw new WriteError(409, "note changed on disk");
   if (destFull !== full && existsSync(destFull)) {
     if (opts.exact) throw new WriteError(409, "exact note path already exists");
     const stem = destFull.slice(0, -3);
@@ -317,6 +324,8 @@ export interface AppendLinkOptions {
   id: string;
   /** Wikilink target (a note basename); brackets are stripped if present. */
   target: string;
+  /** Refuse the append when the current source bytes changed. */
+  baseHash?: string;
   actor: ChangeLogEntry["actor"];
 }
 
@@ -337,15 +346,16 @@ export function guardedAppendLink(
   if (!target) throw new WriteError(400, "empty link target");
   const id = relative(resolve(deps.vaultRoot), full);
   const current = readFileSync(full, "utf-8");
+  if (opts.baseHash !== undefined && noteHash(current) !== opts.baseHash)
+    throw new WriteError(409, "note changed on disk");
   const wikilink = `[[${target}]]`;
   if (current.includes(wikilink)) return { id, added: false };
   const gap = current.length === 0 || current.endsWith("\n") ? "" : "\n";
-  writeFileSync(full, `${current}${gap}\n${wikilink}\n`);
-  appendChangeLog(deps.dataDir, {
-    at: new Date().toISOString(),
+  guardedEdit(deps, {
+    id,
+    content: `${current}${gap}\n${wikilink}\n`,
+    baseHash: opts.baseHash,
     actor: opts.actor,
-    action: "edit",
-    path: id,
   });
   return { id, added: true };
 }
