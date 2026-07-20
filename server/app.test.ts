@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, vi } from "vitest";
 import request from "supertest";
 import { createServer, type Server } from "node:http";
 import {
@@ -1754,6 +1754,11 @@ describe("server: working document compare-and-swap boundary", () => {
       id: "inbox/promoted.md",
       removedHistory: true,
     });
+    expect(promoted.body.graphUpdated).toBe(true);
+    const promotedGraph = await request(app).get("/api/graph");
+    expect(
+      promotedGraph.body.nodes.map((node: { id: string }) => node.id),
+    ).toContain("inbox/promoted.md");
     expect(readFileSync(join(VAULT, "inbox/promoted.md"), "utf-8")).toContain(
       "# Saved body",
     );
@@ -1790,6 +1795,11 @@ describe("server: plan 020 U5 agent-actor note routes (/api/agent/notes)", () =>
         .send({ title: "From Agent", content: "# body\n" });
       expect(created.status).toBe(200);
       expect(created.body.id).toBe("inbox/from-agent.md");
+      expect(created.body.graphUpdated).toBe(true);
+      const agentGraph = await request(app2).get("/api/graph");
+      expect(
+        agentGraph.body.nodes.map((node: { id: string }) => node.id),
+      ).toContain("inbox/from-agent.md");
       expect(typeof created.body.baseHash).toBe("string");
       expect(created.body.baseHash).toHaveLength(64);
       const journalPath = join(data, "changes.jsonl");
@@ -1806,12 +1816,60 @@ describe("server: plan 020 U5 agent-actor note routes (/api/agent/notes)", () =>
         .send({ title: "From User", content: "# body\n" });
       expect(userCreate.status).toBe(200);
       expect(userCreate.body.id).toBe("inbox/from-user.md");
+      expect(userCreate.body.graphUpdated).toBe(true);
+      const userGraph = await request(app2).get("/api/graph");
+      expect(
+        userGraph.body.nodes.map((node: { id: string }) => node.id),
+      ).toContain("inbox/from-user.md");
       expect(typeof userCreate.body.baseHash).toBe("string");
       const userEntry = JSON.parse(
         readFileSync(journalPath, "utf-8").trim().split("\n").pop()!,
       ) as Record<string, unknown>;
       expect(userEntry.actor).toBe("user");
       expect(userEntry.path).toBe("inbox/from-user.md");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a created note durable when the post-create graph refresh fails", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sinapso-create-refresh-fail-"));
+    const vault = join(dir, "vault");
+    const data = join(dir, "data");
+    const gp = join(data, "graph.json");
+    try {
+      mkdirSync(vault, { recursive: true });
+      mkdirSync(data, { recursive: true });
+      writeFileSync(
+        gp,
+        JSON.stringify({
+          meta: { vaultName: "t", vaultPath: vault, notes: 0, excludes: [] },
+          nodes: [],
+          links: [],
+        }),
+      );
+      const cfgPath = join(data, "config.json");
+      updateConfig({}, cfgPath);
+      const { app: app2 } = createApp(gp, undefined, { configPath: cfgPath });
+      const token = (await request(app2).get("/api/session")).body.token;
+      rmSync(gp);
+      mkdirSync(gp);
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      const created = await request(app2)
+        .post("/api/notes")
+        .set("x-sinapso-token", token)
+        .send({ title: "Survives Refresh", content: "# Durable\n" });
+      log.mockRestore();
+
+      expect(created.status).toBe(200);
+      expect(created.body).toMatchObject({
+        id: "inbox/survives-refresh.md",
+        graphUpdated: false,
+        graphRefreshFailed: true,
+      });
+      expect(
+        readFileSync(join(vault, "inbox/survives-refresh.md"), "utf-8"),
+      ).toBe("# Durable\n");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -2294,6 +2352,11 @@ describe("server: plan 020 U2 graph-independent catalog/search/open", () => {
         })
         .expect(200);
       expect(created.body.id).toBe("inbox/post-write.md");
+      expect(created.body.graphUpdated).toBe(true);
+      const createdGraph = await request(app).get("/api/graph");
+      expect(
+        createdGraph.body.nodes.map((node: { id: string }) => node.id),
+      ).toContain("inbox/post-write.md");
       // After: the note is searchable immediately, no rescan needed.
       const after = await request(app).get("/api/search?q=zzz-post-write-zyxw");
       expect((after.body as Array<{ id: string }>).map((r) => r.id)).toContain(

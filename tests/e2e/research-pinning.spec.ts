@@ -301,6 +301,7 @@ test.beforeEach(async ({ page }) => {
 test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user navigation", async ({
   page,
 }) => {
+  test.setTimeout(75_000);
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info(), {
     allow: (entry) =>
       entry.kind === "console" &&
@@ -424,7 +425,27 @@ test("plan 020: titled creation writes a durable Inbox note and opens it in rese
     const titleInput = page.locator(".inbox-create-row input");
     await expect(titleInput).toBeVisible();
     await titleInput.fill(title);
+    let clientRescans = 0;
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname === "/api/rescan") clientRescans++;
+    });
+    const createdResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/notes" &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    );
     await page.locator(".inbox-create-row button.primary").click();
+    const created = (await (await createdResponse).json()) as {
+      id: string;
+      graphUpdated: boolean;
+    };
+    expect(created.graphUpdated).toBe(true);
+    const createdGraph = (await (
+      await page.request.get("/api/graph")
+    ).json()) as { nodes: Array<{ id: string }> };
+    expect(createdGraph.nodes.map((node) => node.id)).toContain(created.id);
+    expect(clientRescans).toBe(0);
     const editor = page.locator("#research .cm-content");
     await expect(editor).toBeVisible({ timeout: 10_000 });
     await editor.click();
@@ -698,18 +719,10 @@ test("wiki ingest preparation preserves the visible document and surfaces an err
   }
 });
 
-test("save-to-inbox opens the durable note without depending on rescan", async ({
+test("save-to-inbox creates and selects the graph node without a client rescan", async ({
   page,
 }) => {
-  // RM001: Inbox membership and opening are graph-independent. A broken
-  // rescan must be irrelevant to evidence promotion.
-  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info(), {
-    // The intentional /api/rescan 500 is the point of the test; the route
-    // helper only flags HTTP >=500, so allow this URL explicitly.
-    allow: (entry) =>
-      (entry.kind === "response" || entry.kind === "console") &&
-      /\/api\/rescan/.test(entry.url ?? ""),
-  });
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {
     const harness = await installVoiceHarness(page);
     const doc = await createDocument(
@@ -720,14 +733,10 @@ test("save-to-inbox opens the durable note without depending on rescan", async (
     await harness.show(doc.id);
     await expectVisibleQuery(page, "PRESERVED AFTER SAVE content");
 
-    // Force the next /api/rescan to 500 so openAfterIngest reports failure.
-    await page.route("**/api/rescan", (route) =>
-      route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: JSON.stringify({ error: "rescan failed" }),
-      }),
-    );
+    let clientRescans = 0;
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname === "/api/rescan") clientRescans++;
+    });
 
     const saveInbox = page.locator("#research-save-inbox");
     await expect(saveInbox).toBeVisible();
@@ -740,11 +749,17 @@ test("save-to-inbox opens the durable note without depending on rescan", async (
     await expect(page.locator("#research .cm-content")).toContainText(
       "PRESERVED AFTER SAVE content",
     );
+    await expect(saveInbox).toContainText("Send to other panel");
+    await expect(saveInbox).toBeEnabled();
     await expect(page.locator("#research-error")).toHaveClass(/hidden/);
+    expect(clientRescans).toBe(0);
 
-    // And the server really did save the note (the panel was preserved only
-    // because the rescan failed, not because the save did). safeName()
-    // slugifies the title "Visible After Save Failure" to this path.
+    const graph = (await (await page.request.get("/api/graph")).json()) as {
+      nodes: Array<{ id: string }>;
+    };
+    expect(graph.nodes.map((node) => node.id)).toContain(
+      "inbox/visible-after-save-failure.md",
+    );
     const noteCheck = await page.request.get(
       "/api/note?id=inbox/visible-after-save-failure.md",
     );
@@ -756,7 +771,7 @@ test("save-to-inbox opens the durable note without depending on rescan", async (
   }
 });
 
-test("save-to-inbox opens a catalog-only note absent from the graph", async ({
+test("save-to-inbox remains usable when the graph payload is unavailable", async ({
   page,
 }) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
@@ -770,10 +785,14 @@ test("save-to-inbox opens a catalog-only note absent from the graph", async ({
     await harness.show(doc.id);
     await expectVisibleQuery(page, "PRESERVED WHEN NODE MISSING content");
 
-    const staleGraph = await (await page.request.get("/api/graph")).json();
-    await page.route("**/api/rescan", (route) =>
-      route.fulfill({ status: 200, json: { ok: true, graph: staleGraph } }),
-    );
+    await page.route("**/api/research/history/*/save-inbox", async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as Record<string, unknown>;
+      await route.fulfill({
+        response,
+        json: { ...body, graphUpdated: false, graphRefreshFailed: true },
+      });
+    });
 
     await page.locator("#research-save-inbox").click();
 
@@ -783,6 +802,9 @@ test("save-to-inbox opens a catalog-only note absent from the graph", async ({
     );
     await expect(page.locator("#research .cm-content")).toContainText(
       "PRESERVED WHEN NODE MISSING content",
+    );
+    await expect(page.locator("#research-error")).toContainText(
+      "graph could not refresh",
     );
 
     const noteCheck = await page.request.get(

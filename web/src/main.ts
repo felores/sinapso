@@ -137,6 +137,13 @@ interface Graph {
   links: GLink[];
 }
 
+interface CreatedNoteResponse {
+  id: string;
+  baseHash?: string;
+  graphUpdated?: boolean;
+  graphRefreshFailed?: boolean;
+}
+
 const $ = <T extends HTMLElement>(sel: string) =>
   document.querySelector(sel) as T;
 
@@ -1711,12 +1718,16 @@ async function boot() {
 
   let readerOpenGeneration = 0;
 
-  function select(n: GNode, highlightSnippet?: string, logReader = true) {
+  function focusGraphNode(n: GNode, updateUrl = true) {
     selected = n;
     focusSet = bfs(n.id, focusDepth);
-    syncNodeUrl(n);
+    if (updateUrl) syncNodeUrl(n);
     flyTo(n);
     repaint();
+  }
+
+  function select(n: GNode, highlightSnippet?: string, logReader = true) {
+    focusGraphNode(n);
     openReader(n, !logReader, highlightSnippet);
   }
 
@@ -6510,6 +6521,16 @@ async function boot() {
     );
   }
 
+  async function syncCreatedGraph(
+    id: string,
+    graphUpdated: boolean | undefined,
+  ): Promise<GNode | null> {
+    if (!graphUpdated) return null;
+    const next = await api<Graph>("/api/graph");
+    applyGraphUpdate(next);
+    return byId.get(id) ?? null;
+  }
+
   async function createInboxNote(
     title: string,
     body: HTMLElement,
@@ -6536,10 +6557,19 @@ async function boot() {
       // POST /api/notes with empty content; server selects actor "user"
       // (R5) and the configured writeDestination. No untitled placeholder
       // is ever written (KTD2): an empty title is rejected above.
-      const result = await api<{ ok: boolean; id: string }>("/api/notes", {
+      const result = await api<CreatedNoteResponse>("/api/notes", {
         method: "POST",
         json: { title, content: "" },
       });
+      let graphNode: GNode | null = null;
+      try {
+        graphNode = await syncCreatedGraph(result.id, result.graphUpdated);
+      } catch {
+        result.graphRefreshFailed = true;
+      }
+      if (graphNode) focusGraphNode(graphNode, false);
+      if (result.graphRefreshFailed)
+        researchError(i18n.t("research.graphRefreshFailed"));
       await loadInbox();
       const opened = await openInboxNote(result.id);
       if (!opened) {
@@ -6691,6 +6721,7 @@ async function boot() {
     generation: number,
   ): Promise<boolean> {
     if (!vaultSessionToken.isCurrent(generation)) return false;
+    $("#research-title").textContent = i18n.t("inbox.noteTitle");
     const body = $("#research-body");
     body.innerHTML = '<p class="muted">loading…</p>';
     let markdown: string;
@@ -6797,7 +6828,9 @@ async function boot() {
     const text = document.createElement("span");
     text.textContent = label;
     button.appendChild(text);
-    button.title = label;
+    button.removeAttribute("title");
+    delete button.dataset.tip;
+    button.setAttribute("aria-label", label);
   }
 
   function setResearchFooterContext(inboxNote: boolean) {
@@ -7049,10 +7082,17 @@ async function boot() {
         await flushWorkingDocument();
         if (!currentEntryId) throw new Error("research-not-active");
         const researchId = currentEntryId;
-        const data = await api<{ id: string; baseHash: string }>(
+        const data = await api<CreatedNoteResponse>(
           `/api/research/history/${encodeURIComponent(researchId)}/save-inbox`,
           { json: {} },
         );
+        let graphNode: GNode | null = null;
+        try {
+          graphNode = await syncCreatedGraph(data.id, data.graphUpdated);
+        } catch {
+          data.graphRefreshFailed = true;
+        }
+        if (graphNode) focusGraphNode(graphNode, false);
         if (pinnedResearchEntryId === researchId)
           pinnedResearchEntryId = String(data.id);
         await loadHistory();
@@ -7066,12 +7106,15 @@ async function boot() {
           // error instead of clearing it (the pending-select fallback still
           // survives in sessionStorage for a reload).
           researchError(i18n.t("research.savedNotOpened"));
-          saveInbox.disabled = false;
           return;
         }
+        if (data.graphRefreshFailed)
+          researchError(i18n.t("research.graphRefreshFailed"));
         syncResearchPinUi();
       } catch (e) {
-        footerFail(e, saveInbox);
+        footerFail(e);
+      } finally {
+        saveInbox.disabled = false;
       }
     });
     // Menu item: Save RAW source only (no derived wiki pages).
@@ -7086,11 +7129,15 @@ async function boot() {
         const wikis = await syncResearchWikiTarget();
         if (!wikis.length) throw new Error("no-enabled-wiki");
         const wikiId = wikis.length > 1 ? wikiTarget.value : wikis[0].id;
-        const data = await api<{ id: string }>(
+        const data = await api<CreatedNoteResponse>(
           `/api/research/history/${encodeURIComponent(researchId)}/save-raw-source`,
           { json: { wikiId } },
         );
-        const opened = await openAfterIngest(String(data.id));
+        const opened = await openAfterIngest(
+          String(data.id),
+          false,
+          data.graphUpdated,
+        );
         if (!opened) {
           researchError(i18n.t("research.savedNotOpened"));
           return;
@@ -8277,11 +8324,18 @@ async function boot() {
   async function openAfterIngest(
     id: string,
     logReader = false,
+    graphUpdated?: boolean,
   ): Promise<boolean> {
     sessionStorage.setItem("sinapso-pending-select", id); // survives a fallback reload
     if (!logReader) sessionStorage.setItem("sinapso-pending-select-nolog", "1");
-    const ok = await rescan(false);
-    if (!ok) return false; // pending-select kept as the reload fallback
+    if (graphUpdated === undefined) {
+      const ok = await rescan(false);
+      if (!ok) return false; // pending-select kept as the reload fallback
+    } else if (graphUpdated) {
+      await syncCreatedGraph(id, true);
+    } else {
+      return false;
+    }
     const n = byId.get(id);
     // Rescan reported success but the graph still omits the saved note (the
     // scanner may be mid-rebuild, exclude rules skipped it, or the server's
@@ -8362,23 +8416,38 @@ async function boot() {
       approve.textContent = i18n.t("wiki.applying");
       researchError(null);
       try {
-        const data = await api<{ ids?: string[]; error?: string }>(
-          "/api/wiki-ingest/apply",
-          {
-            json: {
-              wikiId: proposal.wiki.id,
-              operations: proposal.operations,
-              researchId: proposal.researchId,
-              sourceNote: proposal.sourceNote,
-            },
+        const data = await api<{
+          ids?: string[];
+          error?: string;
+          graphUpdated?: boolean;
+          graphRefreshFailed?: boolean;
+        }>("/api/wiki-ingest/apply", {
+          json: {
+            wikiId: proposal.wiki.id,
+            operations: proposal.operations,
+            researchId: proposal.researchId,
+            sourceNote: proposal.sourceNote,
           },
-        );
+        });
         if (!data.ids?.length)
           throw new Error(data.error ?? i18n.t("wiki.applyFail"));
         const preferred = proposal.operations.findIndex((op) => !op.raw);
         const id = data.ids[preferred >= 0 ? preferred : 0] ?? data.ids[0];
         body.innerHTML = `<p class="muted">${i18n.t("wiki.appliedOpening")}</p>`;
-        await openAfterIngest(id);
+        const opened = await openAfterIngest(id, false, data.graphUpdated);
+        if (!opened) {
+          const message = i18n.t(
+            data.graphRefreshFailed
+              ? "research.graphRefreshFailed"
+              : "research.savedNotOpened",
+          );
+          body.innerHTML = "";
+          const status = document.createElement("p");
+          status.className = "muted";
+          status.textContent = message;
+          body.appendChild(status);
+          researchError(message);
+        }
       } catch (e) {
         approve.disabled = false;
         approve.textContent = i18n.t("wiki.applyFail");
@@ -8591,10 +8660,14 @@ async function boot() {
   }
 
   async function savePreviewToInbox(preview: IngestPreview) {
-    const data = await api<{ id: string }>("/api/ingest/save", {
+    const data = await api<CreatedNoteResponse>("/api/ingest/save", {
       json: { converted: preview },
     });
-    const opened = await openAfterIngest(String(data.id));
+    const opened = await openAfterIngest(
+      String(data.id),
+      false,
+      data.graphUpdated,
+    );
     if (!opened) {
       researchError(i18n.t("research.savedNotOpened"));
       return;
@@ -8857,13 +8930,25 @@ async function boot() {
           ...a.citations.map((c, i) => `${i + 1}. [${c.title}](${c.url})`),
           "",
         ].join("\n");
-        const data = await api<{ id: string }>("/api/notes", {
+        const data = await api<CreatedNoteResponse>("/api/notes", {
           json: { title: query, content },
         });
         save.textContent = i18n.t("research.saved");
         // Rescan-diff the vault in place (no reload) and fly to the new note —
         // it joins the graph with its resolved [[links]] to the origin note.
-        await openAfterIngest(String(data.id));
+        const opened = await openAfterIngest(
+          String(data.id),
+          false,
+          data.graphUpdated,
+        );
+        if (!opened)
+          researchError(
+            i18n.t(
+              data.graphRefreshFailed
+                ? "research.graphRefreshFailed"
+                : "research.savedNotOpened",
+            ),
+          );
       } catch {
         save.disabled = false;
         save.textContent = i18n.t("research.saveFail");

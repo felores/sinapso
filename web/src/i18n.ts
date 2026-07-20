@@ -357,6 +357,8 @@ const EN: Dict = {
   "research.saveFail": "save failed — retry",
   "research.savedNotOpened":
     "saved — could not open the new note (rescan failed); it will appear after the next rescan.",
+  "research.graphRefreshFailed":
+    "Note saved, but the graph could not refresh. Rescan to add its node.",
   "research.expand": "expand",
   "research.collapse": "collapse",
   "research.openArticle": "Open the full article",
@@ -373,6 +375,7 @@ const EN: Dict = {
     "This note failed to save in the other panel. Retry there before switching.",
   // Inbox collection (plan 020 U4)
   "inbox.title": "Inbox",
+  "inbox.noteTitle": "Inbox Note",
   "inbox.empty": "No Inbox notes yet. Create one to get started.",
   "inbox.loading": "loading Inbox…",
   "inbox.refresh": "Refresh Inbox",
@@ -761,6 +764,8 @@ const ES: Dict = {
   "research.saveFail": "error al guardar — reintentar",
   "research.savedNotOpened":
     "guardado — no se pudo abrir la nota nueva (falló el rescan); aparecerá tras el próximo rescan.",
+  "research.graphRefreshFailed":
+    "Nota guardada, pero no se pudo actualizar el grafo. Reescanea para agregar su nodo.",
   "research.expand": "expandir",
   "research.collapse": "colapsar",
   "research.openArticle": "Abrir el artículo completo",
@@ -777,6 +782,7 @@ const ES: Dict = {
     "Esta nota falló al guardar en el otro panel. Reintenta allí antes de cambiar.",
   // Inbox collection (plan 020 U4)
   "inbox.title": "Inbox",
+  "inbox.noteTitle": "Nota de Inbox",
   "inbox.empty": "Aún no hay notas en Inbox. Crea una para empezar.",
   "inbox.loading": "cargando Inbox…",
   "inbox.refresh": "Refrescar Inbox",

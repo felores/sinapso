@@ -856,8 +856,13 @@ export function createApp(
           via: converted.via ?? "markitdown",
           destination: cfg.writeDestination,
         });
-        refreshAfterWrite();
-        res.json({ ok: true, id: r.id });
+        const graphUpdated = refreshAfterCreate();
+        res.json({
+          ok: true,
+          id: r.id,
+          graphUpdated,
+          graphRefreshFailed: !graphUpdated,
+        });
       } catch (e) {
         writeFail(res, e, "ingest save");
       }
@@ -899,8 +904,13 @@ export function createApp(
           destination,
         },
       );
-      refreshAfterWrite();
-      res.json({ ok: true, id: r.id });
+      const graphUpdated = refreshAfterCreate();
+      res.json({
+        ok: true,
+        id: r.id,
+        graphUpdated,
+        graphRefreshFailed: !graphUpdated,
+      });
     } catch (e) {
       writeFail(res, e, "ingest");
     }
@@ -943,8 +953,13 @@ export function createApp(
           { vaultRoot, dataDir: dirname(graphPath) },
           { name, bytes: req.body, destination },
         );
-        refreshAfterWrite();
-        res.json({ ok: true, id: r.id });
+        const graphUpdated = refreshAfterCreate();
+        res.json({
+          ok: true,
+          id: r.id,
+          graphUpdated,
+          graphRefreshFailed: !graphUpdated,
+        });
       } catch (e) {
         writeFail(res, e, "ingest-upload");
       }
@@ -1895,8 +1910,14 @@ export function createApp(
         actor: "user",
       });
       deleteEntry(dataDir, entry.id);
-      refreshAfterWrite();
-      res.json({ ok: true, id: saved.id, removedHistory: true });
+      const graphUpdated = refreshAfterCreate();
+      res.json({
+        ok: true,
+        id: saved.id,
+        removedHistory: true,
+        graphUpdated,
+        graphRefreshFailed: !graphUpdated,
+      });
     } catch (e) {
       writeFail(res, e, "research save inbox");
     }
@@ -1936,8 +1957,14 @@ export function createApp(
           actor: "user",
         });
         deleteEntry(dataDir, entry.id);
-        refreshAfterWrite();
-        res.json({ ok: true, id: created.id, removedHistory: true });
+        const graphUpdated = refreshAfterCreate();
+        res.json({
+          ok: true,
+          id: created.id,
+          removedHistory: true,
+          graphUpdated,
+          graphRefreshFailed: !graphUpdated,
+        });
       } catch (e) {
         writeFail(res, e, "research save raw source");
       }
@@ -2108,15 +2135,34 @@ export function createApp(
           b.operations,
           { sourceNote, existingRaw },
         );
-        refreshAfterWrite();
+        const graphUpdated = refreshAfterCreate();
         if (sourceNote) {
           const move = ids.at(-1);
-          if (move) res.json({ ok: true, ids, id: move });
-          else res.json({ ok: true, ids });
+          if (move)
+            res.json({
+              ok: true,
+              ids,
+              id: move,
+              graphUpdated,
+              graphRefreshFailed: !graphUpdated,
+            });
+          else
+            res.json({
+              ok: true,
+              ids,
+              graphUpdated,
+              graphRefreshFailed: !graphUpdated,
+            });
           return;
         }
         if (researchId) deleteEntry(dataDir, researchId);
-        res.json({ ok: true, ids, removedHistory: Boolean(researchId) });
+        res.json({
+          ok: true,
+          ids,
+          removedHistory: Boolean(researchId),
+          graphUpdated,
+          graphRefreshFailed: !graphUpdated,
+        });
       } catch (e) {
         writeFail(res, e, "wiki ingest apply");
       }
@@ -2155,8 +2201,14 @@ export function createApp(
               : cfg.writeDestination,
           actor: "user",
         });
-        refreshAfterWrite();
-        res.json({ ok: true, id: r.id, baseHash: noteHash(content) });
+        const graphUpdated = refreshAfterCreate();
+        res.json({
+          ok: true,
+          id: r.id,
+          baseHash: noteHash(content),
+          graphUpdated,
+          graphRefreshFailed: !graphUpdated,
+        });
       } catch (e) {
         writeFail(res, e, "create");
       }
@@ -2222,8 +2274,14 @@ export function createApp(
               : cfg.writeDestination,
           actor: "agent",
         });
-        refreshAfterWrite();
-        res.json({ ok: true, id: r.id, baseHash: noteHash(content) });
+        const graphUpdated = refreshAfterCreate();
+        res.json({
+          ok: true,
+          id: r.id,
+          baseHash: noteHash(content),
+          graphUpdated,
+          graphRefreshFailed: !graphUpdated,
+        });
       } catch (e) {
         writeFail(res, e, "agent create");
       }
@@ -3130,6 +3188,17 @@ export function createApp(
     searchIndex = buildSearchIndex(catalogAsNodes(), vaultRoot);
   };
 
+  function refreshAfterCreate(): boolean {
+    try {
+      refreshAfterWrite();
+      scanAndReload(graph.meta.vaultPath);
+      return true;
+    } catch (error) {
+      console.error("Post-create graph refresh failed:", error);
+      return false;
+    }
+  }
+
   // GET /api/search?q=...: Full-text search over note titles and content
   // Returns top 20 matches sorted by relevance score with text snippets
   // Search is fuzzy (typo-tolerant) with title boost (3x weight)
@@ -3222,7 +3291,8 @@ export function createApp(
       full,
     });
     reload();
-    updateConfig({ activeVaultPath: g.meta.vaultPath }, configPath);
+    if (loadConfig(configPath).activeVaultPath !== g.meta.vaultPath)
+      updateConfig({ activeVaultPath: g.meta.vaultPath }, configPath);
     return g;
   };
 

@@ -31,11 +31,24 @@ import {
   readFileSync,
   statSync,
   writeFileSync,
+  renameSync,
+  rmSync,
   mkdirSync,
   existsSync,
 } from "node:fs";
 import { resolve, relative, sep, dirname } from "node:path";
 import { createHash } from "node:crypto";
+
+function writeJsonAtomic(path: string, value: unknown): void {
+  const temporary = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(temporary, JSON.stringify(value));
+    renameSync(temporary, path);
+  } catch (error) {
+    rmSync(temporary, { force: true });
+    throw error;
+  }
+}
 
 const DEFAULT_EXCLUDES = [
   ".obsidian",
@@ -475,7 +488,7 @@ export function scanVault(opts: ScanOptions): VaultGraph {
 
   if (outPath) {
     mkdirSync(dirname(outPath), { recursive: true });
-    writeFileSync(outPath, JSON.stringify(graph));
+    writeJsonAtomic(outPath, graph);
     if (cachePath) {
       const cacheOut: ScanCache = {
         version: CACHE_VERSION,
@@ -483,7 +496,7 @@ export function scanVault(opts: ScanOptions): VaultGraph {
         excludes: extraExcludes,
         files: Object.fromEntries(fileData),
       };
-      writeFileSync(cachePath, JSON.stringify(cacheOut));
+      writeJsonAtomic(cachePath, cacheOut);
     }
   }
   return graph;

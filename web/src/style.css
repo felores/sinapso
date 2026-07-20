@@ -1264,7 +1264,7 @@ body > :not(#graph) {
   z-index: 26;
 }
 #topbar.topbar-bottom-rail #search-wrap {
-  grid-template-columns: 32px 1px repeat(6, 32px) 1px 32px 32px 1px 32px;
+  grid-template-columns: 32px 1px repeat(6, 32px) 1px minmax(0, 1fr) 32px 32px 1px 32px;
   grid-template-rows: var(--mobile-nav-h, 44px) var(--mobile-search-h, 52px);
   min-height: calc(var(--mobile-nav-h, 44px) + var(--mobile-search-h, 52px));
   padding: 0 8px;
@@ -1283,6 +1283,7 @@ body > :not(#graph) {
 #topbar.topbar-bottom-rail #compact-search {
   grid-column: 1 / -1;
   grid-row: 2;
+  width: 100%;
 }
 #topbar.topbar-bottom-rail #topbar-rail .rail-logo {
   display: none;
@@ -1430,16 +1431,16 @@ body > :not(#graph) {
   grid-column: 8;
 }
 #topbar.topbar-bottom-rail #topbar-rail [data-target="new-doc-btn"] {
-  grid-column: 10;
-}
-#topbar.topbar-bottom-rail #topbar-rail [data-target="settings-btn"] {
   grid-column: 11;
 }
-#topbar.topbar-bottom-rail #topbar-rail .rail-divider-right {
+#topbar.topbar-bottom-rail #topbar-rail [data-target="settings-btn"] {
   grid-column: 12;
 }
-#topbar.topbar-bottom-rail #topbar-rail [data-rail="reopen-research"] {
+#topbar.topbar-bottom-rail #topbar-rail .rail-divider-right {
   grid-column: 13;
+}
+#topbar.topbar-bottom-rail #topbar-rail [data-rail="reopen-research"] {
+  grid-column: 14;
 }
 #topbar.topbar-rail #topbar-rail .rail-divider-search-left {
   grid-column: 5;
@@ -1503,7 +1504,7 @@ body > :not(#graph) {
   font-size: 14px;
 }
 .result:hover {
-  background: rgba(88, 166, 255, 0.12);
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
 }
 .result .count {
   margin-left: auto;
@@ -4718,25 +4719,31 @@ body > :not(#graph) {
    (2 ids to out-specify `#reader-find button`.) */
 #reader-find #reader-find-toggle {
   /* Same surface as the header action buttons (back / obsidian / close). */
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--fg);
   padding: 3px;
 }
-#reader-properties-toggle {
+#reader-properties-toggle,
+#reader-wiki-toggle {
   position: absolute;
   top: 10px;
-  left: 42px;
   z-index: 3;
   display: inline-flex;
   align-items: center;
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--fg);
   padding: 3px;
   cursor: pointer;
+}
+#reader-properties-toggle {
+  left: 42px;
+}
+#reader-wiki-toggle {
+  right: 42px;
 }
 #reader-find #reader-find-toggle:hover,
 #reader-find.expanded #reader-find-toggle,
@@ -4745,7 +4752,9 @@ body > :not(#graph) {
   color: var(--accent);
 }
 #reader-properties-toggle:hover,
-#reader-properties-toggle[aria-pressed="true"] {
+#reader-properties-toggle[aria-pressed="true"],
+#reader-wiki-toggle:hover,
+#reader-wiki-toggle[aria-pressed="true"] {
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -4820,13 +4829,12 @@ body > :not(#graph) {
   display: inline-flex;
 }
 #reader-find #reader-versions-toggle,
-#reader-find #reader-wiki-toggle,
 #reader-find #reader-version-prev,
 #reader-find #reader-version-next,
 #reader-find #reader-version-checkpoint,
 #reader-find #reader-version-restore {
   margin-left: auto;
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--fg);
@@ -4834,12 +4842,6 @@ body > :not(#graph) {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-}
-#reader-find #reader-wiki-toggle {
-  margin-left: auto;
-}
-#reader-find #reader-wiki-toggle:not(.hidden) + #reader-versions-toggle {
-  margin-left: 0;
 }
 #reader-find.expanded #reader-versions-toggle,
 #reader-find.versions-expanded #reader-versions-toggle {
@@ -4849,7 +4851,9 @@ body > :not(#graph) {
   display: none !important;
 }
 #reader-scroll:has(#reader-find.expanded, #reader-find.versions-expanded)
-  > #reader-properties-toggle {
+  > #reader-properties-toggle,
+#reader-scroll:has(#reader-find.expanded, #reader-find.versions-expanded)
+  > #reader-wiki-toggle {
   display: none;
 }
 #reader-find #reader-version-prev,
@@ -4871,7 +4875,6 @@ body > :not(#graph) {
   display: inline-flex;
 }
 #reader-find #reader-versions-toggle:hover,
-#reader-find #reader-wiki-toggle:hover,
 #reader-find #reader-version-prev:hover:not(:disabled),
 #reader-find #reader-version-next:hover:not(:disabled),
 #reader-find #reader-version-checkpoint:hover:not(:disabled),
@@ -4879,11 +4882,13 @@ body > :not(#graph) {
   border-color: var(--accent);
 }
 #reader-find #reader-versions-toggle svg,
-#reader-find #reader-wiki-toggle svg,
 #reader-find #reader-version-prev svg,
 #reader-find #reader-version-next svg,
 #reader-find #reader-version-checkpoint svg,
 #reader-find #reader-version-restore svg {
+  display: block;
+}
+#reader-wiki-toggle svg {
   display: block;
 }
 #reader-find #reader-version-prev:disabled,
@@ -4896,14 +4901,8 @@ body > :not(#graph) {
 #reader-versions-toggle.hidden {
   display: none;
 }
-#reader-find #reader-wiki-toggle.hidden,
-#reader-find.expanded #reader-wiki-toggle,
-#reader-find.versions-expanded #reader-wiki-toggle {
+#reader-wiki-toggle.hidden {
   display: none;
-}
-#reader-find #reader-wiki-toggle[aria-pressed="true"] {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 #reader-version-status.hidden,
 #reader-version-prev.hidden,
