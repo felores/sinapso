@@ -8,7 +8,7 @@ artifact_readiness: implementation-ready
 execution: code
 prototype_status: pending-decision
 implementation_branch: prototype/pi-rpc-agent-tui
-parallel_to: docs/plans/2026-07-19-feat-grounded-chat-generative-ui-plan.md
+compatible_with: docs/plans/2026-07-20-feat-runtime-neutral-generative-ui-plan.md
 replaces: null
 ---
 
@@ -18,9 +18,9 @@ replaces: null
 
 - **Objective:** Test whether an externally installed, version-pinned Pi coding agent can power a safe, browser-native agent TUI inside Sinapso while preserving Sinapso's registry, route guards, spatial research workflow, and artifact-first product model.
 - **Decision sought:** Produce enough compatibility, security, interaction, and maintenance evidence to choose whether Pi RPC should become the implementation direction for grounded agent interaction. This prototype does not make that choice in advance.
-- **Parallel status:** This is a parallel experiment, not a replacement. `docs/plans/2026-07-19-feat-grounded-chat-generative-ui-plan.md` remains unchanged and authoritative as the existing grounded-chat candidate until a reviewed prototype decision explicitly says otherwise.
+- **Independent status:** This prototype owns agent execution, Pi sessions, RPC supervision, and a bounded baseline TUI. `docs/plans/2026-07-20-feat-runtime-neutral-generative-ui-plan.md` independently owns reusable tool/result presentation. Neither plan requires the other; whichever lands second adds the thin `ToolPresentationV1` adapter.
 - **Product placement:** Add an experimental `agent` collection to the existing research column. The graph and editable note remain primary. The session is runtime state; an Inbox note remains the intended durable artifact.
-- **Trust boundary:** Sinapso remains the authorization authority. Pi supplies the agent loop, canonical session format, and RPC event stream. Pi extension UI is presentation only. RPC process separation is not a sandbox.
+- **Trust boundary:** Sinapso remains the authorization authority. Pi supplies the agent loop, canonical session format, and RPC event stream. RPC process separation is not a sandbox.
 - **Prototype limit:** The model may use exactly `search_vault`, `read_note`, and `browse_folder`. The prototype cannot write, edit, run shell commands, browse the web, mutate a wiki, operate Git, install packages or skills, or select arbitrary HTTP routes.
 - **Implementation isolation:** After review, implementation starts from the clean commit containing the approved plan in a separate sibling worktree on branch `prototype/pi-rpc-agent-tui`. The current dirty main worktree is not copied, cleaned, stashed, reset, or otherwise changed.
 - **Decision gate:** No prototype code is merged and no existing plan is superseded until the evidence gate in this document is reviewed.
@@ -29,12 +29,12 @@ replaces: null
 
 ### Product behavior
 
-- **R1. Parallel experiment.** The hidden prototype coexists conceptually with the grounded-chat plan. Approval to implement this prototype is not approval to delete, rewrite, or supersede that plan.
+- **R1. Independent experiment.** The hidden prototype validates a Pi-backed agent runtime. Approval to implement it does not select, replace, delay, or supersede the runtime-neutral generative UI feature.
 - **R2. Deep Sinapso module.** The TUI stays inside Sinapso because it depends directly on registry route declarations, token security, research-column geometry, Inbox switching, localization, accessibility, and browser diagnostics. Extraction requires demonstrated reuse by a second product, not a hypothetical future use.
 - **R3. Existing spatial hierarchy.** Extend `ResearchCollection` from `"research" | "inbox"` to `"research" | "inbox" | "agent"` only while the hidden flag is enabled. Reuse the research column's dock, float, resize, close, pin, responsive, and topbar behavior. Do not add a new pane.
 - **R4. Artifact-first outcome.** Pi sessions are resumable runtime records, not durable knowledge artifacts. The prototype performs no writes. A separately reviewed post-prototype slice may expose `write_document` so a user can deliberately create an Inbox artifact through `write.ts`.
 - **R5. Hidden and optional.** Gate every route and UI entry behind `SINAPSO_EXPERIMENTAL_PI_AGENT=1`. If Pi is absent or incompatible, the normal application and full serial gate behave exactly as before. There is no production installer and no Pi production dependency.
-- **R6. Localized and accessible.** All agent labels, errors, statuses, disclosure text, controls, dialogs, queue states, and empty states use matching English and neutral-Spanish keys in `web/src/i18n.ts`. The TUI is keyboard-first, screen-reader labeled, focus-visible, and usable at the repository's narrow viewport.
+- **R6. Localized and accessible.** All agent labels, errors, statuses, disclosure text, controls, and empty states use matching English and neutral-Spanish keys in `web/src/i18n.ts`. The TUI is keyboard-first, screen-reader labeled, focus-visible, and usable at the repository's narrow viewport.
 
 ### Pi compatibility and process contract
 
@@ -42,8 +42,8 @@ replaces: null
 - **R8. Node floor.** Fail closed unless the child runtime satisfies Pi's current `node >=22.19.0` requirement. Sinapso's broader Node 22 statement is not sufficient evidence for this exact floor.
 - **R9. RPC choice.** Spawn optional external `pi --mode rpc` as a child process. Do not use the direct Pi SDK, a PTY, xterm, `node-pty`, or `pi-agent-core` alone. Parse stdout as strict LF-delimited JSONL. Never split on generic Unicode line separators.
 - **R10. Current Pi shape.** Compatibility evidence must use the current `earendil-works/pi` repository, redirected from `badlogic/pi-mono`, under MIT. At research time its packages are `agent`, `ai`, `coding-agent`, `orchestrator`, and `tui`. The current repository has no `web-ui` package. Generated references to `pi-web-ui` are stale and prohibited as a dependency or architecture premise.
-- **R11. Supported RPC surface.** The adapter may use current streaming message and tool events; abort; steer and follow-up; state, model, session, token, and cost data; `get_commands` including `skill:*`; session tree, entries, and compaction; and `extension_ui_request`/`extension_ui_response` for select, confirm, input, editor, notify, status, and widget. U0 must verify exact command and event shapes against the installed version before feature work.
-- **R12. Canonical sessions.** Keep Pi's JSONL session trees, branching, and compaction as the sole runtime session format under `<dataDir>/agent/pi/sessions/`. Do not translate messages into a second chat database, vault transcript, or canonical browser store. Derived in-memory view models and bounded browser rendering state are allowed.
+- **R11. Supported RPC surface.** The mandatory prototype surface is streaming message and tool events, prompt submission, abort plus official settlement, state/model/session/token/cost data, canonical session start/resume, and `get_commands` including `skill:*`. U0 verifies those exact shapes against the installed version. Steer/follow-up, tree navigation, compaction controls, and extension UI are deferred until the core decision passes.
+- **R12. Canonical sessions.** Keep Pi's JSONL session files as the sole runtime session format under `<dataDir>/agent/pi/sessions/`. Support list, start, and resume without translating messages into a second chat database, vault transcript, or canonical browser store. Derived in-memory view models and bounded browser rendering state are allowed.
 
 ### Process confinement and secrets
 
@@ -61,28 +61,25 @@ replaces: null
 - **R21. No route credentials in Pi.** Do not pass the normal Sinapso token, MCP token, browser token, or existing route URLs to the child. The trusted bridge receives only the dedicated gateway URL and its scoped child capability.
 - **R22. Closed gateway.** The gateway accepts `{ tool, arguments }`, validates the child identity and exact registry schema, and dispatches only a code-owned registry binding for `search_vault`, `read_note`, or `browse_folder`. The model cannot select a path, method, headers, host, token, timeout, or response decoder. Unknown, malformed, unbound, external, spending, mutating, and destructive requests return a bounded error and dispatch nothing.
 - **R23. Exact initial tools.** Add `agent` to the registry `Surface` type and mark exactly `search_vault`, `read_note`, and `browse_folder`. No current or future registry entry becomes available by default. Explicit tests compare the sorted surface names to that exact set.
-- **R24. No ambient capabilities.** Expose no direct filesystem, shell, built-in read/write/edit/bash, arbitrary HTTP, web, Git, wiki, note mutation, package installation, extension installation, credential, or process tool. Filter `get_commands` through a code-owned command allowlist containing only `skill:sinapso-grounding-demo`; session/tree/compaction actions use their dedicated RPC controls instead of slash commands. The model and browser cannot invoke Pi login, share, export, import, package, config, update, install, or arbitrary returned commands. The bundled skill cannot add tools.
-- **R25. Pi UI is not approval.** `extension_ui_request` maps to browser presentation. A select, confirm, input, editor, notify, status, or widget response does not authorize a Sinapso action. Any future spending or mutation must add a server-owned approval record and normal browser-token decision before gateway dispatch.
+- **R24. No ambient capabilities.** Expose no direct filesystem, shell, built-in read/write/edit/bash, arbitrary HTTP, web, Git, wiki, note mutation, package installation, extension installation, credential, or process tool. Filter `get_commands` through a code-owned command allowlist containing only `skill:sinapso-grounding-demo`. The model and browser cannot invoke Pi login, share, export, import, package, config, update, install, or arbitrary returned commands. The bundled skill cannot add tools.
 
 ### Egress, limits, and cancellation
 
 - **R26. Disclosure before turn.** Starting or resuming returns a server-authored disclosure challenge without contacting a provider. Before the first model turn, and again after any provider/model or disclosure-content change, the browser must show and accept a localized disclosure naming the selected provider and stating that the submitted prompt, prior Pi session context, tool schemas, bundled skill instructions, and bounded tool results may leave the machine. Acceptance uses the normal Sinapso token and is bound to the server session, provider, model, disclosure digest, and current child generation.
-- **R27. No silent send.** A turn without a matching accepted disclosure fails before writing to child stdin. Loading a session, opening the drawer, reading commands, viewing cost, or navigating the session tree never submits a model prompt.
+- **R27. No silent send.** A turn without a matching accepted disclosure fails before writing to child stdin. Listing, starting, resuming, opening the panel, reading commands, or viewing cost never submits a model prompt.
 - **R28. Enforceable bounds and observed usage.** Server-owned hard defaults are 16 KiB submitted text, 12 agent steps, 24 total tool calls, 128 KiB cumulative tool-result bytes, and 120 seconds wall time. A single rendered tool body is clipped to 8 KiB. Configure the selected provider with `maxTokens: 32_000` and reject submission when a conservative code-owned maximum-cost estimate exceeds USD 1.00. Reported generated tokens and incremental cost are observed after provider work; an excess aborts remaining work and prevents continuation but is not claimed as a pre-spend circuit breaker. Crossing an enforceable bound sends abort, closes the run, ignores later work events for that run generation, and emits a localized terminal reason. Lower provider limits may apply; increases require a plan revision.
-- **R29. Abort authority.** Browser abort uses the normal token. Supervisor timeout, disconnect policy, process exit, protocol corruption, or bound violation may also abort. Mark the run terminal before sending abort, then reject all gateway and UI-response work until Pi emits the official `agent_settled` event. If settlement does not arrive within the tested grace bound, terminate the child, rotate the capability, and start a clean child before accepting another turn. No later tool dispatch, extension UI response, model output, or queued message from the old run generation may take effect.
-- **R30. Queue semantics.** Expose Pi steer and follow-up as distinct keyboard-accessible queue actions. Queue items are bounded, visible, removable before delivery, and tagged with the active run generation. Do not emulate queue semantics in a second agent loop.
+- **R29. Abort authority.** Browser abort uses the normal token. Supervisor timeout, disconnect policy, process exit, protocol corruption, or bound violation may also abort. Mark the run terminal before sending abort, then reject all gateway work until Pi emits the official `agent_settled` event. If settlement does not arrive within the tested grace bound, terminate the child, rotate the capability, and start a clean child before accepting another turn. No later tool dispatch or model output from the old run generation may take effect.
 
 ### Browser-native TUI
 
-- **R31. Semantic event rendering.** Vanilla TypeScript maps RPC events to code-owned text messages, bounded tool cards, status, cost/token context, steer/follow-up queue, command palette, session drawer, tree/entry/compaction views, and terminal errors. Do not emulate ANSI or terminal cells.
-- **R32. Native extension UI.** Map select and confirm to native `<dialog>` controls; input to `<input>`; editor to `<textarea>`; notify and status to live regions; and widget to a bounded code-owned text panel. Restore focus on close, support Escape where safe, and correlate each response to the exact request id and run generation.
+- **R31. Semantic event rendering.** Vanilla TypeScript maps RPC events to code-owned text messages, bounded baseline tool cards, status, cost/token context, session resume, command discovery, and terminal errors. Do not emulate ANSI or terminal cells. When the runtime-neutral generative UI adapter is present on the same branch, every Pi tool lifecycle uses `Pi event -> adapter -> ToolPresentationV1 -> shared renderer`; baseline Pi tool cards exist only when that adapter is absent.
 - **R33. Safe content.** Render all model and tool text with `textContent`. Do not render model HTML, use `innerHTML`, linkify arbitrary output, expose raw reasoning, or show unbounded tool dumps. Reasoning events may become a generic localized activity state only.
 - **R34. Research-column behavior.** Preserve Inbox flush-before-switch, research pinning, active item identity, dock/float geometry, close behavior, narrow viewport, and graph/reader availability. Agent content gets its own body root while existing Research and Inbox bodies retain current behavior.
 - **R35. Diagnostics.** Every new E2E scenario uses the existing browser diagnostic collector and fails on unallowlisted console, page, request, or HTTP 500+ errors.
 
 ## Non-Goals
 
-- No replacement, modification, or deletion of the existing grounded-chat plan.
+- No dependency on, replacement of, or duplicate implementation of the runtime-neutral generative UI plan.
 - No merge to main before the decision gate.
 - No separate repository, npm workspace, package, or standalone app.
 - No production Pi installer, bundled Pi binary, Pi npm dependency, Pi SDK dependency, or automatic update.
@@ -101,10 +98,10 @@ replaces: null
 - **KTD1. [session-settled] Worktree and branch are complementary.** Implementation uses sibling worktree `../sinapso-pi-rpc-agent-tui` with branch `prototype/pi-rpc-agent-tui`, both created from the clean reviewed-plan commit. Rejected: implementation in the dirty main worktree, copying that worktree, a branch without an isolated worktree, a worktree with detached HEAD, a separate repository, and an npm workspace.
 - **KTD2. [session-settled] Deep module until reuse is real.** Keep the TUI and supervisor in Sinapso. Rejected: premature standalone extraction that would duplicate security, registry, i18n, geometry, and E2E seams.
 - **KTD3. [session-settled] External RPC child.** Use optional `pi --mode rpc`. Rejected: direct SDK embedding, `pi-agent-core` without coding-agent session/RPC behavior, PTY scraping, terminal emulation, and TUI package reuse in the browser.
-- **KTD4. [session-settled] Pi owns runtime sessions.** Preserve Pi JSONL trees, branching, entries, and compaction under app-local data. Rejected: translating Pi sessions into a second Sinapso chat store or vault format.
-- **KTD5. [session-settled] Sinapso owns authorization.** The bridge capability reaches only the dedicated gateway; browser decisions use the normal token. Rejected: giving Pi an existing token, treating extension UI as approval, or assuming process separation is a sandbox.
+- **KTD4. [session-settled] Pi owns runtime sessions.** Preserve Pi JSONL session files under app-local data and support start/resume. Rejected: translating Pi sessions into a second Sinapso chat store or vault format.
+- **KTD5. [session-settled] Sinapso owns authorization.** The bridge capability reaches only the dedicated gateway; browser decisions use the normal token. Rejected: giving Pi an existing token or assuming process separation is a sandbox.
 - **KTD6. [session-settled] Exact closed tool surface.** Registry metadata defines exactly three read tools and the gateway owns method/path/header selection. Rejected: built-in Pi tools, arbitrary HTTP, MCP from the child, generic commands, and inferred exposure from all registry reads.
-- **KTD7. [session-settled] Browser-native semantic UI.** Render RPC meaning in vanilla TypeScript and native controls. Rejected: ANSI parsing, xterm, model HTML, React, assistant-ui, AI SDK, and stale `pi-web-ui` references.
+- **KTD7. [session-settled] Browser-native semantic UI.** Render RPC meaning in vanilla TypeScript and native controls. Keep bounded baseline cards so Pi works alone. On an integrated branch, the Pi-side `ToolPresentationV1` adapter gives the shared renderer sole tool-card authority, including fallback. Rejected: dual renderers, ANSI parsing, xterm, model HTML, React, assistant-ui, AI SDK, and stale `pi-web-ui` references.
 - **KTD8. [session-settled] Offline launch and least environment.** Disable Pi startup networking and all discovery, and construct a fresh environment containing one provider credential. Rejected: inherited `process.env`, user Pi config, project trust, and best-effort secret deletion after inheritance.
 - **KTD9. [session-settled] Bundled skill only.** The prototype explicitly loads one repository-owned, instructions-only skill and verifies its digest and contents. Skill discovery, scanning, installation, activation, and marketplace trust design require a separate plan if this prototype demonstrates value.
 - **KTD10. [session-settled] Prototype first, mutation later.** Prove read-only agent value before adding `write_document`. Rejected: using the prototype to smuggle in note, wiki, Git, or skill mutation.
@@ -158,7 +155,7 @@ Future approved mutation only:
 2. Server verifies the hidden flag, external Pi evidence, real app-owned paths, and requested canonical Pi session id/path.
 3. Supervisor creates a child generation, fresh capability, and fresh environment allowlist.
 4. Child starts in RPC mode with every discovery source disabled and exactly one extension plus one skill loaded.
-5. Supervisor requests state, commands, session metadata, tree, and entries as needed.
+5. Supervisor requests state, commands, and session metadata as needed.
 6. Browser receives semantic state and a disclosure challenge. No prompt is submitted and no external network request is permitted.
 
 #### Submitted turn
@@ -168,7 +165,7 @@ Future approved mutation only:
 3. Supervisor writes one strict JSONL prompt command and starts turn counters.
 4. Pi contacts only the selected provider and emits streaming semantic events.
 5. Supervisor enforces step, call, byte, and duration bounds; provider `maxTokens` and conservative preflight cost estimation limit submission; reported token/cost excess stops continuation.
-6. Browser parses the authenticated SSE response stream from `fetch`, rendering code-owned message, tool, queue, session, status, and cost views.
+6. Browser parses the authenticated SSE response stream from `fetch`, rendering code-owned message, tool, session, status, and cost views.
 
 #### Tool call
 
@@ -177,14 +174,6 @@ Future approved mutation only:
 3. Gateway resolves the exact `agent` registry entry, validates arguments, and selects the code-owned existing route binding.
 4. Existing route guards and vault confinement run.
 5. Gateway bounds the response before returning it to Pi; the browser card applies a smaller display bound.
-
-#### Extension UI
-
-1. Pi emits an `extension_ui_request` with request id and semantic kind.
-2. Supervisor bounds and forwards supported fields only.
-3. Browser renders a native control and returns the response with its normal token.
-4. Supervisor checks request id, child generation, active run, and supported type before writing `extension_ui_response`.
-5. This response changes presentation/input state only and never authorizes a route.
 
 #### Abort
 
@@ -241,13 +230,10 @@ All routes below require the normal browser token except the child-only gateway.
 | `GET`, `POST` | `/api/agent/sessions` | Derive session list from Pi JSONL files; start a new canonical session. |
 | `POST` | `/api/agent/sessions/resume` | Resume a confined canonical Pi session without a model turn. |
 | `GET` | `/api/agent/sessions/:id/events` | Token-guarded SSE response consumed through authenticated `fetch`, never native `EventSource` or a query-string token. |
-| `GET` | `/api/agent/sessions/:id/state` | Current state, model, cost, commands, tree, entries, and compaction status. |
+| `GET` | `/api/agent/sessions/:id/state` | Current state, model, cost, commands, and session metadata. |
 | `POST` | `/api/agent/sessions/:id/disclosure` | Record browser acceptance bound to disclosure digest and child generation. |
 | `POST` | `/api/agent/sessions/:id/turns` | Submit one bounded turn only after disclosure acceptance. |
-| `POST` | `/api/agent/sessions/:id/steer` | Queue a Pi steering message. |
-| `POST` | `/api/agent/sessions/:id/follow-up` | Queue a Pi follow-up message. |
 | `POST` | `/api/agent/sessions/:id/abort` | Abort the current run generation. |
-| `POST` | `/api/agent/sessions/:id/ui-response` | Correlated extension UI response; presentation only. |
 | `POST` | `/api/agent-tools` | Child-capability-only gateway for the exact three tools. |
 
 No route accepts a provider endpoint, arbitrary session path, filesystem path outside a confined Pi session id, route path, HTTP method, header map, extension path, skill path, or executable path from the browser or model.
@@ -265,7 +251,7 @@ The list reflects the current repository's flat `server/integrations/` modules, 
 - `server/integrations/pi-bridge-extension.ts` - the only explicitly loaded trusted Pi extension.
 - `server/integrations/pi-demo-skill/SKILL.md` - one bundled instructions-only demonstration skill.
 - `web/src/agent-tui.ts` - semantic state reducer, DOM renderer, keyboard controls, native dialogs, authenticated fetch-stream client, and research-column adapter.
-- `web/src/agent-tui.test.ts` - pure state, event, bounds, queue, extension UI, and safe-render tests.
+- `web/src/agent-tui.test.ts` - pure state, event, bounds, session resume, abort, and safe-render tests.
 - `tests/e2e/agent-tui.spec.ts` - hidden-mode browser flow, geometry, accessibility, diagnostics, and no-Pi degradation.
 - `tests/e2e/fixtures/fake-pi.mjs` - deterministic strict-JSONL RPC child used only by E2E.
 
@@ -279,7 +265,7 @@ The list reflects the current repository's flat `server/integrations/` modules, 
 - `web/src/main.ts` - collection switching, Inbox flush integration, geometry, pin behavior, and agent TUI lifecycle.
 - `web/src/research-state.ts` - add the `agent` collection value and pure transition behavior.
 - `web/src/research-state.test.ts` - Research/Inbox/Agent switching and pin invariants.
-- `web/src/style.css` - research-column-native agent layout, responsive cards, dialogs, focus, queue, and drawer styles.
+- `web/src/style.css` - research-column-native agent layout, responsive cards, disclosure, focus, and session styles.
 - `web/src/i18n.ts` - exact EN/ES agent, disclosure, status, error, and accessibility keys.
 - `tests/e2e/server.ts` - enable the hidden flag and inject the fake Pi path only for the agent TUI E2E fixture.
 
@@ -287,7 +273,7 @@ The list reflects the current repository's flat `server/integrations/` modules, 
 
 - `package.json` and `package-lock.json`: no Pi, SDK, frontend framework, terminal emulator, or other dependency.
 - `server/integrations/write.ts` and `server/integrations/git.ts`: prototype tools cannot reach them.
-- `docs/plans/2026-07-19-feat-grounded-chat-generative-ui-plan.md`: preserved pending the decision gate.
+- `docs/plans/2026-07-20-feat-runtime-neutral-generative-ui-plan.md`: independent presentation feature; not modified or required by this prototype.
 - `.harness/features.json`: not initialized or modified by this plan.
 
 ## Implementation Units
@@ -299,7 +285,7 @@ Each unit is sized to become one harness feature only after `harness-progress in
 - **Depends on:** none. U1-U5 cannot start until U0 passes.
 - **Requirements:** R7-R19, KTD3, KTD8, KTD11, KTD12.
 - **Files:** `pi-agent.ts`, `pi-agent.test.ts`, `pi-bridge-extension.ts`, `pi-demo-skill/SKILL.md`, app-local compatibility evidence only.
-- **Implement:** Detect the external executable without installing it. Require version `0.80.10` and Node `>=22.19.0`. Capture `pi --help` and verify the installed executable's exact spellings and behavior for RPC mode, provider/model, session/session-dir, built-in tool disablement, explicit tool allowlist, extension disablement plus explicit extension, skill disablement plus explicit skill, prompt/context/theme disablement, project non-approval, and offline behavior. Probe strict LF JSONL framing, request/response correlation, streaming events, abort, steer/follow-up, state/model/session/cost, `get_commands`, tree/entries/compaction, and every supported extension UI request/response kind.
+- **Implement:** Detect the external executable without installing it. Require version `0.80.10` and Node `>=22.19.0`. Capture `pi --help` and verify the installed executable's exact spellings and behavior for RPC mode, provider/model, session/session-dir, built-in tool disablement, explicit tool allowlist, extension disablement plus explicit extension, skill disablement plus explicit skill, prompt/context/theme disablement, project non-approval, and offline behavior. Probe strict LF JSONL framing, request/response correlation, streaming message/tool events, prompt submission, abort plus official settlement, state/model/session/token/cost, session resume, and `get_commands`.
 - **Lockdown proof:** Run from an app-controlled non-vault cwd with empty app-owned session/temp dirs, generated app-owned config limited to the digested loopback test provider, and the fresh environment allowlist. Load the minimal bridge and bundled skill fixtures in U0, before gateway authorization exists. Assert the command palette allowlist contains only `skill:sinapso-grounding-demo`, the tool inventory contains exactly the three bridge tools, and the loaded resource digests match the one bridge plus one bundled skill. Assert the bundled skill contains instructions only, with no extension, script, or lifecycle hook. Assert no user config or discovered extension/skill/prompt/theme/context appears and no other returned command can be invoked through the browser adapter.
 - **Network proof:** Restrict accepted executables to the npm Node entrypoint and use a deterministic Node preload observer that blocks and records external socket/fetch attempts, plus the generated `models.json` and local fake selected-provider endpoint for the submitted-turn probe. Start and resume must record zero external requests. One turn may reach only the fake selected provider. Any other destination fails U0. Fake-child E2E later proves policy wiring, not actual Pi egress.
 - **Parser proof:** Feed split records, multiple records per chunk, CR characters inside JSON strings, Unicode separators inside strings, malformed lines, overlong lines, EOF fragments, and valid records after malformed lines. The parser resynchronizes only at LF, emits a bounded protocol error, and never executes malformed content. Supervisor terminates or cleanly restarts a corrupted child generation.
@@ -311,9 +297,9 @@ Each unit is sized to become one harness feature only after `harness-progress in
 - **Depends on:** U0.
 - **Requirements:** R9-R19, R26-R30.
 - **Files:** `pi-agent.ts`, `pi-agent.test.ts`.
-- **Implement:** Confine and permission app-owned directories; launch through the fixed POSIX umask wrapper; create one child generation and capability per active session; preserve Pi JSONL files untouched; validate the canonical session header cwd before resume and revalidate runtime cwd after startup through the trusted bridge's `ExtensionContext.cwd` attestation, not `get_state`; normalize supported events; correlate requests; expose state/commands/tree/entries/compaction; enforce runtime budgets and provider submission limits; implement steer/follow-up; mark abort terminal before sending it; reject gateway/UI work until official settlement; replace unresponsive children with rotated capabilities; and dispose children on server shutdown.
-- **Tests:** Child cwd outside vault; session header and reported cwd must equal the app-owned work directory; modified or mismatched session cwd rejected; symlinked data, work, config, temp, session, and evidence paths rejected; mode checks where supported; child-created file mode proves `umask 077` without changing server umask; environment exact-key snapshot; unrelated secrets absent; canonical session bytes unchanged by reads; no second history file; malformed-line recovery; stale generation ignored; timeout and every enforceable bound abort; provider `maxTokens`, preflight cost rejection, and post-response usage stop; abort rejects all gateway/UI work until settlement; missing settlement replaces child and rotates capability; crash and restart isolation.
-- **Acceptance evidence:** Starting, resuming, listing, tree navigation, entry reads, command discovery, and compaction inspection change only Pi's own app-local session behavior and leave the vault plus `changes.jsonl` byte-identical.
+- **Implement:** Confine and permission app-owned directories; launch through the fixed POSIX umask wrapper; create one child generation and capability per active session; preserve Pi JSONL files untouched; validate the canonical session header cwd before resume and revalidate runtime cwd after startup through the trusted bridge's `ExtensionContext.cwd` attestation, not `get_state`; normalize supported events; correlate requests; expose state/commands/session resume; enforce runtime budgets and provider submission limits; mark abort terminal before sending it; reject gateway work until official settlement; replace unresponsive children with rotated capabilities; and dispose children on server shutdown.
+- **Tests:** Child cwd outside vault; session header and reported cwd must equal the app-owned work directory; modified or mismatched session cwd rejected; symlinked data, work, config, temp, session, and evidence paths rejected; mode checks where supported; child-created file mode proves `umask 077` without changing server umask; environment exact-key snapshot; unrelated secrets absent; canonical session bytes unchanged by reads; no second history file; malformed-line recovery; stale generation ignored; timeout and every enforceable bound abort; provider `maxTokens`, preflight cost rejection, and post-response usage stop; abort rejects gateway work until settlement; missing settlement replaces child and rotates capability; crash and restart isolation.
+- **Acceptance evidence:** Starting, resuming, listing, reading state, and command discovery change only Pi's own app-local session behavior and leave the vault plus `changes.jsonl` byte-identical.
 
 ### U2. Dedicated child-capability gateway and exact registry surface
 
@@ -329,17 +315,17 @@ Each unit is sized to become one harness feature only after `harness-progress in
 - **Depends on:** U1, U2.
 - **Requirements:** R5, R19-R30.
 - **Files:** `server/app.ts`, `server/app.test.ts`, `pi-agent.ts`.
-- **Implement:** Add hidden status, session, start/resume, state, disclosure, turn, steer, follow-up, abort, UI-response, and SSE routes. Validate ids and bodies with small route-specific limits. Bind disclosure acceptance to session, provider, model, text digest, and generation. Redact executable paths, capabilities, environment, and credentials from browser responses and logs.
-- **Tests:** Hidden flag off returns no usable feature; no Pi returns redacted unavailable status; every browser route requires the normal token; foreign Host/Origin rejected; disclosure absent/stale/wrong generation/wrong provider/wrong model rejected before child prompt; start/resume zero external requests; turn selected-provider-only; authenticated fetch-stream reconnect does not replay unbounded history; native `EventSource` and query-string token paths do not exist; disconnect cannot orphan work; extension UI fixtures round-trip only matching ids/types/generations.
-- **Acceptance evidence:** A deterministic fake-child route test covers a complete disclosed turn, streaming tool call, UI request, queue, cost/status update, and abort without vault or journal change.
+- **Implement:** Add hidden status, session, start/resume, state, disclosure, turn, abort, and SSE routes. Validate ids and bodies with small route-specific limits. Bind disclosure acceptance to session, provider, model, text digest, and generation. Redact executable paths, capabilities, environment, and credentials from browser responses and logs.
+- **Tests:** Hidden flag off returns no usable feature; no Pi returns redacted unavailable status; every browser route requires the normal token; foreign Host/Origin rejected; disclosure absent/stale/wrong generation/wrong provider/wrong model rejected before child prompt; start/resume zero external requests; turn selected-provider-only; authenticated fetch-stream reconnect does not replay unbounded history; native `EventSource` and query-string token paths do not exist; disconnect cannot orphan work.
+- **Acceptance evidence:** A deterministic fake-child route test covers a complete disclosed turn, streaming tool call, cost/status update, and abort without vault or journal change.
 
 ### U4. Vanilla browser agent TUI and research-column integration
 
 - **Depends on:** U1, U3.
 - **Requirements:** R1-R6, R26-R35.
 - **Files:** `agent-tui.ts`, its test, `index.html`, `main.ts`, `research-state.ts`, its test, `style.css`, `i18n.ts`.
-- **Implement:** Add the hidden Agent collection, semantic event reducer, authenticated `apiRaw(..., { token: true })` fetch-stream transport with bounded manual reconnect, composer, text/tool cards, status/cost/token line, steer/follow-up queue, command palette containing only `skill:sinapso-grounding-demo`, session drawer/tree/entries/compaction, disclosure dialog, native extension UI controls, abort, and bounded error states. On stream `403`, call the existing `resetApiToken()` before one bounded reconnect so a server restart can refresh the header token. Native `EventSource` and query-string tokens are prohibited. Keep DOM writes safe and code-owned.
-- **Tests:** Inbox flush completes before switch; pinning and visible identity remain correct; research geometry unchanged; agent state survives collection switch without becoming canonical persistence; semantic event mapping; stream `403` resets the token before bounded reconnect; malformed/unknown event fallback; extension UI select/confirm/input/editor/notify/status/widget fixtures; focus restoration; Escape; keyboard order; exact EN/ES parity; no `innerHTML`, ANSI renderer, raw reasoning, or unbounded dump.
+- **Implement:** Add the hidden Agent collection, semantic event reducer, authenticated `apiRaw(..., { token: true })` fetch-stream transport with bounded manual reconnect, composer, text/baseline tool cards, status/cost/token line, session resume, command palette containing only `skill:sinapso-grounding-demo`, disclosure dialog, abort, and bounded error states. On stream `403`, call the existing `resetApiToken()` before one bounded reconnect so a server restart can refresh the header token. Native `EventSource` and query-string tokens are prohibited. If `ToolPresentationV1` exists on the target branch, add the Pi-side adapter and route every tool lifecycle through the shared renderer, retaining baseline cards only for builds without the adapter. Keep DOM writes safe and code-owned.
+- **Tests:** Inbox flush completes before switch; pinning and visible identity remain correct; research geometry unchanged; agent state survives collection switch without becoming canonical persistence; semantic event mapping; session resume; stream `403` resets the token before bounded reconnect; malformed/unknown event fallback; keyboard order; exact EN/ES parity; no `innerHTML`, ANSI renderer, raw reasoning, or unbounded dump.
 - **Acceptance evidence:** Unit tests and manual DOM inspection show a responsive panel at desktop and narrow widths with no graph/reader regression.
 
 ### U5. End-to-end trust and decision evidence
@@ -347,7 +333,7 @@ Each unit is sized to become one harness feature only after `harness-progress in
 - **Depends on:** U0-U4.
 - **Requirements:** all.
 - **Files:** `agent-tui.spec.ts`, fake Pi fixture, `tests/e2e/server.ts`, existing files only where fixture wiring requires it.
-- **Implement:** Exercise hidden activation, absent-Pi degradation, start/resume without egress, disclosure, one turn, all three tools, streaming states, command palette and demonstration skill, extension UI kinds, queues, session tree, compaction view, abort, narrow viewport, and browser diagnostics.
+- **Implement:** Exercise hidden activation, absent-Pi degradation, start/resume without egress, disclosure, one turn, all three tools, streaming states, command palette and demonstration skill, abort, narrow viewport, and browser diagnostics.
 - **Tests:** Assert exact commands/skill and exact three tools; child cwd outside vault; child environment excludes seeded browser/MCP/Exa/Git/SSH/Infisical/unrelated cloud secrets; capability is gateway-only; unknown/mutating calls fail; malformed JSONL line recovers safely; session operations leave vault and journal byte-identical; fake-child network fixtures verify supervisor policy wiring while U0 alone proves actual-Pi egress; abort blocks work until settlement or child replacement; panel has no horizontal overflow and remains keyboard-operable; full serial gate passes with Pi absent.
 - **Acceptance evidence:** Produce a compact review packet from test output and the app-local compatibility evidence. Do not merge, supersede the other plan, or add write tools.
 
@@ -383,8 +369,7 @@ The prototype decision is blocked unless deterministic tests prove all of the fo
 - Pi receives no existing Sinapso token or existing route URL.
 - Gateway rejects unknown tools, malformed schemas, route/method/header/host injection, oversize data, and every mutating, spending, shell, filesystem, Git, web, wiki, install, credential, or arbitrary HTTP operation.
 - Strict parser splits only at LF, bounds line size and buffer size, reports malformed lines, safely resynchronizes, and prevents malformed content from dispatching work.
-- Extension UI fixtures correlate exact request id, type, session, and generation; stale or invented responses do nothing. UI response is never authorization.
-- Starting, listing, resuming, reading session state/tree/entries, and viewing commands/cost produce zero external network requests.
+- Starting, listing, resuming, reading session state, and viewing commands/cost produce zero external network requests.
 - After disclosure, a submitted turn contacts only the selected provider externally. Any unexpected host blocks U0 and the decision gate.
 - Session operations do not translate or duplicate Pi JSONL and leave vault files plus `changes.jsonl` byte-identical.
 - Search/read/browse tool calls also leave vault files and journal byte-identical.
@@ -404,13 +389,13 @@ Reviewers receive:
 1. U0 compatibility evidence for external Pi `0.80.10`, including executable/version/Node/help hashes, exact validated flags, loaded resources, provider mapping, and observed network destinations.
 2. Focused and serial gate output with the serial gate run without Pi installed.
 3. Security-negative results for env, cwd, capabilities, exact tools, parser recovery, disclosure, egress, budgets, abort, and vault/journal immutability.
-4. Desktop and narrow browser evidence for messages, all tool states, cost/status, queues, commands, sessions, extension UI, keyboard use, and diagnostics.
-5. A short comparison against the preserved grounded-chat plan on dependency footprint, provider authority, session ownership, authorization complexity, UI fit, operational risk, and path to durable artifacts.
+4. Desktop and narrow browser evidence for messages, all tool states, cost/status, commands, session resume, keyboard use, and diagnostics.
+5. A short compatibility assessment against the independent runtime-neutral generative UI plan, confirming no duplicated renderer authority and identifying whether the thin adapter was exercised.
 
 ### Outcomes
 
-- **Approve Pi direction:** Keep the prototype branch isolated while writing and reviewing a new implementation plan that explicitly supersedes or revises the grounded-chat plan. Only that later review may alter the existing plan or authorize production dependencies, installer work, sandboxing, or `write_document`.
-- **Reject Pi direction:** Leave the grounded-chat plan intact. Remove the sibling prototype worktree and branch only after explicit confirmation. App-local prototype data may be removed separately after user confirmation.
+- **Approve Pi direction:** Keep the prototype branch isolated while writing and reviewing a production implementation plan. That later review may authorize production dependencies, installer work, sandboxing, or `write_document`; it does not supersede the independent generative UI plan.
+- **Reject Pi direction:** Leave the independent generative UI plan intact. Remove the sibling prototype worktree and branch only after explicit confirmation. App-local prototype data may be removed separately after user confirmation.
 - **Extend experiment:** Revise this plan with the exact unresolved evidence. Do not merge a partial prototype or expand tools while a trust failure remains.
 
 Passing tests proves technical feasibility, not automatic product adoption. Because this read-only prototype does not produce durable artifacts, adoption remains blocked until a separately reviewed artifact-producing slice demonstrates product value.
@@ -427,27 +412,27 @@ Stop implementation and return to review if any of these occurs:
 - Exact three-tool exposure cannot be proven from registry declarations and runtime inventory.
 - Malformed JSONL can desynchronize correlation or dispatch work.
 - Abort cannot prevent later generation work.
-- A browser control or Pi extension UI response must be trusted as authorization.
+- Pi requires extension UI, steer/follow-up, tree navigation, or compaction controls to demonstrate the mandatory feasibility core.
 - The prototype needs write/edit, shell, web, Git, wiki, install, or arbitrary HTTP capability to demonstrate value.
 - The full serial gate fails or depends on Pi being installed.
 - Research-column geometry, Inbox flush, pinning, localization, accessibility, or browser diagnostics regress.
 - Production review requires sandbox-grade filesystem or egress enforcement not provided by process separation.
 
-Rollback is branch-local: stop child processes, revoke capabilities, and remove the isolated worktree/branch after confirmation. Do not clean, reset, or copy from the current dirty main worktree. Do not alter the grounded-chat plan as part of rollback.
+Rollback is branch-local: stop child processes, revoke capabilities, and remove the isolated worktree/branch after confirmation. Do not clean, reset, or copy from the current dirty main worktree. Do not alter the independent generative UI plan as part of rollback.
 
 ## Definition of Done
 
 - The reviewed plan was implemented only in the specified sibling worktree and branch from a clean reviewed-plan commit.
 - U0 pins and records external Pi `0.80.10`, validates Node `>=22.19.0`, current flags/help, strict RPC, lockdown, provider mapping, and network behavior.
 - The browser-native vanilla TUI runs in the hidden `agent` research collection with responsive, localized, keyboard-accessible behavior.
-- Pi remains canonical for app-local runtime sessions, trees, branching, entries, and compaction; no second chat database exists.
+- Pi remains canonical for app-local runtime sessions and resume; no second chat database exists.
 - The child runs outside the vault with app-owned private directories, a fresh environment, one credential, one bridge, one skill, and exactly three tools.
 - Sinapso browser tokens stay out of Pi; a random per-child capability works only at the dedicated gateway.
-- Disclosure, enforceable bounds, provider submission limits, observed-usage stops, malformed-line handling, abort settlement barriers, safe rendering, and extension UI correlation pass.
+- Disclosure, enforceable bounds, provider submission limits, observed-usage stops, malformed-line handling, abort settlement barriers, and safe rendering pass.
 - Start/resume has zero external egress; a submitted turn is observed contacting only the selected provider.
 - Vault and journal remain byte-identical throughout prototype operations.
 - The required serial gate passes without Pi installed.
-- Decision evidence is reviewed before any merge, write-tool slice, extraction, installer, or change to the existing grounded-chat plan.
+- Decision evidence is reviewed before any merge, write-tool slice, extraction, or installer. The independent generative UI plan remains valid regardless of the Pi decision.
 
 ## Evidence Sources
 
@@ -462,14 +447,14 @@ Rollback is branch-local: stop child processes, revoke capabilities, and remove 
 - `server/integrations/detect.ts` for injectable external executable detection patterns. Pi detection stays prototype-specific so ordinary integration detection does not gain a production dependency.
 - `web/src/research-state.ts`, `web/src/main.ts`, `web/index.html`, `web/src/style.css`, and `web/src/i18n.ts` for current Research/Inbox collection, geometry, pin, switch, DOM, and localization seams.
 - `tests/e2e/research-pinning.spec.ts`, `tests/e2e/diagnostics.ts`, and `tests/e2e/server.ts` for current browser fixture and diagnostics patterns.
-- `docs/plans/2026-07-19-feat-grounded-chat-generative-ui-plan.md` only as the preserved parallel candidate and comparison baseline.
+- `docs/plans/2026-07-20-feat-runtime-neutral-generative-ui-plan.md` only as the independent presentation contract and optional adapter target.
 
 ### Pi evidence current at research time
 
 - Official repository: `https://github.com/earendil-works/pi`, redirected from `badlogic/pi-mono`, MIT.
 - Official package: `@earendil-works/pi-coding-agent` `0.80.10`, published 2026-07-16, with Node engine `>=22.19.0`.
-- Official coding-agent docs and source: `packages/coding-agent/README.md`, `packages/coding-agent/docs/rpc.md`, `packages/coding-agent/docs/session-format.md`, `packages/coding-agent/docs/compaction.md`, `packages/coding-agent/docs/skills.md`, `packages/coding-agent/docs/extensions.md`, and current CLI argument source/help.
-- Verified current capabilities supplied to this plan: strict LF JSONL RPC; streaming message/tool events; abort; steer/follow-up; state/model/session/cost; commands and `skill:*`; tree/entries/compaction; and extension UI requests/responses for select, confirm, input, editor, notify, status, and widget.
+- Official coding-agent docs and source: `packages/coding-agent/README.md`, `packages/coding-agent/docs/rpc.md`, `packages/coding-agent/docs/session-format.md`, `packages/coding-agent/docs/skills.md`, `packages/coding-agent/docs/extensions.md`, and current CLI argument source/help.
+- Verified current capabilities used by this plan: strict LF JSONL RPC; streaming message/tool events; prompt; abort plus settlement; state/model/session/token/cost; session resume; commands and `skill:*`.
 - Verified current repository package directories supplied to this plan: `agent`, `ai`, `coding-agent`, `orchestrator`, and `tui`. No current `web-ui` package exists. Generated `pi-web-ui` documentation is treated as stale and cannot support an implementation decision.
 
 U0 must revalidate executable behavior locally because web pages and generated documentation cannot prove the installed binary's exact protocol or lockdown behavior.
