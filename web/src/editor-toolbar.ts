@@ -4,8 +4,7 @@
  * functions so they test headless; the tooltip is CM6's native `showTooltip`
  * (no library ships this — it's the documented CodeMirror pattern).
  *
- * The row reserves a trailing slot (`toolbarExtras`) for the U7 AI input so
- * adding it never reflows the formatting tools.
+ * The row reserves a trailing slot (`toolbarExtras`) for the U7 AI trigger.
  */
 import {
   type EditorState,
@@ -128,7 +127,11 @@ export const wrapLink: ToolbarTransform = (state) => {
   };
 };
 
-export type ToolbarExtras = (dom: HTMLElement, view: EditorView) => void;
+export type ToolbarExtras = (
+  dom: HTMLElement,
+  view: EditorView,
+  trigger: HTMLButtonElement,
+) => void;
 
 interface ToolButton {
   icon: string;
@@ -271,7 +274,6 @@ function buildToolbarDom(
 ): HTMLElement {
   const dom = document.createElement("div");
   dom.className = "cm-selection-toolbar";
-  // Row 1: formatting tools. Row 2 (when populated): the AI input.
   const toolsRow = document.createElement("div");
   toolsRow.className = "cm-tb-row";
   for (const tool of TOOLS) {
@@ -289,13 +291,28 @@ function buildToolbarDom(
     };
     toolsRow.appendChild(b);
   }
-  dom.appendChild(toolsRow);
   if (extras) {
     const aiRow = document.createElement("div");
-    aiRow.className = "cm-tb-row cm-tb-row-ai";
-    extras(aiRow, view);
-    if (aiRow.childNodes.length > 0) dom.appendChild(aiRow);
+    aiRow.className = "cm-tb-row cm-tb-row-ai hidden";
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "cm-tb-btn cm-tb-chat";
+    trigger.innerHTML = BOT_ICON_SVG;
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.onmousedown = (event) => event.preventDefault();
+    extras(aiRow, view, trigger);
+    if (aiRow.childNodes.length > 0) {
+      trigger.onclick = () => {
+        const hidden = aiRow.classList.toggle("hidden");
+        trigger.classList.toggle("active", !hidden);
+        trigger.setAttribute("aria-expanded", String(!hidden));
+        if (!hidden) aiRow.querySelector<HTMLInputElement>("input")?.focus();
+      };
+      dom.appendChild(aiRow);
+      toolsRow.appendChild(trigger);
+    }
   }
+  dom.appendChild(toolsRow);
   return dom;
 }
 

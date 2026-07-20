@@ -2762,7 +2762,7 @@ body > :not(#graph) {
 }
 
 /* Floating selection toolbar (U4): CM6 tooltip bubble on selection.
-   Two rows: formatting tools on top, the AI input below. The background
+   The optional AI input opens above the formatting row. The background
    composites the panel tint over the solid bg so it is fully OPAQUE —
    translucency over note text reads badly. */
 .cm-tooltip.cm-selection-toolbar,
@@ -2787,9 +2787,12 @@ body > :not(#graph) {
   gap: 2px;
 }
 .cm-tb-row-ai {
-  margin-top: 3px;
-  padding-top: 4px;
-  border-top: 1px solid var(--border);
+  margin-bottom: 3px;
+  padding: 2px 2px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.cm-tb-row-ai.hidden {
+  display: none;
 }
 .cm-tb-btn {
   background: transparent;
@@ -2807,15 +2810,12 @@ body > :not(#graph) {
 .cm-tb-btn:hover {
   background: color-mix(in srgb, var(--fg) 10%, transparent);
 }
-
-/* AI input row (U7): bot icon + input spanning the row. */
-.cm-tb-ai {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 0 2px;
+.cm-tb-chat.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
+
+/* AI input row (U7). */
 .cm-tb-ai-icon {
   color: var(--muted);
   line-height: 0;
@@ -2823,7 +2823,8 @@ body > :not(#graph) {
 .cm-tb-ai-icon svg {
   display: block;
 }
-.cm-tb-ai-icon.busy {
+.cm-tb-ai-icon.busy,
+.cm-tb-chat.busy {
   animation: cm-ai-pulse 1s ease-in-out infinite;
 }
 @keyframes cm-ai-pulse {
@@ -4329,6 +4330,14 @@ body > :not(#graph) {
 .inbox-toolbar button:hover:not(:disabled) {
   border-color: var(--accent);
 }
+.inbox-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.inbox-new svg {
+  flex: none;
+}
 .inbox-list {
   display: flex;
   flex-direction: column;
@@ -4408,138 +4417,24 @@ body > :not(#graph) {
 .inbox-editor {
   min-height: 200px;
 }
-.inbox-review-trigger {
+.inbox-toolbar .inbox-refresh {
   margin-left: auto;
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border)) !important;
-}
-.inbox-review-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-bottom: 18px;
-}
-.inbox-review-card {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 11px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--fg) 4%, transparent);
-}
-.inbox-review-card.state-approved {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-  opacity: 0.8;
-}
-.inbox-review-card.state-stale {
-  border-color: #d29922;
-}
-.inbox-review-card-head,
-.inbox-review-controls,
-.inbox-review-wiki-choice {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 7px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
 }
-.inbox-review-card-head strong {
-  min-width: 0;
-  overflow-wrap: anywhere;
+.inbox-refresh svg {
+  display: block;
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
 }
-.inbox-review-action {
-  margin-left: auto;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.inbox-review-path,
-.inbox-review-target {
-  color: var(--muted);
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-.inbox-review-reason {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-}
-.inbox-review-link {
-  align-self: flex-start;
-  padding: 3px 6px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--fg) 7%, transparent);
-  overflow-wrap: anywhere;
-}
-.inbox-review-preview summary {
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 12px;
-}
-.inbox-review-preview pre {
-  max-height: 280px;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 11px;
-}
-.inbox-review-comment {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px;
-}
-.inbox-review-comment textarea,
-.inbox-review-wiki-choice select {
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--fg);
-  padding: 6px 8px;
-  font: inherit;
-  font-size: 12px;
-  resize: vertical;
-}
-.inbox-review-card button,
-.inbox-review-wiki-choice select {
-  min-height: 30px;
-}
-.inbox-review-card button {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
-  color: var(--fg);
-  padding: 5px 9px;
-  cursor: pointer;
-}
-.inbox-review-card button.primary {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.inbox-review-card button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-.inbox-review-card button:focus-visible,
-.inbox-review-card textarea:focus-visible,
-.inbox-review-card select:focus-visible,
-.inbox-review-toolbar button:focus-visible {
+.inbox-refresh:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-.inbox-review-wiki-choice select {
-  flex: 1;
-}
-@media (max-width: 520px) {
-  .inbox-review-comment {
-    grid-template-columns: 1fr;
-  }
-  .inbox-review-controls button {
-    flex: 1;
-  }
 }
 .sr-only {
   position: absolute;

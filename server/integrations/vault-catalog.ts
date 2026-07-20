@@ -284,9 +284,12 @@ export function listInbox(
     return [];
   }
   const prefix = dest + "/";
-  return buildVaultCatalog(deps).filter(
-    (e) => e.id === dest || e.id.startsWith(prefix),
-  );
+  return buildVaultCatalog(deps)
+    .filter((e) => e.id === dest || e.id.startsWith(prefix))
+    .sort(
+      (a, b) =>
+        b.modifiedAt.localeCompare(a.modifiedAt) || a.id.localeCompare(b.id),
+    );
 }
 
 /** True when `id` is present in the catalog. */

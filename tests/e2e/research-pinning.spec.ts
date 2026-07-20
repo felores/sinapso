@@ -1,5 +1,11 @@
 import { expect, test, type Page, type WebSocketRoute } from "@playwright/test";
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureBrowserDiagnostics } from "./diagnostics";
@@ -359,6 +365,10 @@ test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user nav
 test("plan 020: titled creation writes a durable Inbox note and opens it in research", async ({
   page,
 }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(globalThis.crypto, "subtle", { value: undefined });
+  });
+  await page.reload();
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {
     // The new-doc button lives inside the research panel header. Open the
@@ -624,6 +634,7 @@ test("save-to-inbox opens a catalog-only note absent from the graph", async ({
 test("R8/R9 Inbox toggle is persistent, aria-pressed toggles, and prev/next navigate Inbox notes without leaving Inbox", async ({
   page,
 }) => {
+  test.setTimeout(45_000);
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   const NOTE_A = "inbox/toggle-nav-a.md";
   const NOTE_B = "inbox/toggle-nav-b.md";
@@ -636,6 +647,9 @@ test("R8/R9 Inbox toggle is persistent, aria-pressed toggles, and prev/next navi
   }
   writeFileSync(fileA, "# Toggle Nav A\n\nFirst Inbox body for toggle nav.\n");
   writeFileSync(fileB, "# Toggle Nav B\n\nSecond Inbox body for toggle nav.\n");
+  const now = Date.now();
+  utimesSync(fileA, new Date(now - 1_000), new Date(now - 1_000));
+  utimesSync(fileB, new Date(now), new Date(now));
   const sessionToken = await token(page);
   await page.request.post("/api/rescan", {
     headers: { "x-sinapso-token": sessionToken },
@@ -683,37 +697,53 @@ test("R8/R9 Inbox toggle is persistent, aria-pressed toggles, and prev/next navi
     await expect(itemA).toBeVisible();
     await expect(itemB).toBeVisible();
 
-    // Open NOTE_A directly; cursor lands on it, still in Inbox.
-    await itemA.click();
+    // Refresh is an icon-only, rightmost toolbar button with a localized
+    // tooltip/aria-label and no visible text (replaces the old Review button).
+    const refreshBtn = page.locator(".inbox-toolbar .inbox-refresh");
+    await expect(refreshBtn).toBeVisible();
+    await expect(refreshBtn).toHaveAttribute("aria-label", "Refresh Inbox");
+    await expect(refreshBtn).toHaveAttribute("title", "Refresh Inbox");
+    await expect(refreshBtn).toHaveText("");
+    expect(
+      await refreshBtn.evaluate(
+        (el) => el === el.parentElement?.lastElementChild,
+      ),
+    ).toBe(true);
+    let inboxRefreshHits = 0;
+    page.on("request", (req) => {
+      if (new URL(req.url()).pathname === "/api/inbox") inboxRefreshHits++;
+    });
+    await refreshBtn.click();
+    await expect.poll(() => inboxRefreshHits).toBeGreaterThanOrEqual(1);
+    await expect(itemA).toBeVisible();
+
+    // Page 0 → page 1 opens the latest note (B).
+    await page.locator("#research-prev").click();
     await expect(page.locator("#research .cm-content")).toContainText(
-      "First Inbox body for toggle nav.",
+      "Second Inbox body for toggle nav.",
     );
+    await expect(page.locator("#research-pos")).toHaveText(/^1\//);
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#research-archive")).toBeVisible();
 
-    // Walk the active collection via the nav until NOTE_B is shown. Each prev
-    // click must stay inside Inbox (no research swap, no leaving the panel).
-    for (let i = 0; i < 10; i++) {
-      const bodyNow = await page.locator("#research .cm-content").textContent();
-      if (bodyNow && bodyNow.includes("Second Inbox body for toggle nav.")) {
-        break;
-      }
-      await page.locator("#research-prev").click();
-      await expect(toggle).toHaveAttribute("aria-pressed", "true");
-    }
+    // Previous walks to the older note A; next returns to latest B.
+    await page.locator("#research-prev").click();
+    await expect(page.locator("#research .cm-content")).toContainText(
+      "First Inbox body for toggle nav.",
+    );
+    await expect(page.locator("#research-pos")).toHaveText(/^2\//);
+    await page.locator("#research-next").click();
     await expect(page.locator("#research .cm-content")).toContainText(
       "Second Inbox body for toggle nav.",
     );
 
-    // Next walks back. Still in Inbox.
-    for (let i = 0; i < 10; i++) {
-      const bodyNow = await page.locator("#research .cm-content").textContent();
-      if (bodyNow && bodyNow.includes("First Inbox body for toggle nav.")) {
-        break;
-      }
-      await page.locator("#research-next").click();
-      await expect(toggle).toHaveAttribute("aria-pressed", "true");
-    }
+    // Next from page 1 returns to the Inbox list at page 0.
+    await page.locator("#research-next").click();
+    await expect(page.locator(".inbox-list")).toBeVisible();
+    await expect(page.locator("#research-pos")).toHaveText(/^0\//);
+    await expect(page.locator("#research-archive")).toHaveClass(/hidden/);
+
+    await itemA.click();
     await expect(page.locator("#research .cm-content")).toContainText(
       "First Inbox body for toggle nav.",
     );

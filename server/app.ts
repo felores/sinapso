@@ -199,13 +199,6 @@ import {
   type CatalogEntry,
 } from "./integrations/vault-catalog.js";
 import { buildContextualQuery } from "./integrations/contextual-query.js";
-import {
-  buildInboxReview,
-  mergeMarkdown,
-  type InboxReviewCard,
-  type ReviewNote,
-} from "./integrations/inbox-review.js";
-import { createInboxReviewState } from "./integrations/inbox-review-state.js";
 
 interface GraphFile {
   meta: {
@@ -476,9 +469,6 @@ export function createApp(
   const configPath = integrations?.configPath ?? defaultConfigPath();
   const detectDeps = integrations?.detectDeps;
   const dataDir = dirname(graphPath); // data/ — runtime store (history, journal)
-  const inboxReviewState = createInboxReviewState(
-    join(dataDir, "inbox-review.json"),
-  );
 
   const defaultAdminExcludes = (cfg: SinapsoConfig) =>
     [cfg.archiveDestination, cfg.imagesDestination]
@@ -2718,165 +2708,6 @@ export function createApp(
     }
     return null;
   };
-
-  const currentInboxReview = (): {
-    cards: InboxReviewCard[];
-    notes: Map<string, ReviewNote>;
-    noteCount: number;
-  } => {
-    const cfg = loadConfig(configPath);
-    const adminExcludes = effectiveExcludes(vaultRoot, cfg);
-    const catalog = buildVaultCatalog({ vaultRoot, adminExcludes });
-    const inbox = listInbox({
-      vaultRoot,
-      destination: cfg.writeDestination,
-      adminExcludes,
-    });
-    const notes = new Map<string, ReviewNote>();
-    for (const entry of catalog) {
-      try {
-        notes.set(entry.id, {
-          path: entry.id,
-          title: entry.title,
-          hash: entry.baseHash,
-          content: readFileSync(noteFileOrFail(vaultRoot, entry.id), "utf8"),
-        });
-      } catch {
-        /* note changed or vanished while the snapshot was built */
-      }
-    }
-    const merged = ingestTargetConfig(cfg);
-    const enabledWikiCount =
-      merged.vaults[vaultRoot]?.wikis.filter((wiki) => wiki.enabled).length ??
-      0;
-    const cards = buildInboxReview([...notes.values()], {
-      sourcePaths: new Set(inbox.map((entry) => entry.id)),
-      semanticEdges: readSemanticCache()?.edges ?? null,
-      enabledWikiCount,
-    });
-    return {
-      cards: inboxReviewState.join(cards),
-      notes,
-      noteCount: inbox.length,
-    };
-  };
-
-  app.get("/api/inbox/review", (_req, res) => {
-    try {
-      const review = currentInboxReview();
-      res.json({
-        cards: review.cards,
-        noteCount: review.noteCount,
-        reviewedAt: new Date().toISOString(),
-      });
-    } catch (e) {
-      console.error("inbox review failed:", e);
-      res.status(500).json({ error: "inbox review failed" });
-    }
-  });
-
-  app.put(
-    "/api/inbox/review/:id",
-    guarded,
-    express.json({ limit: "16kb" }),
-    (req, res) => {
-      try {
-        const id = String(req.params.id);
-        const card = currentInboxReview().cards.find((item) => item.id === id);
-        if (!card) throw new WriteError(409, "review card is stale");
-        const state = req.body?.state;
-        const comment = req.body?.comment;
-        if (state !== undefined && state !== "pending" && state !== "dismissed")
-          throw new WriteError(400, "invalid review state");
-        if (comment !== undefined && typeof comment !== "string")
-          throw new WriteError(400, "invalid review comment");
-        const record = inboxReviewState.put(id, {
-          state,
-          comment:
-            typeof comment === "string" ? comment.slice(0, 2000) : undefined,
-        });
-        res.json({ ok: true, record });
-      } catch (e) {
-        writeFail(res, e, "inbox review update");
-      }
-    },
-  );
-
-  app.post(
-    "/api/inbox/review/:id/apply",
-    guarded,
-    express.json({ limit: "16kb" }),
-    (req, res) => {
-      try {
-        const id = String(req.params.id);
-        const review = currentInboxReview();
-        const card = review.cards.find((item) => item.id === id);
-        if (!card) throw new WriteError(409, "review card is stale");
-        const source = review.notes.get(card.note.path);
-        const target = card.target
-          ? review.notes.get(card.target.path)
-          : undefined;
-        if (!source || source.hash !== card.note.hash)
-          throw new WriteError(409, "review card is stale");
-        if (card.target && (!target || target.hash !== card.target.hash))
-          throw new WriteError(409, "review card is stale");
-
-        let resultPaths: string[] = [source.path];
-        let handoff: "wiki-ingest" | undefined;
-        if (card.action === "link") {
-          if (!target) throw new WriteError(409, "review target is stale");
-          const result = guardedAppendLink(writeDeps(), {
-            id: source.path,
-            target: basename(target.path).replace(/\.md$/i, ""),
-            baseHash: source.hash,
-            actor: "user",
-          });
-          resultPaths = [result.id, target.path];
-          if (result.added) refreshAfterWrite();
-        } else if (card.action === "merge") {
-          if (!target) throw new WriteError(409, "review target is stale");
-          const result = guardedEdit(writeDeps(), {
-            id: target.path,
-            content: mergeMarkdown(
-              target.content,
-              source.content,
-              source.title,
-            ),
-            baseHash: target.hash,
-            actor: "user",
-            mode: "approval",
-          });
-          resultPaths = [target.path, source.path];
-          if (!result.unchanged) refreshAfterWrite();
-        } else if (card.action === "archive") {
-          const cfg = loadConfig(configPath);
-          const result = guardedMove(writeDeps(), {
-            id: source.path,
-            destination: cfg.archiveDestination,
-            baseHash: source.hash,
-            actor: "user",
-          });
-          resultPaths = [result.id];
-          refreshAfterWrite();
-        } else if (card.action === "ingest") {
-          handoff = "wiki-ingest";
-        }
-        const approved = inboxReviewState.approve(id, resultPaths);
-        res.json({
-          ok: true,
-          card: { ...card, ...approved },
-          resultPaths,
-          handoff,
-        });
-      } catch (e) {
-        if (e instanceof WriteError && e.status === 409) {
-          res.json({ ok: false, error: "review-stale", stale: true });
-          return;
-        }
-        writeFail(res, e, "inbox review apply");
-      }
-    },
-  );
 
   const ensureSemantic = async (): Promise<SemanticResult> => {
     const fingerprint = graphFingerprint();

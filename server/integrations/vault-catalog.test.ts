@@ -284,6 +284,27 @@ describe("listInbox: recursive listing of the configured Inbox", () => {
     }
   });
 
+  it("lists the most recently modified Inbox note first", () => {
+    const vault = mkdtempSync(join(tmpdir(), "sinapso-inbox-order-"));
+    try {
+      mkdirSync(join(vault, "inbox"), { recursive: true });
+      const older = join(vault, "inbox", "z-older.md");
+      const latest = join(vault, "inbox", "a-latest.md");
+      writeFileSync(older, "# Older\n");
+      writeFileSync(latest, "# Latest\n");
+      utimesSync(older, new Date(1_000), new Date(1_000));
+      utimesSync(latest, new Date(2_000), new Date(2_000));
+
+      expect(
+        listInbox({ vaultRoot: vault, destination: "inbox" }).map(
+          (entry) => entry.id,
+        ),
+      ).toEqual(["inbox/a-latest.md", "inbox/z-older.md"]);
+    } finally {
+      rmSync(vault, { recursive: true, force: true });
+    }
+  });
+
   it("returns [] when the destination does not exist or is outside the vault", () => {
     const vault = mkdtempSync(join(tmpdir(), "sinapso-inbox-3-"));
     try {

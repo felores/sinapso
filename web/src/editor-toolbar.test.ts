@@ -146,7 +146,7 @@ describe("toolbar tooltip lifecycle", () => {
     ed.destroy();
   });
 
-  it("renders the extras in a second row below the tools", () => {
+  it("opens the extras above the tools from the trailing chat button", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
     const ed = createNoteEditor(host, {
@@ -162,8 +162,31 @@ describe("toolbar tooltip lifecycle", () => {
     expect(toolbar).toBeTruthy();
     const rows = toolbar!.querySelectorAll(".cm-tb-row");
     expect(rows).toHaveLength(2);
-    expect(rows[0].querySelectorAll(".cm-tb-btn").length).toBeGreaterThan(0);
-    expect(rows[1].querySelector(".ai-slot-marker")).toBeTruthy();
+    expect(rows[0].querySelector(".ai-slot-marker")).toBeTruthy();
+    expect(rows[0].classList.contains("hidden")).toBe(true);
+    const buttons = rows[1].querySelectorAll<HTMLButtonElement>(".cm-tb-btn");
+    const chat = buttons[buttons.length - 1];
+    expect(chat.classList.contains("cm-tb-chat")).toBe(true);
+    chat.click();
+    expect(rows[0].classList.contains("hidden")).toBe(false);
+    expect(chat.classList.contains("active")).toBe(true);
+    expect(chat.getAttribute("aria-expanded")).toBe("true");
+    ed.destroy();
+  });
+
+  it("focuses the AI input when the chat button opens it", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const ed = createNoteEditor(host, {
+      content: "focus test\n",
+      toolbarExtras: (dom) => {
+        const input = document.createElement("input");
+        dom.appendChild(input);
+      },
+    });
+    ed.view.dispatch({ selection: { anchor: 0, head: 5 } });
+    document.querySelector<HTMLButtonElement>(".cm-tb-chat")!.click();
+    expect(document.activeElement?.tagName).toBe("INPUT");
     ed.destroy();
   });
 
