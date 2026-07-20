@@ -52,7 +52,12 @@ import {
   replaceSelection,
   type AssistRequest,
 } from "./ai-assist";
-import { BOT_ICON_SVG, type ToolbarExtras } from "./editor-toolbar";
+import {
+  BOT_ICON_SVG,
+  FACT_CHECK_ICON_SVG,
+  GO_DEEP_ICON_SVG,
+  type ToolbarExtras,
+} from "./editor-toolbar";
 import { startVoice, type VoiceSession } from "./voice";
 import {
   clearStaleResearchPin,
@@ -134,6 +139,14 @@ interface Graph {
 
 const $ = <T extends HTMLElement>(sel: string) =>
   document.querySelector(sel) as T;
+
+const READER_WIKI_ICONS = {
+  none: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>',
+  source:
+    '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21V7"/><path d="m16 12 2 2 4-4"/><path d="M22 6V4a1 1 0 0 0-1-1h-5a4 4 0 0 0-4 4 4 4 0 0 0-4-4H3a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h6a3 3 0 0 1 3 3 3 3 0 0 1 3-3h6a1 1 0 0 0 1-1v-1.3"/></svg>',
+  ingested:
+    '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M16 12h2"/><path d="M16 8h2"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/><path d="M6 12h2"/><path d="M6 8h2"/></svg>',
+} as const;
 
 // Reflect the current interface language in the active chip (File menu → EN/ES).
 function syncLangUI() {
@@ -1764,19 +1777,7 @@ async function boot() {
   }
 
   function renderSaveState(state: AutosaveState) {
-    const el = $("#reader-save-state");
-    el.classList.remove("hidden");
-    el.className = `save-${state}`;
-    if (state === "clean") {
-      el.textContent = i18n.t("editor.saveState.saved");
-      el.title = i18n.t("editor.saveState.saved");
-    } else if (state === "conflict") {
-      el.textContent = "";
-      showConflictBanner();
-    } else {
-      el.textContent = i18n.t(`editor.saveState.${state}`);
-      el.title = el.textContent;
-    }
+    if (state === "conflict") showConflictBanner();
   }
 
   function hideReaderBanner() {
@@ -1880,9 +1881,6 @@ async function boot() {
     editorNoteId = null;
     hideAssistPreview();
     hideReaderBanner();
-    const stateEl = $("#reader-save-state");
-    stateEl.className = "hidden";
-    stateEl.textContent = "";
   }
 
   function navigateWikiTarget(target: string) {
@@ -2115,6 +2113,7 @@ async function boot() {
     const propertiesToggle = $("#reader-properties-toggle");
     propertiesToggle.classList.add("hidden");
     propertiesToggle.setAttribute("aria-pressed", "false");
+    $("#reader-wiki-toggle").classList.add("hidden");
     ($("#reader-versions") as HTMLSelectElement).innerHTML = "";
     $("#reader-version-restore").classList.add("hidden");
     $("#reader-version-status").classList.add("hidden");
@@ -2227,13 +2226,64 @@ async function boot() {
         markdown: stripped,
         via: "sinapso-vault-note",
       };
+      await loadEnabledWikis();
+      if (generation !== readerOpenGeneration) return;
+      const currentWiki = wikiForId(n.id);
       const rawSourceWiki = wikiForRawSource(n.id);
-      topWikiAction.appendChild(
-        rawSourceWiki
-          ? renderReaderRawSourceAction(wikiPreview, rawSourceWiki, "top")
-          : renderReaderWikiAction(wikiPreview, "top"),
-      );
-      topWikiAction.classList.remove("hidden");
+      const rawConnected = rawSourceWiki
+        ? rawSourceLinkCount(n.id, rawSourceWiki)
+        : 0;
+      const isRawIngested = !!rawSourceWiki && rawConnected > 0;
+      const wikiToggle = $("#reader-wiki-toggle");
+      const wikiState = rawSourceWiki
+        ? isRawIngested
+          ? "ingested"
+          : "source"
+        : currentWiki
+          ? "ingested"
+          : "none";
+      const wikiLabelKey =
+        wikiState === "ingested"
+          ? "ingest.alreadyWiki"
+          : wikiState === "source"
+            ? "ingest.rawInWiki"
+            : "ingest.notIngested";
+      const wikiLabel = i18n.t(wikiLabelKey);
+      wikiToggle.innerHTML = READER_WIKI_ICONS[wikiState];
+      wikiToggle.dataset.i18nTitle = wikiLabelKey;
+      wikiToggle.title = wikiLabel;
+      wikiToggle.setAttribute("aria-label", wikiLabel);
+      wikiToggle.onclick = null;
+      wikiToggle.setAttribute("aria-pressed", "false");
+      wikiToggle.classList.remove("hidden");
+      if (isRawIngested) {
+        wikiToggle.onclick = () => {
+          const pressed = wikiToggle.getAttribute("aria-pressed") === "true";
+          if (pressed) {
+            topWikiAction.innerHTML = "";
+            topWikiAction.classList.add("hidden");
+            wikiToggle.setAttribute("aria-pressed", "false");
+          } else {
+            topWikiAction.innerHTML = "";
+            const status = document.createElement("span");
+            status.className = "reader-wiki-status";
+            status.textContent = i18n.t("ingest.rawIngested", {
+              count: rawConnected,
+            });
+            topWikiAction.appendChild(status);
+            topWikiAction.classList.remove("hidden");
+            wikiToggle.setAttribute("aria-pressed", "true");
+          }
+        };
+      }
+      if (!currentWiki && !isRawIngested) {
+        topWikiAction.appendChild(
+          rawSourceWiki
+            ? renderReaderRawSourceAction(wikiPreview, rawSourceWiki, "top")
+            : renderReaderWikiAction(wikiPreview, "top"),
+        );
+        topWikiAction.classList.remove("hidden");
+      }
       openNoteWords = countWords(stripped);
       updateBrandStats();
       // F035: on a SEMANTIC hit, land on the matched passage instead of the
@@ -2248,7 +2298,7 @@ async function boot() {
       const relatedSlot = document.createElement("div");
       const orphanSlot = document.createElement("div");
       const questionsSlot = document.createElement("div");
-      if (showBottomWikiAction)
+      if (showBottomWikiAction && !currentWiki && !isRawIngested)
         wikiSlot.appendChild(
           rawSourceWiki
             ? renderReaderRawSourceAction(wikiPreview, rawSourceWiki, "bottom")
@@ -3910,7 +3960,7 @@ async function boot() {
       source,
       text,
       entryId: entry?.id,
-      mode: entry?.mode,
+      mode: researchCollection === "inbox" ? "document" : entry?.mode,
       title: article?.title ?? entry?.query,
       query: entry?.query,
       url,
@@ -3927,6 +3977,42 @@ async function boot() {
     evidenceBubble.replaceChildren();
   }
 
+  function positionEvidenceBubble(range: Range) {
+    const body = $("#research-body");
+    if (evidenceBubble.parentElement !== body) body.appendChild(evidenceBubble);
+    evidenceBubble.style.maxWidth = `${Math.max(120, body.clientWidth - 16)}px`;
+    evidenceBubble.classList.remove("hidden");
+    const bodyRect = body.getBoundingClientRect();
+    const rangeRect = range.getBoundingClientRect();
+    const lineRects = Array.from(range.getClientRects()).filter(
+      (rect) => rect.width > 0 && rect.height > 0,
+    );
+    const selectionLeft = lineRects.length
+      ? Math.min(...lineRects.map((rect) => rect.left))
+      : rangeRect.left;
+    const selectionRight = lineRects.length
+      ? Math.max(...lineRects.map((rect) => rect.right))
+      : rangeRect.right;
+    const selectionTop = lineRects.length
+      ? Math.min(...lineRects.map((rect) => rect.top))
+      : rangeRect.top;
+    const bubbleRect = evidenceBubble.getBoundingClientRect();
+    const centeredLeft =
+      selectionLeft +
+      (selectionRight - selectionLeft - bubbleRect.width) / 2 -
+      bodyRect.left +
+      body.scrollLeft;
+    const left = Math.max(
+      8,
+      Math.min(
+        centeredLeft,
+        body.scrollLeft + body.clientWidth - bubbleRect.width - 8,
+      ),
+    );
+    evidenceBubble.style.left = `${left}px`;
+    evidenceBubble.style.top = `${selectionTop - bodyRect.top + body.scrollTop - bubbleRect.height - 6}px`;
+  }
+
   function showEvidenceBubble(slot: SelectionContext, range: Range) {
     if (slot.source !== "research") {
       hideEvidenceBubble();
@@ -3937,18 +4023,63 @@ async function boot() {
       hideEvidenceBubble();
       return;
     }
-    const icon = document.createElement("span");
-    icon.className = "cm-tb-ai-icon";
-    icon.innerHTML = BOT_ICON_SVG;
+    const answer = document.createElement("div");
+    answer.className = "research-selection-answer hidden";
+    const inputRow = document.createElement("div");
+    inputRow.className = "research-selection-input hidden";
     const input = document.createElement("input");
     input.type = "text";
     input.placeholder = i18n.t("editor.ai.evidencePlaceholder");
     input.setAttribute("aria-label", i18n.t("editor.ai.evidencePlaceholder"));
-    const answer = document.createElement("div");
-    answer.className = "research-selection-answer hidden";
+    inputRow.appendChild(input);
+    const actionsRow = document.createElement("div");
+    actionsRow.className = "research-selection-actions";
+    const actionButton = (icon: string, label: string) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "cm-tb-btn";
+      button.innerHTML = icon;
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      button.onmousedown = (event) => event.preventDefault();
+      actionsRow.appendChild(button);
+      return button;
+    };
+    const goDeep = actionButton(
+      GO_DEEP_ICON_SVG,
+      i18n.t("research.selection.goDeep"),
+    );
+    const factCheck = actionButton(
+      FACT_CHECK_ICON_SVG,
+      i18n.t("research.selection.factCheck"),
+    );
+    const bot = actionButton(BOT_ICON_SVG, i18n.t("editor.ai.placeholder"));
+    bot.classList.add("cm-tb-chat");
+    bot.setAttribute("aria-expanded", "false");
+    actionsRow.appendChild(inputRow);
+    const snapshot = buildSelectionSnapshot({ current: slot });
+
+    bot.onclick = () => {
+      const hidden = inputRow.classList.toggle("hidden");
+      bot.classList.toggle("active", !hidden);
+      bot.setAttribute("aria-expanded", String(!hidden));
+      if (!hidden) input.focus();
+      positionEvidenceBubble(range);
+    };
+    goDeep.onclick = () =>
+      void runWebQuery("", snapshot, i18n.t("research.selection.goDeep"), true);
+    factCheck.onclick = () =>
+      void runWebQuery(
+        i18n.t("research.selection.factCheckPrompt"),
+        snapshot,
+        i18n.t("research.selection.factCheck"),
+        true,
+      );
+
     input.addEventListener("keydown", async (event) => {
+      event.stopPropagation();
       if (event.key === "Escape") {
-        hideEvidenceBubble();
+        bot.click();
         return;
       }
       if (event.key !== "Enter") return;
@@ -3956,7 +4087,7 @@ async function boot() {
       const instruction = input.value.trim();
       if (!instruction) return;
       input.disabled = true;
-      icon.classList.add("busy");
+      bot.classList.add("busy");
       try {
         const result = await api<{ text: string }>("/api/selection-assist", {
           json: {
@@ -3971,22 +4102,18 @@ async function boot() {
         answer.textContent = result.text;
         answer.classList.remove("hidden");
         input.value = "";
+        positionEvidenceBubble(range);
       } catch {
         answer.textContent = i18n.t("editor.ai.error");
         answer.classList.remove("hidden");
+        positionEvidenceBubble(range);
       } finally {
         input.disabled = false;
-        icon.classList.remove("busy");
+        bot.classList.remove("busy");
       }
     });
-    const row = document.createElement("div");
-    row.className = "research-selection-ask";
-    row.append(icon, input);
-    evidenceBubble.replaceChildren(row, answer);
-    const rect = range.getBoundingClientRect();
-    evidenceBubble.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 300))}px`;
-    evidenceBubble.style.top = `${Math.max(8, rect.top - 48)}px`;
-    evidenceBubble.classList.remove("hidden");
+    evidenceBubble.replaceChildren(answer, actionsRow);
+    positionEvidenceBubble(range);
   }
 
   function clearLostDomSelection() {
@@ -3999,7 +4126,9 @@ async function boot() {
 
   document.addEventListener("selectionchange", clearLostDomSelection);
 
-  function captureDomSelection() {
+  function captureDomSelection(event?: Event) {
+    if (event?.target instanceof Node && evidenceBubble.contains(event.target))
+      return;
     const slot = readDomSelection();
     if (!slot) return;
     setSelectionContext(slot);
@@ -6075,6 +6204,7 @@ async function boot() {
   }
   function openResearch(mode: ResearchMode) {
     researchMode = mode;
+    setResearchFooterContext(false);
     hideEvidenceBubble();
     clearSelectionContext("research");
     $("#research").classList.remove("hidden");
@@ -6219,17 +6349,7 @@ async function boot() {
   }
 
   function renderResearchVaultSaveState(state: AutosaveState) {
-    const stateEl = $("#research-vault-save-state");
-    stateEl.classList.remove("hidden");
-    stateEl.className = `research-document-save-state save-${state}`;
-    if (state === "clean") {
-      stateEl.textContent = i18n.t("editor.saveState.saved");
-    } else if (state === "conflict") {
-      stateEl.textContent = "";
-      showResearchVaultConflict();
-    } else {
-      stateEl.textContent = i18n.t(`editor.saveState.${state}`);
-    }
+    if (state === "conflict") showResearchVaultConflict();
   }
 
   function showResearchVaultConflict() {
@@ -6283,6 +6403,7 @@ async function boot() {
     // first prev/next action opens the first item (R8/R9).
     inboxPathOpen = null;
     inboxCursorState = { ...inboxCursorState, cursor: -1 };
+    $("#research-footer").classList.add("hidden");
     body.innerHTML = "";
     const toolbar = document.createElement("div");
     toolbar.className = "inbox-toolbar";
@@ -6524,6 +6645,47 @@ async function boot() {
     return mountResearchVaultNote(path, generation);
   }
 
+  async function sendInboxNoteToReader(): Promise<void> {
+    const path = researchVaultPath;
+    const autosave = researchVaultAutosave;
+    if (!path || !autosave || researchCollection !== "inbox") return;
+    await autosave.flush();
+    if (autosave.state() === "conflict" || autosave.state() === "error") {
+      researchError(
+        i18n.t(
+          autosave.state() === "conflict"
+            ? "research.transfer.blockedConflict"
+            : "research.transfer.blockedError",
+        ),
+      );
+      return;
+    }
+    const entry = inboxCursorState.items.find((item) => item.id === path);
+    const graphNode = byId.get(path);
+    const node =
+      graphNode ??
+      ({
+        id: path,
+        title:
+          entry?.title || path.split("/").pop()?.replace(/\.md$/i, "") || path,
+        pillar: "other",
+        words: 0,
+        in: 0,
+        out: 0,
+      } satisfies GNode);
+    await teardownResearchVaultEditor({ flush: false });
+    renderInboxListInto($("#research-body"));
+    $("#research-title").textContent = i18n.t("inbox.title");
+    selected = node;
+    focusSet = graphNode ? bfs(path, focusDepth) : null;
+    syncNodeUrl(node);
+    if (graphNode) flyTo(node);
+    repaint();
+    readerLeftPinned = true;
+    setReaderCtxLeft(true);
+    await openReader(node);
+  }
+
   async function mountResearchVaultNote(
     path: string,
     generation: number,
@@ -6555,16 +6717,13 @@ async function boot() {
       titleEl.textContent = entry?.title || path;
       body.appendChild(titleEl);
     }
-    const stateEl = document.createElement("span");
-    stateEl.id = "research-vault-save-state";
-    stateEl.className = "research-document-save-state";
-    body.appendChild(stateEl);
     const editorHost = document.createElement("div");
     editorHost.className = "inbox-editor note-editor";
     body.appendChild(editorHost);
     const editor = createNoteEditor(editorHost, {
       content: markdown,
       onWikiLinkClick: navigateWikiTarget,
+      toolbarExtras: aiToolbarExtras,
       onChange: () => {
         researchVaultAutosave?.notifyChange();
         updateBrandStats();
@@ -6582,8 +6741,9 @@ async function boot() {
       save: (content, base) => saveVaultNote(path, content, base),
       onState: renderResearchVaultSaveState,
     });
-    renderResearchVaultSaveState("clean");
     researchVaultBaseHashHex = baseHash;
+    setResearchFooterContext(true);
+    $("#research-footer").classList.remove("hidden");
     // Offer the crash-recovery mirror for this note (KTD4b, vault+path keyed).
     const mirror = prefs.getEditorMirror();
     if (
@@ -6620,6 +6780,36 @@ async function boot() {
       void researchVaultAutosave?.flush();
   });
 
+  const RESEARCH_FOOTER_ICONS = {
+    inbox:
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+    otherPanel:
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g transform="translate(24 0) scale(-1 1)"><path d="m10 16 4-4-4-4"/><path d="M3 12h11"/><path d="M3 8V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3"/></g></svg>',
+    wiki: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21V7"/><path d="m16 12 2 2 4-4"/><path d="M22 6V4a1 1 0 0 0-1-1h-5a4 4 0 0 0-4 4 4 4 0 0 0-4-4H3a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h6a3 3 0 0 1 3 3 3 3 0 0 1 3-3h6a1 1 0 0 0 1-1v-1.3"/></svg>',
+  } as const;
+
+  function setResearchFooterButton(
+    button: HTMLButtonElement,
+    label: string,
+    icon: string,
+  ) {
+    button.innerHTML = icon;
+    const text = document.createElement("span");
+    text.textContent = label;
+    button.appendChild(text);
+    button.title = label;
+  }
+
+  function setResearchFooterContext(inboxNote: boolean) {
+    setResearchFooterButton(
+      $("#research-save-inbox") as HTMLButtonElement,
+      i18n.t(inboxNote ? "research.sendOtherPanel" : "research.saveFullInbox"),
+      inboxNote
+        ? RESEARCH_FOOTER_ICONS.otherPanel
+        : RESEARCH_FOOTER_ICONS.inbox,
+    );
+  }
+
   function showCollectionChrome() {
     const isResearch = researchCollection === "research";
     const toggle = document.getElementById(
@@ -6635,7 +6825,10 @@ async function boot() {
     // collection, so it stays visible in Inbox when there are items.
     $("#research-pin").classList.toggle("hidden", !isResearch);
     $("#research-trash").classList.toggle("hidden", !isResearch);
-    $("#research-footer").classList.toggle("hidden", !isResearch);
+    $("#research-footer").classList.toggle(
+      "hidden",
+      !isResearch && inboxPathOpen === null,
+    );
     syncResearchArchiveUi();
   }
 
@@ -6726,8 +6919,12 @@ async function boot() {
     const menuIngest = $("#research-wiki-menu-ingest") as HTMLButtonElement;
     const menuSave = $("#research-wiki-menu-save") as HTMLButtonElement;
     const wikiTarget = $("#research-wiki-target") as HTMLSelectElement;
-    saveInbox.textContent = i18n.t("research.saveFullInbox");
-    ingestTrigger.textContent = i18n.t("research.ingestWiki");
+    setResearchFooterContext(false);
+    setResearchFooterButton(
+      ingestTrigger,
+      i18n.t("research.ingestWiki"),
+      RESEARCH_FOOTER_ICONS.wiki,
+    );
     menuIngest.textContent = i18n.t("research.saveAndIngest");
     menuSave.textContent = i18n.t("research.saveRawSource");
 
@@ -6838,6 +7035,16 @@ async function boot() {
 
     saveInbox.addEventListener("click", async () => {
       saveInbox.disabled = true;
+      if ((researchCollection as string) === "inbox") {
+        try {
+          await sendInboxNoteToReader();
+        } catch (e) {
+          footerFail(e);
+        } finally {
+          saveInbox.disabled = false;
+        }
+        return;
+      }
       try {
         await flushWorkingDocument();
         if (!currentEntryId) throw new Error("research-not-active");
@@ -7394,9 +7601,6 @@ async function boot() {
     title.value = doc.title || query;
     title.setAttribute("aria-label", "Document title");
     body.appendChild(title);
-    const state = document.createElement("span");
-    state.className = "research-document-save-state";
-    body.appendChild(state);
     const editorHost = document.createElement("div");
     editorHost.className = "research-document-editor note-editor";
     body.appendChild(editorHost);
@@ -7551,13 +7755,6 @@ async function boot() {
       },
       transport,
       onState: (next) => {
-        state.textContent =
-          next === "clean"
-            ? i18n.t("editor.saveState.saved")
-            : next === "conflict"
-              ? ""
-              : i18n.t(`editor.saveState.${next}`);
-        state.className = `research-document-save-state save-${next}`;
         if (next === "conflict") showDocumentConflict(controller);
       },
     });
@@ -7816,7 +8013,11 @@ async function boot() {
   function updateReaderNav() {
     // Only worth showing once there's something to page back to.
     $("#reader-nav").classList.toggle("hidden", readerHistory.length <= 1);
-    if (readerHistory.length <= 1) return;
+    if (!readerHistory.length) {
+      ($("#reader-prev") as HTMLButtonElement).disabled = true;
+      ($("#reader-next") as HTMLButtonElement).disabled = true;
+      return;
+    }
     readerIdx = Math.max(0, Math.min(readerIdx, readerHistory.length - 1));
     ($("#reader-prev") as HTMLButtonElement).disabled =
       readerIdx >= readerHistory.length - 1;
@@ -7846,12 +8047,12 @@ async function boot() {
   // Corner buttons: reopen the last content note / the last research result.
   $("#reopen-content").addEventListener("click", async () => {
     const reader = $("#reader");
-    const dockedLeft =
+    const openLeft =
       !reader.classList.contains("hidden") &&
-      reader.classList.contains("ctx-left") &&
-      !reader.classList.contains("floating");
-    // Already docked on the left → close it (clearSelection deselects the node).
-    if (dockedLeft) {
+      reader.classList.contains("ctx-left");
+    // An open left reader closes even when detached; clearSelection also
+    // deselects its graph node.
+    if (openLeft) {
       clearSelection();
       return;
     }
@@ -8293,7 +8494,7 @@ async function boot() {
       return actions;
     }
     // Pending: offer to generate derived wiki pages from this source.
-    status.textContent = i18n.t("ingest.rawPending");
+    status.classList.add("hidden");
     btn.textContent = i18n.t("ingest.rawIngest");
     btn.title = i18n.t("ingest.rawPendingHint");
     // If other enabled wikis exist, let the user pick — but default to the

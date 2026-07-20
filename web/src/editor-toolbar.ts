@@ -166,6 +166,10 @@ const ICONS = {
   bot: lucide(
     '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
   ),
+  search: lucide('<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>'),
+  factCheck: lucide(
+    '<path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3z"/><path d="m9 12 2 2 4-4"/>',
+  ),
 } as const;
 
 const TOOLS: ToolButton[] = [
@@ -204,6 +208,8 @@ const TOOLS: ToolButton[] = [
 
 /** Static markup for the AI row's bot icon (consumed by main.ts). */
 export const BOT_ICON_SVG = ICONS.bot;
+export const GO_DEEP_ICON_SVG = ICONS.search;
+export const FACT_CHECK_ICON_SVG = ICONS.factCheck;
 
 const TOOLBAR_PANEL_INSET = 12;
 

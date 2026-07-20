@@ -609,15 +609,16 @@ const parseSettleWatcher = ViewPlugin.fromClass(
 
 const readOnlyCompartment = new Compartment();
 
-/** Tooltips (the selection toolbar) mount on document.body: inside the
- * editor they can fall back to absolute positioning and widen the note's
- * scrollable area (the phantom right gap), and they get clipped by the
- * panel. tooltipSpace confines flipping to the owning panel's box. */
-function tooltipHost(): Extension {
+/** Mount selection tooltips in the panel's scroll container so they move
+ * natively with the note. Headless states keep the fixed body fallback. */
+function tooltipHost(parent?: HTMLElement): Extension {
   if (typeof document === "undefined") return [];
+  const scrollHost = parent?.closest<HTMLElement>(
+    "#reader-scroll, #research-body",
+  );
   return tooltips({
-    position: "fixed",
-    parent: document.body,
+    position: scrollHost ? "absolute" : "fixed",
+    parent: scrollHost ?? document.body,
     tooltipSpace: (view) => {
       const panel = view.dom
         .closest("#reader, #research")
@@ -639,7 +640,10 @@ function tooltipHost(): Extension {
   });
 }
 
-function buildExtensions(opts: NoteEditorOptions): Extension[] {
+function buildExtensions(
+  opts: NoteEditorOptions,
+  tooltipParent?: HTMLElement,
+): Extension[] {
   return [
     fmField,
     fmProtection,
@@ -652,7 +656,7 @@ function buildExtensions(opts: NoteEditorOptions): Extension[] {
     wikiLinkPlugin(opts.onWikiLinkClick),
     blockPreviewField,
     parseSettleWatcher,
-    tooltipHost(),
+    tooltipHost(tooltipParent),
     opts.readOnly ? [] : selectionToolbar(opts.toolbarExtras),
     history(),
     drawSelection(),
@@ -668,10 +672,11 @@ function buildExtensions(opts: NoteEditorOptions): Extension[] {
 export function createEditorState(
   content: string,
   opts: NoteEditorOptions,
+  tooltipParent?: HTMLElement,
 ): EditorState {
   return EditorState.create({
     doc: toLf(content),
-    extensions: buildExtensions(opts),
+    extensions: buildExtensions(opts, tooltipParent),
   });
 }
 
@@ -681,7 +686,7 @@ export function createNoteEditor(
 ): NoteEditor {
   let eol = detectEol(opts.content);
   const view = new EditorView({
-    state: createEditorState(opts.content, opts),
+    state: createEditorState(opts.content, opts, parent),
     parent,
   });
   return {
@@ -691,7 +696,7 @@ export function createNoteEditor(
     },
     setContent(content: string) {
       eol = detectEol(content);
-      view.setState(createEditorState(content, opts));
+      view.setState(createEditorState(content, opts, parent));
     },
     setReadOnly(readOnly: boolean) {
       view.dispatch({

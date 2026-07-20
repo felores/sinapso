@@ -2795,7 +2795,7 @@ body > :not(#graph) {
   display: none;
 }
 .cm-tb-btn {
-  background: transparent;
+  background: linear-gradient(var(--panel), var(--panel)), var(--bg);
   border: none;
   border-radius: 5px;
   color: var(--fg);
@@ -2808,11 +2808,21 @@ body > :not(#graph) {
   display: block;
 }
 .cm-tb-btn:hover {
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  background:
+    linear-gradient(
+      color-mix(in srgb, var(--fg) 10%, transparent),
+      color-mix(in srgb, var(--fg) 10%, transparent)
+    ),
+    linear-gradient(var(--panel), var(--panel)), var(--bg);
 }
 .cm-tb-chat.active {
   color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  background:
+    linear-gradient(
+      color-mix(in srgb, var(--accent) 12%, transparent),
+      color-mix(in srgb, var(--accent) 12%, transparent)
+    ),
+    linear-gradient(var(--panel), var(--panel)), var(--bg);
 }
 
 /* AI input row (U7). */
@@ -2848,10 +2858,11 @@ body > :not(#graph) {
 }
 
 .research-selection-assist {
-  position: fixed;
+  position: absolute;
   z-index: 90;
-  width: min(292px, calc(100vw - 16px));
-  background: var(--panel);
+  width: fit-content;
+  max-width: calc(100vw - 16px);
+  background: linear-gradient(var(--panel), var(--panel)), var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
@@ -2860,35 +2871,58 @@ body > :not(#graph) {
 .research-selection-assist.hidden {
   display: none;
 }
-.research-selection-ask {
+.research-selection-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
+  max-width: 100%;
 }
-.research-selection-ask input {
+.research-selection-actions > button {
+  flex: none;
+}
+.research-selection-input {
+  flex: 1 1 220px;
+  min-width: 80px;
+  width: min(220px, calc(100vw - 108px));
+  margin-left: 4px;
+}
+.research-selection-input.hidden {
+  display: none;
+}
+.research-selection-input input {
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
-  flex: 1;
-  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  background:
+    linear-gradient(
+      color-mix(in srgb, var(--fg) 6%, transparent),
+      color-mix(in srgb, var(--fg) 6%, transparent)
+    ),
+    linear-gradient(var(--panel), var(--panel)), var(--bg);
   border: 1px solid var(--border);
   border-radius: 5px;
   color: var(--fg);
   font-size: 12px;
   padding: 4px 7px;
 }
-.research-selection-ask input:focus {
+.research-selection-input input:focus {
   outline: none;
   border-color: var(--accent);
 }
 .research-selection-answer {
-  margin-top: 5px;
-  border-top: 1px solid var(--border);
-  padding: 6px 3px 2px;
+  width: min(280px, calc(100vw - 28px));
+  margin-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+  padding: 2px 3px 6px;
   color: var(--fg);
   font-size: 12px;
   line-height: 1.45;
   max-height: 180px;
   overflow: auto;
   white-space: pre-wrap;
+}
+.research-selection-answer.hidden {
+  display: none;
 }
 
 /* AI preview panel (U7): nothing touches the note until accepted. */
@@ -2929,32 +2963,6 @@ body > :not(#graph) {
 }
 #reader-ai-preview-actions button:hover {
   border-color: var(--accent);
-}
-
-/* Save-state indicator (R9) — subtle text chip in the reader header,
-   distinct from the git working-tree indicator. */
-#reader-save-state {
-  font-size: 11px;
-  color: var(--muted);
-  white-space: nowrap;
-  padding: 0 6px;
-  align-self: center;
-}
-#reader-save-state.hidden {
-  display: none;
-}
-#reader-save-state.save-clean {
-  opacity: 0.7;
-}
-#reader-save-state.save-dirty {
-  color: var(--muted);
-}
-#reader-save-state.save-saving {
-  color: var(--accent);
-}
-#reader-save-state.save-error,
-#reader-save-state.save-conflict {
-  color: #e5534b;
 }
 
 /* Non-blocking reader banner (R8 conflict / KTD4b mirror restore):
@@ -4261,16 +4269,6 @@ body > :not(#graph) {
 .research-document-editor {
   min-height: 180px;
 }
-.research-document-save-state {
-  display: block;
-  padding: 4px 14px;
-  color: var(--muted);
-  font-size: 11px;
-}
-.research-document-save-state.save-conflict,
-.research-document-save-state.save-error {
-  color: #e5534b;
-}
 .research-document-ai-preview {
   margin: 8px 14px;
   padding: 10px;
@@ -4467,6 +4465,7 @@ body > :not(#graph) {
   color: var(--muted);
 }
 #research-body {
+  position: relative;
   flex: 1;
   overflow-y: auto;
   min-height: 0;
@@ -4491,6 +4490,10 @@ body > :not(#graph) {
 }
 #research-footer button {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   height: 32px;
   box-sizing: border-box;
   padding: 0 10px;
@@ -4500,6 +4503,11 @@ body > :not(#graph) {
   color: var(--fg);
   font-size: 12.5px;
   cursor: pointer;
+  text-align: center;
+}
+#research-footer button svg {
+  display: block;
+  flex: none;
 }
 #research-footer select {
   flex: 0 1 120px;
@@ -4562,7 +4570,7 @@ body > :not(#graph) {
   border-radius: 5px;
   background: transparent;
   color: var(--fg);
-  text-align: left;
+  text-align: center;
 }
 #research-footer .wiki-menu button:hover:not(:disabled),
 #research-footer .wiki-menu button:focus-visible {
@@ -4812,6 +4820,7 @@ body > :not(#graph) {
   display: inline-flex;
 }
 #reader-find #reader-versions-toggle,
+#reader-find #reader-wiki-toggle,
 #reader-find #reader-version-prev,
 #reader-find #reader-version-next,
 #reader-find #reader-version-checkpoint,
@@ -4825,6 +4834,16 @@ body > :not(#graph) {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+}
+#reader-find #reader-wiki-toggle {
+  margin-left: auto;
+}
+#reader-find #reader-wiki-toggle:not(.hidden) + #reader-versions-toggle {
+  margin-left: 0;
+}
+#reader-find.expanded #reader-versions-toggle,
+#reader-find.versions-expanded #reader-versions-toggle {
+  margin-left: auto;
 }
 #reader-properties-toggle.hidden {
   display: none !important;
@@ -4852,6 +4871,7 @@ body > :not(#graph) {
   display: inline-flex;
 }
 #reader-find #reader-versions-toggle:hover,
+#reader-find #reader-wiki-toggle:hover,
 #reader-find #reader-version-prev:hover:not(:disabled),
 #reader-find #reader-version-next:hover:not(:disabled),
 #reader-find #reader-version-checkpoint:hover:not(:disabled),
@@ -4859,6 +4879,7 @@ body > :not(#graph) {
   border-color: var(--accent);
 }
 #reader-find #reader-versions-toggle svg,
+#reader-find #reader-wiki-toggle svg,
 #reader-find #reader-version-prev svg,
 #reader-find #reader-version-next svg,
 #reader-find #reader-version-checkpoint svg,
@@ -4874,6 +4895,15 @@ body > :not(#graph) {
 }
 #reader-versions-toggle.hidden {
   display: none;
+}
+#reader-find #reader-wiki-toggle.hidden,
+#reader-find.expanded #reader-wiki-toggle,
+#reader-find.versions-expanded #reader-wiki-toggle {
+  display: none;
+}
+#reader-find #reader-wiki-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 #reader-version-status.hidden,
 #reader-version-prev.hidden,

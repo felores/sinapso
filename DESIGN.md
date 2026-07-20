@@ -77,6 +77,8 @@ Read directly from `style.css`. Note the two counter-intuitive facts documented 
 
 These are load-bearing; breaking them silently misaligns menu text or breaks nested button groups.
 
+**Opaque overlays over content.** Panels may use the translucent `--panel` token, but any toolbar, popover, floating control, tooltip, or nested interface rendered over readable content must fully occlude the text beneath it. Use `linear-gradient(var(--panel), var(--panel)), var(--bg)` for the surface and the same opaque composition for its controls; never place translucent text, icons, inputs, or buttons directly over other text.
+
 **a. `.dropdown button` is `display:flex`, not block text.**
 `style.css:135-148`: `.dropdown button { display: flex; justify-content: space-between; gap: 18px; ... text-align: left; }`. Because it's a flex container, centering or aligning label text must go through `justify-content` (e.g. `#integ-recheck` and `#qmd-enable` set `justify-content: center` to center their single-line label, `style.css:804, 864`), **not** `text-align`, which flex ignores for a single flex child spanning full width in this way.
 

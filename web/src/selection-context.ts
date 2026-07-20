@@ -64,7 +64,9 @@ export function selectionActionEligibility(
       insert: true,
     };
   }
-  const evidence = mode === "web" || mode === "article";
+  const evidence = ["web", "article", "semantic", "keyword"].includes(
+    mode ?? "",
+  );
   return {
     context: true,
     search: true,

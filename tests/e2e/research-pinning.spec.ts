@@ -54,6 +54,23 @@ const syntheticLongEntry = {
   ],
 };
 
+const syntheticWebEntry = {
+  id: "e2e-research-toolbar",
+  ts: "2026-01-01T00:00:00.000Z",
+  mode: "web",
+  query: "Research toolbar proof",
+  answer: null,
+  results: Array.from({ length: 12 }, (_, index) => ({
+    title: `Toolbar source ${index + 1}`,
+    url: `https://example.com/toolbar-${index + 1}`,
+    snippet:
+      index === 0
+        ? "Selected evidence opens the compact research toolbar."
+        : `Additional result ${index + 1} makes the Research panel scrollable.`,
+    publishedDate: null,
+  })),
+};
+
 async function token(page: Page) {
   const response = await page.request.get("/api/session");
   const body: SessionResponse = await response.json();
@@ -116,9 +133,10 @@ async function updateDocument(
   return { id: document.id, revision: body.revision, title, content };
 }
 
-async function installVoiceHarness(page: Page) {
+async function installVoiceHarness(page: Page, researchTools = false) {
   let socket: WebSocketRoute | undefined;
   let includeLongEntry = false;
+  let includeWebEntry = false;
 
   await page.route("**/api/integrations", async (route) => {
     const response = await route.fetch();
@@ -127,6 +145,19 @@ async function installVoiceHarness(page: Page) {
       response,
       json: {
         ...body,
+        ...(researchTools
+          ? {
+              consents: {
+                ...(body.consents as Record<string, unknown>),
+                web: true,
+              },
+              tools: {
+                ...(body.tools as Record<string, unknown>),
+                exa: { configured: true },
+                openrouter: { configured: true },
+              },
+            }
+          : {}),
         voice: {
           ...body.voice,
           provider: "gemini",
@@ -137,15 +168,21 @@ async function installVoiceHarness(page: Page) {
     });
   });
   await page.route("**/api/research/history", async (route) => {
-    if (!includeLongEntry || route.request().method() !== "GET") {
+    if (
+      (!includeLongEntry && !includeWebEntry) ||
+      route.request().method() !== "GET"
+    ) {
       await route.continue();
       return;
     }
     const response = await route.fetch();
     const body: HistoryResponse = await response.json();
+    const entries = [...body.entries];
+    if (includeLongEntry) entries.unshift(syntheticLongEntry);
+    if (includeWebEntry) entries.unshift(syntheticWebEntry);
     await route.fulfill({
       response,
-      json: { entries: [syntheticLongEntry, ...body.entries] },
+      json: { entries },
     });
   });
   await page.routeWebSocket("**/api/voice/ws?token=*", (route) => {
@@ -244,6 +281,9 @@ async function installVoiceHarness(page: Page) {
     includeLongEntry: () => {
       includeLongEntry = true;
     },
+    includeWebEntry: () => {
+      includeWebEntry = true;
+    },
   };
 }
 
@@ -340,14 +380,12 @@ test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user nav
     const disk = await page.request.get(`/api/document/${external.id}`);
     const diskBody: DocumentResponse = await disk.json();
     expect(diskBody.content).toBe("external competing version");
-    await expect(page.locator(".research-document-save-state")).toHaveClass(
-      /save-conflict/,
+    await expect(page.locator("#research-banner")).toBeVisible();
+    await expect(page.locator("#research-error")).toContainText(
+      "unsaved changes",
     );
     await page.locator("#research-banner-primary").click();
     await expect(page.locator("#research-banner")).toHaveClass(/hidden/);
-    await expect(page.locator(".research-document-save-state")).toHaveClass(
-      /save-clean/,
-    );
     await expect(editor).toContainText("external competing version");
 
     await page.locator("#research-pin").click();
@@ -374,7 +412,7 @@ test("plan 020: titled creation writes a durable Inbox note and opens it in rese
     // The new-doc button lives inside the research panel header. Open the
     // research panel via the voice-action harness (mirrors the prior test's
     // setup), then click the now-visible new-doc button.
-    const harness = await installVoiceHarness(page);
+    const harness = await installVoiceHarness(page, true);
     const resultA = await createEvidence(
       page,
       "Alpha",
@@ -390,14 +428,22 @@ test("plan 020: titled creation writes a durable Inbox note and opens it in rese
     const editor = page.locator("#research .cm-content");
     await expect(editor).toBeVisible({ timeout: 10_000 });
     await editor.click();
-    await page.keyboard.type("Browser-authored durable body.");
-    // Autosave flushes through PUT /api/notes (baseHash CAS).
-    await expect(page.locator("#research-vault-save-state")).toHaveText(
-      "saved",
-      {
-        timeout: 10_000,
-      },
+    const saved = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/notes" &&
+        response.request().method() === "PUT" &&
+        response.ok(),
     );
+    await page.keyboard.type("Browser-authored durable body.");
+    await editor.locator("text=durable").dblclick();
+    const toolbar = page.locator(".cm-selection-toolbar");
+    await expect(toolbar).toBeVisible();
+    await expect(toolbar.locator(".cm-tb-chat")).toBeVisible();
+    await expect(toolbar.locator(".cm-tb-bold")).toBeVisible();
+    // Autosave flushes through PUT /api/notes (baseHash CAS) without UI noise.
+    await saved;
+    await expect(page.locator("#research-vault-save-state")).toHaveCount(0);
+    await expect(page.locator("#reader-save-state")).toHaveCount(0);
     // The note is durable on disk under the configured Inbox; no new
     // mode=document research-history entry was created.
     const history = await page.request.get("/api/research/history");
@@ -462,6 +508,123 @@ test("evidence is immutable and long snippets expand without opening the note", 
       (element) => element.getBoundingClientRect().height,
     );
     expect(expandedHeight).toBeGreaterThan(collapsedHeight);
+  } finally {
+    await assertCleanBrowser();
+  }
+});
+
+test("read-only research selections use the compact opaque action toolbar", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  try {
+    const researchRequests: Array<{ query: string; deep: boolean }> = [];
+    await page.route("**/api/research", async (route) => {
+      if (new URL(route.request().url()).pathname !== "/api/research") {
+        await route.continue();
+        return;
+      }
+      researchRequests.push(route.request().postDataJSON());
+      await route.fulfill({
+        json: { answer: null, results: [], contextWarning: null },
+      });
+    });
+    const harness = await installVoiceHarness(page, true);
+    harness.includeWebEntry();
+    await harness.show(syntheticWebEntry.id);
+    await page.locator(".web-snippet").first().selectText();
+
+    const toolbar = page.locator("#research-selection-assist");
+    await expect(toolbar).toBeVisible();
+    const buttons = toolbar.locator(".research-selection-actions button");
+    await expect(buttons).toHaveCount(3);
+    await expect(buttons.nth(0)).toHaveAttribute("title", "Go deep");
+    await expect(buttons.nth(1)).toHaveAttribute("title", "Fact check");
+    await expect(buttons.nth(2)).toHaveAttribute("title", "Ask AI…");
+    await expect(toolbar.locator(".research-selection-input")).toBeHidden();
+    await expect(toolbar.locator(".research-selection-answer")).toBeHidden();
+    const collapsedToolbar = await toolbar.boundingBox();
+    const collapsedActions = await toolbar
+      .locator(".research-selection-actions")
+      .boundingBox();
+    expect(collapsedToolbar).not.toBeNull();
+    expect(collapsedActions).not.toBeNull();
+    expect(
+      collapsedToolbar!.width - collapsedActions!.width,
+    ).toBeLessThanOrEqual(12);
+    expect(
+      collapsedToolbar!.height - collapsedActions!.height,
+    ).toBeLessThanOrEqual(12);
+    const selectionBounds = await page.evaluate(() => {
+      const selection = window.getSelection();
+      const rects = Array.from(selection!.getRangeAt(0).getClientRects());
+      return {
+        left: Math.min(...rects.map((rect) => rect.left)),
+        right: Math.max(...rects.map((rect) => rect.right)),
+      };
+    });
+    expect(
+      Math.abs(
+        collapsedToolbar!.x +
+          collapsedToolbar!.width / 2 -
+          (selectionBounds.left + selectionBounds.right) / 2,
+      ),
+    ).toBeLessThanOrEqual(3);
+    await page.locator("#research-body").evaluate((body) => {
+      body.scrollTop = 30;
+    });
+    await expect
+      .poll(async () => (await toolbar.boundingBox())?.y)
+      .toBeLessThan(collapsedToolbar!.y - 20);
+    await page.locator("#research-body").evaluate((body) => {
+      body.scrollTop = 0;
+    });
+
+    await buttons.nth(2).click();
+    const input = toolbar.locator(".research-selection-input input");
+    await expect(input).toBeVisible();
+    await expect(input).toBeFocused();
+    await expect(buttons.nth(2)).toHaveClass(/active/);
+    await expect(buttons.nth(2)).toHaveAttribute("aria-expanded", "true");
+    await expect(
+      toolbar.locator(
+        ".research-selection-actions > .research-selection-input",
+      ),
+    ).toBeVisible();
+    expect(
+      await toolbar
+        .locator(".research-selection-input")
+        .evaluate((element) => getComputedStyle(element).borderBottomWidth),
+    ).toBe("0px");
+    const expandedToolbar = await toolbar.boundingBox();
+    expect(expandedToolbar!.width).toBeGreaterThan(
+      collapsedToolbar!.width + 150,
+    );
+    const researchPanel = await page.locator("#research").boundingBox();
+    expect(expandedToolbar!.x + expandedToolbar!.width).toBeLessThanOrEqual(
+      researchPanel!.x + researchPanel!.width,
+    );
+    expect(
+      await toolbar.evaluate(
+        (element) => getComputedStyle(element).backgroundImage,
+      ),
+    ).not.toBe("none");
+
+    await buttons.nth(0).click();
+    await expect.poll(() => researchRequests.length).toBe(1);
+    expect(researchRequests[0]).toMatchObject({
+      query: syntheticWebEntry.results[0].snippet,
+      deep: true,
+    });
+
+    await harness.show(syntheticWebEntry.id);
+    await page.locator(".web-snippet").first().selectText();
+    await page.locator(".research-selection-actions button").nth(1).click();
+    await expect.poll(() => researchRequests.length).toBe(2);
+    expect(researchRequests[1]).toMatchObject({
+      query: "Fact-check this claim using reliable independent sources.",
+      deep: true,
+    });
   } finally {
     await assertCleanBrowser();
   }
@@ -769,6 +932,92 @@ test("R8/R9 Inbox toggle is persistent, aria-pressed toggles, and prev/next navi
   } finally {
     rmSync(fileA, { force: true });
     rmSync(fileB, { force: true });
+    await page.request.post("/api/rescan", {
+      headers: { "x-sinapso-token": sessionToken },
+    });
+    await assertCleanBrowser();
+  }
+});
+
+test("an Inbox note footer transfers the saved note to the left Notes panel", async ({
+  page,
+}) => {
+  test.setTimeout(45_000);
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  const noteId = "inbox/footer-transfer.md";
+  const file = join(E2E_VAULT, noteId);
+  const sessionToken = await token(page);
+  writeFileSync(file, "# Footer Transfer\n\nOriginal Inbox body.\n");
+  await page.request.delete("/api/reader-history", {
+    headers: { "x-sinapso-token": sessionToken },
+  });
+  await page.request.post("/api/rescan", {
+    headers: { "x-sinapso-token": sessionToken },
+  });
+  try {
+    await page.addInitScript(() => {
+      localStorage.setItem("sinapso-qmd-prompted", "1");
+      localStorage.setItem("sinapso-lang", "en");
+    });
+    await page.goto("/");
+    await page.locator("#new-doc-btn").click();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page
+      .locator(".inbox-list-item", { hasText: "footer-transfer" })
+      .click();
+
+    const transfer = page.locator("#research-save-inbox");
+    await expect(transfer).toBeVisible();
+    await expect(transfer).toContainText("Send to other panel");
+    const wikiIngest = page.locator("#research-ingest-wiki");
+    await expect(wikiIngest).toBeVisible();
+    await wikiIngest.click();
+    await expect(page.locator("#research-wiki-menu-ingest")).toBeVisible();
+    await expect(page.locator("#research-wiki-menu svg")).toHaveCount(0);
+    await wikiIngest.click();
+    await expect(
+      transfer.locator('g[transform="translate(24 0) scale(-1 1)"]'),
+    ).toHaveCount(1);
+    expect(
+      await transfer.evaluate((button) => {
+        const parts = Array.from(button.children).map((child) =>
+          child.getBoundingClientRect(),
+        );
+        const bounds = button.getBoundingClientRect();
+        const left = Math.min(...parts.map((part) => part.left));
+        const right = Math.max(...parts.map((part) => part.right));
+        return Math.abs((left + right) / 2 - (bounds.left + bounds.right) / 2);
+      }),
+    ).toBeLessThanOrEqual(1);
+
+    const editor = page.locator("#research .cm-content");
+    await editor.click();
+    const saved = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/notes" &&
+        response.request().method() === "PUT" &&
+        response.ok(),
+    );
+    await page.keyboard.press("End");
+    await page.keyboard.type(" Saved before transfer.");
+    const versionsLoaded = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/note-versions" &&
+        response.ok(),
+    );
+    await transfer.click();
+    await Promise.all([saved, versionsLoaded]);
+
+    await expect(page.locator("#reader")).not.toHaveClass(/hidden/);
+    await expect(page.locator("#reader")).toHaveClass(/ctx-left/);
+    await expect(page.locator("#reader .cm-content")).toContainText(
+      "Saved before transfer.",
+    );
+    await expect(page.locator("#reader-next")).toBeDisabled();
+    await expect(page.locator(".inbox-list")).toBeVisible();
+    await expect(page.locator("#research-footer")).toHaveClass(/hidden/);
+  } finally {
+    rmSync(file, { force: true });
     await page.request.post("/api/rescan", {
       headers: { "x-sinapso-token": sessionToken },
     });

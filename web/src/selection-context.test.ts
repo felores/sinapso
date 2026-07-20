@@ -187,12 +187,12 @@ describe("selection context helpers", () => {
     }
   });
 
-  it("keeps semantic and keyword selections context-only", () => {
+  it("offers the read-only research toolbar for semantic and keyword results", () => {
     for (const mode of ["semantic", "keyword"]) {
       expect(selectionActionEligibility("research", mode)).toEqual({
         context: true,
         search: true,
-        ask: false,
+        ask: true,
         format: false,
         replace: false,
         insert: false,

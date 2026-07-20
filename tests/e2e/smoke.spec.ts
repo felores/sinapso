@@ -205,11 +205,18 @@ test("LAN-style HTTP boot and side toggles work without crypto.randomUUID", asyn
         value: undefined,
       });
     });
+    const session = (await (await page.request.get("/api/session")).json()) as {
+      token: string;
+    };
+    await page.request.delete("/api/reader-history", {
+      headers: { "x-sinapso-token": session.token },
+    });
     await page.goto("/?node=alpha-note.md");
     await expect(page.locator("#graph canvas")).toBeVisible();
     await expect(page.locator("#reader")).not.toHaveClass(/hidden/, {
       timeout: 15_000,
     });
+    await expect(page.locator("#reader-next")).toBeDisabled();
 
     await page.keyboard.press("a");
     await expect(page.locator("#reader")).toHaveClass(/hidden/);
@@ -217,7 +224,11 @@ test("LAN-style HTTP boot and side toggles work without crypto.randomUUID", asyn
     await expect(page.locator("#reader")).not.toHaveClass(/hidden/);
     await expect(page.locator("#reader")).toHaveClass(/ctx-left/);
     await expect(page.locator("#research")).toHaveClass(/hidden/);
-    await page.keyboard.press("a");
+    await page
+      .locator("#reader-dock")
+      .evaluate((button: HTMLButtonElement) => button.click());
+    await expect(page.locator("#reader")).toHaveClass(/floating/);
+    await page.locator("#reopen-content").click();
     await expect(page.locator("#reader")).toHaveClass(/hidden/);
 
     await page.locator("#new-doc-btn").click();
