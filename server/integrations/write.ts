@@ -322,7 +322,7 @@ export function guardedMove(
 export interface AppendLinkOptions {
   /** Vault-relative id of the note to append the link to. */
   id: string;
-  /** Wikilink target (a note basename); brackets are stripped if present. */
+  /** Wikilink target; brackets are stripped if present. */
   target: string;
   /** Refuse the append when the current source bytes changed. */
   baseHash?: string;
@@ -330,7 +330,7 @@ export interface AppendLinkOptions {
 }
 
 /**
- * Append a `[[target]]` wikilink to an existing note (F034 orphan linker).
+ * Add a `[[target]]` wikilink to an existing note's Connections section.
  * Same confinement + journal as guardedEdit — this is NOT a second write path,
  * just an append helper inside the single sanctioned writer. Idempotent: a note
  * that already links to the target is left unchanged.
@@ -350,10 +350,23 @@ export function guardedAppendLink(
     throw new WriteError(409, "note changed on disk");
   const wikilink = `[[${target}]]`;
   if (current.includes(wikilink)) return { id, added: false };
-  const gap = current.length === 0 || current.endsWith("\n") ? "" : "\n";
+  const connection = /^#{1,6}\s+connections\s*$/im.exec(current);
+  let content: string;
+  if (connection) {
+    const level = connection[0].match(/^#+/)![0].length;
+    const after = connection.index + connection[0].length;
+    const next = new RegExp(`^#{1,${level}}\\s+`, "gm");
+    next.lastIndex = after;
+    const end = next.exec(current)?.index ?? current.length;
+    const before = current.slice(0, end).replace(/\s*$/, "");
+    content = `${before}\n\n${wikilink}\n${current.slice(end)}`;
+  } else {
+    const gap = current.length === 0 || current.endsWith("\n") ? "" : "\n";
+    content = `${current}${gap}\n## Connections\n\n${wikilink}\n`;
+  }
   guardedEdit(deps, {
     id,
-    content: `${current}${gap}\n${wikilink}\n`,
+    content,
     baseHash: opts.baseHash,
     actor: opts.actor,
   });

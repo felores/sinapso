@@ -81,6 +81,7 @@ export function buildSearchIndex(
   vaultRoot: string,
 ): SearchIndex {
   let ms: MiniSearch | null = null;
+  let pathMs: MiniSearch | null = null;
   let contents = new Map<string, string>();
   let titles = new Map<string, string>();
 
@@ -90,9 +91,15 @@ export function buildSearchIndex(
       storeFields: ["title"],
       searchOptions: { boost: { title: 3 }, prefix: true, fuzzy: 0.15 },
     });
+    const paths = new MiniSearch({
+      fields: ["path"],
+      storeFields: ["title"],
+      searchOptions: { prefix: true, fuzzy: 0.15 },
+    });
     contents = new Map();
     titles = new Map();
     const docs: Array<{ id: string; title: string; content: string }> = [];
+    const pathDocs: Array<{ id: string; title: string; path: string }> = [];
     for (const n of nodes) {
       if (n.phantom) continue;
       try {
@@ -100,11 +107,14 @@ export function buildSearchIndex(
         contents.set(n.id, text);
         titles.set(n.id, n.title);
         docs.push({ id: n.id, title: n.title, content: text });
+        pathDocs.push({ id: n.id, title: n.title, path: searchText(n.id) });
       } catch {
         // file moved/deleted since scan; skip it (matches inline behavior)
       }
     }
     m.addAll(docs);
+    paths.addAll(pathDocs);
+    pathMs = paths;
     return m;
   };
 
@@ -137,15 +147,17 @@ export function buildSearchIndex(
     search(query: string): SearchHit[] {
       if (!query.trim()) return [];
       ensure();
-      return ms!
-        .search(query)
-        .slice(0, SEARCH_HIT_LIMIT)
-        .map((h) => ({
-          id: h.id as string,
-          title: h.title as string,
-          score: h.score,
-          snippet: snippet(h.id as string, h.terms),
-        }));
+      const hits = [...ms!.search(query)];
+      const seen = new Set(hits.map((h) => h.id as string));
+      for (const hit of pathMs!.search(searchText(query))) {
+        if (!seen.has(hit.id as string)) hits.push(hit);
+      }
+      return hits.slice(0, SEARCH_HIT_LIMIT).map((h) => ({
+        id: h.id as string,
+        title: h.title as string,
+        score: h.score,
+        snippet: snippet(h.id as string, h.terms),
+      }));
     },
     /**
      * Global literal scan (search_vault `exact` mode). Reuses the in-memory
@@ -203,10 +215,21 @@ export function buildSearchIndex(
     },
     invalidate(): void {
       ms = null;
+      pathMs = null;
       contents = new Map();
       titles = new Map();
     },
   };
+}
+
+function searchText(value: string): string {
+  const words = value
+    .replace(/([a-z\d])([A-Z])/g, "$1 $2")
+    .replace(/[-_/.]+/g, " ")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  return `${words.join(" ")} ${words.join("")}`;
 }
 
 /** Vault-prefix scope check shared with search-vault.inScope (kept local to

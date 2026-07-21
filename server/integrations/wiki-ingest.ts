@@ -377,7 +377,7 @@ function proposalPrompt(
     effectivePrompts(cfg).wikiIngest,
     `Selected wiki: ${wiki.label} (${wiki.path})`,
     `All derived create/edit paths must stay under ${wiki.path}/.`,
-    "Derived notes may wikilink any known vault note, including notes outside this wiki. Wikilinks must stay within the vault: never use absolute paths, ../ traversal, file: URLs, or external files. Cite external sources with normal https URLs.",
+    "Derived notes may wikilink any known vault note, including notes outside this wiki. Wikilinks must stay within the vault: never use absolute paths, ../ traversal, file: URLs, or external files. Cite external sources with normal https URLs. For vault-relative RAW sources only, use a normal Markdown link such as `[source](../raw/source.md)`; never put source paths in inline or fenced code.",
     `Canonical RAW source path after approval: ${raw.path}. ${raw.type === "existing" ? "This source already exists at that location; do not recreate or move it." : "This is the only canonical source location; do not present the original Inbox or source location as canonical."}`,
     `Every derived create/edit note must cite or link ${raw.path} according to the wiki contract.`,
     "Contract files:",

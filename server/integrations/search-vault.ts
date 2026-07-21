@@ -108,6 +108,32 @@ export function inScope(id: string, scope: string): boolean {
   return !scope || id === scope || id.startsWith(scope + "/");
 }
 
+/** Treat separators and camelCase boundaries as word breaks, then also retain
+ * the collapsed form so "value proposition" finds `value-proposition` and
+ * `valueProposition`, while "valueproposition" finds both too. */
+function searchForms(value: string): [string, string] {
+  let words = "";
+  let previous = "";
+  for (const char of value) {
+    const separator =
+      char === "-" ||
+      char === "_" ||
+      char === "/" ||
+      char === "." ||
+      char === " ";
+    const camelBoundary =
+      previous >= "a" && previous <= "z" && char >= "A" && char <= "Z";
+    words += separator
+      ? " "
+      : camelBoundary
+        ? ` ${char.toLowerCase()}`
+        : char.toLowerCase();
+    previous = char;
+  }
+  words = words.trim().split(" ").filter(Boolean).join(" ");
+  return [words, words.split(" ").join("")];
+}
+
 /**
  * Path mode: substring match (case-insensitive) of every query against each
  * non-phantom node's id (path), basename, and title. Pure string work over
@@ -121,17 +147,15 @@ export function pathMatch(
   limit: number,
 ): VaultSearchResult[] {
   if (!queries.length) return [];
-  const needles = queries.map((q) => q.toLowerCase());
+  const needles = queries.flatMap(searchForms);
   const out: VaultSearchResult[] = [];
   const seen = new Set<string>();
   for (const n of nodes) {
     if (n.phantom) continue;
     if (!inScope(n.id, scope)) continue;
-    const hay = [
-      n.id.toLowerCase(),
-      (n.id.split("/").pop() ?? n.id).toLowerCase(),
-      n.title.toLowerCase(),
-    ];
+    const hay = [n.id, n.id.split("/").pop() ?? n.id, n.title].flatMap(
+      searchForms,
+    );
     if (!needles.some((needle) => hay.some((h) => h.includes(needle))))
       continue;
     if (seen.has(n.id)) continue;

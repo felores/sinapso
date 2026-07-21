@@ -256,6 +256,120 @@ test("AE1: typing autosaves; only the edit differs, frontmatter byte-identical",
   }
 });
 
+test("related notes show relevance and add a protected Connections link", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  const file = await createTestNote(page);
+  let linkPayload: unknown;
+  try {
+    await page.route("**/api/integrations", async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as Record<string, unknown>;
+      await route.fulfill({
+        response,
+        json: {
+          ...body,
+          tools: {
+            ...(body.tools as Record<string, unknown>),
+            qmd: { installed: true },
+          },
+        },
+      });
+    });
+    await page.route("**/api/related**", (route) =>
+      route.fulfill({
+        json: {
+          state: "ready",
+          results: [
+            {
+              id: "wiki/index.md",
+              title: "Index",
+              snippet: "An index should not be suggested.",
+              score: 0.99,
+            },
+            {
+              id: "log.md",
+              title: "Log",
+              snippet: "A log should not be suggested.",
+              score: 0.98,
+            },
+            {
+              id: "HOT.md",
+              title: "Hot",
+              snippet: "A hot note should not be suggested.",
+              score: 0.97,
+            },
+            {
+              id: "alpha-note.md",
+              title: "Alpha Note",
+              snippet: "A related passage.",
+              score: 0.87,
+            },
+          ],
+        },
+      }),
+    );
+    await page.route("**/api/gaps/link", async (route) => {
+      linkPayload = route.request().postDataJSON();
+      await route.fulfill({ json: { added: true } });
+    });
+    await openTestNote(page);
+    const related = page.locator("#related");
+    await expect(related).toContainText("Alpha Note");
+    await expect(related).not.toContainText("Index");
+    await expect(related).not.toContainText("Log");
+    await expect(related).not.toContainText("Hot");
+    await expect(related.locator(".rel-score")).toHaveText("87%");
+    const row = related.locator(".rel-row");
+    const score = related.locator(".rel-score");
+    const add = related.getByRole("button", { name: "add link" });
+    const rowBox = await row.boundingBox();
+    const scoreBox = await score.boundingBox();
+    const addBox = await add.boundingBox();
+    expect(scoreBox!.x + scoreBox!.width).toBeCloseTo(addBox!.x - 6, 0);
+    expect(addBox!.x + addBox!.width).toBeCloseTo(
+      rowBox!.x + rowBox!.width - 8,
+      0,
+    );
+    await add.click();
+    await expect(related.getByRole("button")).toHaveText("linked");
+    expect(linkPayload).toEqual({
+      id: NOTE_ID,
+      target: "alpha-note",
+    });
+  } finally {
+    await assertCleanBrowser();
+    await removeTestNote(page, file);
+  }
+});
+
+test("vault-relative Markdown links open their target note", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  const file = await createTestNote(page);
+  try {
+    writeFileSync(
+      file,
+      "# Relative Source\n\nSee [Alpha](../alpha-note.md).\n",
+    );
+    await page.request.post("/api/rescan", {
+      headers: { "x-sinapso-token": await apiToken(page) },
+    });
+    await openTestNote(page);
+    const link = page.locator('#reader-editor a.cm-md-link[href="#"]');
+    await expect(link).toHaveText("Alpha");
+    await link.click();
+    await expect(page.locator("#reader-editor .cm-content")).toContainText(
+      "Alpha links to",
+    );
+  } finally {
+    await assertCleanBrowser();
+    await removeTestNote(page, file);
+  }
+});
+
 test("live graph links locally move the edited node and its camera", async ({
   page,
 }) => {

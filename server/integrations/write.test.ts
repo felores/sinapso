@@ -304,7 +304,7 @@ describe("write module edge cases", () => {
 });
 
 describe("guardedAppendLink (F034 orphan linker)", () => {
-  it("appends a [[wikilink]] to an existing note and journals it", () => {
+  it("adds a [[wikilink]] to Connections and journals it", () => {
     writeFileSync(join(VAULT, "orphan.md"), "# Orphan\nsome body\n");
     const before = readChangeLog(DATA).length;
     const r = guardedAppendLink(
@@ -314,10 +314,26 @@ describe("guardedAppendLink (F034 orphan linker)", () => {
     expect(r).toEqual({ id: "orphan.md", added: true });
     const content = readFileSync(join(VAULT, "orphan.md"), "utf-8");
     expect(content).toContain("[[Related Note]]");
-    expect(content.startsWith("# Orphan\nsome body")).toBe(true); // original kept
+    expect(content).toBe(
+      "# Orphan\nsome body\n\n## Connections\n\n[[Related Note]]\n",
+    );
     const log = readChangeLog(DATA);
     expect(log.length).toBe(before + 1);
     expect(log.at(-1)).toMatchObject({ action: "edit", path: "orphan.md" });
+  });
+
+  it("adds to an existing Connections section before the next peer heading", () => {
+    writeFileSync(
+      join(VAULT, "connections.md"),
+      "# Note\n\n## Connections\n\n[[Existing]]\n\n## Sources\n\ntext\n",
+    );
+    guardedAppendLink(
+      { vaultRoot: VAULT, dataDir: DATA },
+      { id: "connections.md", target: "folder/Related", actor: "user" },
+    );
+    expect(readFileSync(join(VAULT, "connections.md"), "utf-8")).toBe(
+      "# Note\n\n## Connections\n\n[[Existing]]\n\n[[folder/Related]]\n## Sources\n\ntext\n",
+    );
   });
 
   it("is idempotent: re-linking the same target writes nothing new", () => {

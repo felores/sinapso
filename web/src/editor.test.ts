@@ -225,6 +225,40 @@ describe("wiki links", () => {
     ed.destroy();
   });
 
+  it("renders bare and wiki-form HTTPS URLs as external links", () => {
+    const ed = mount(
+      "[labeled](https://example.com/labeled) https://example.com/bare [[https://example.com/wiki]]\n",
+    );
+    ed.view.dispatch({ selection: { anchor: ed.view.state.doc.length } });
+    const links = [
+      ...ed.view.dom.querySelectorAll<HTMLAnchorElement>("a.cm-md-link"),
+    ];
+
+    expect(links.map((link) => link.href)).toEqual([
+      "https://example.com/labeled",
+      "https://example.com/bare",
+      "https://example.com/wiki",
+    ]);
+    const cursor = ed.view.state.selection.main.head;
+    links[1].dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    expect(ed.view.state.selection.main.head).toBe(cursor);
+    ed.destroy();
+  });
+
+  it("routes vault-relative Markdown links through the note callback", () => {
+    const onMarkdownLinkClick = vi.fn();
+    const ed = mount("See [source](../raw/source.md)\n", {
+      onMarkdownLinkClick,
+    });
+    ed.view.dispatch({ selection: { anchor: ed.view.state.doc.length } });
+    const link = ed.view.dom.querySelector<HTMLAnchorElement>("a.cm-md-link")!;
+    expect(link.textContent).toBe("source");
+    expect(link.target).toBe("");
+    link.click();
+    expect(onMarkdownLinkClick).toHaveBeenCalledWith("../raw/source.md");
+    ed.destroy();
+  });
+
   it("shows raw syntax when the cursor is inside the link", () => {
     const ed = mount(content);
     const pos = content.indexOf("[[Other Note]]") + 4;

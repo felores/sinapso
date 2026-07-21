@@ -102,6 +102,23 @@ describe("pathMatch", () => {
     expect(r3.map((x) => x.path)).toEqual(["inbox/x.md"]);
   });
 
+  it("treats spaces, separators, and camelCase as equivalent in paths", () => {
+    const value = [
+      { id: "notes/value-proposition.md", title: "Unrelated" },
+      { id: "notes/valueProposition.md", title: "Unrelated" },
+    ];
+    for (const query of [
+      "value proposition",
+      "valueproposition",
+      "valueProposition",
+    ]) {
+      expect(pathMatch(value, [query], "", 10).map((x) => x.path)).toEqual([
+        "notes/value-proposition.md",
+        "notes/valueProposition.md",
+      ]);
+    }
+  });
+
   it("honors a folder scope", () => {
     const r = pathMatch(nodes, ["notes"], "felo/wiki", 10);
     expect(r.map((x) => x.path)).toEqual(["felo/wiki/notes.md"]);

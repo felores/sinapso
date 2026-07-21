@@ -2125,6 +2125,19 @@ async function boot() {
     if (node) select(node);
   }
 
+  function navigateMarkdownTarget(sourceId: string, target: string) {
+    const targetPath = target.split(/[?#]/, 1)[0];
+    if (!targetPath.endsWith(".md") || targetPath.startsWith("/")) return;
+    const parts = sourceId.split("/").slice(0, -1);
+    for (const part of targetPath.split("/")) {
+      if (!part || part === ".") continue;
+      if (part === "..") parts.pop();
+      else parts.push(part);
+    }
+    if (!parts.length) return;
+    navigateWikiTarget(parts.join("/"));
+  }
+
   // Lazy candidate list for [[ ]] autocomplete: read the current graph on
   // every session, exclude phantoms, surface title + path-without-.md.
   function wikiLinkCandidates(): readonly WikiLinkCandidate[] {
@@ -2426,6 +2439,7 @@ async function boot() {
       noteEditor = createNoteEditor(editorHost, {
         content: markdown,
         onWikiLinkClick: navigateWikiTarget,
+        onMarkdownLinkClick: (target) => navigateMarkdownTarget(n.id, target),
         getWikiLinkCandidates: wikiLinkCandidates,
         toolbarExtras: aiToolbarExtras,
         onChange: () => {
@@ -6044,7 +6058,12 @@ async function boot() {
     try {
       const data = await api<{
         state: string;
-        results?: Array<{ id: string; title: string; snippet: string }>;
+        results?: Array<{
+          id: string;
+          title: string;
+          snippet: string;
+          score?: number;
+        }>;
       }>(`/api/related?id=${encodeURIComponent(n.id)}`);
       if (token !== relatedToken) return;
       const info = box.querySelector(".rel-info") as HTMLElement;
@@ -6057,7 +6076,12 @@ async function boot() {
           "semantic search is not set up for this vault (Tools → Integrations)";
         return;
       }
-      const results = data.results ?? [];
+      const results = (data.results ?? []).filter(
+        (res) =>
+          !["log.md", "index.md", "hot.md"].includes(
+            res.id.split("/").pop()!.toLowerCase(),
+          ),
+      );
       if (!results.length) {
         info.textContent = "no related notes found";
         return;
@@ -6071,10 +6095,40 @@ async function boot() {
         const title = document.createElement("span");
         title.className = "rel-title";
         title.textContent = node.title;
+        const score = document.createElement("span");
+        score.className = "rel-score";
+        score.textContent = `${Math.round(Math.max(0, Math.min(1, res.score ?? 0)) * 100)}%`;
         const snip = document.createElement("span");
         snip.className = "rel-snippet";
         snip.textContent = res.snippet;
-        row.append(title, snip);
+        const add = document.createElement("button");
+        add.className = "rel-add";
+        add.textContent = i18n.t("related.addLink");
+        add.title = i18n.t("related.addLinkTitle", {
+          target: res.id.replace(/\.md$/i, ""),
+        });
+        add.addEventListener("click", async (event) => {
+          event.stopPropagation();
+          add.disabled = true;
+          try {
+            const result = await api<{ added: boolean }>("/api/gaps/link", {
+              json: { id: n.id, target: res.id.replace(/\.md$/i, "") },
+            });
+            add.textContent = result.added
+              ? i18n.t("related.linked")
+              : i18n.t("related.alreadyLinked");
+          } catch {
+            add.textContent = i18n.t("related.retry");
+            add.disabled = false;
+          }
+        });
+        const heading = document.createElement("div");
+        heading.className = "rel-heading";
+        heading.appendChild(title);
+        const actions = document.createElement("div");
+        actions.className = "rel-actions";
+        actions.append(score, add);
+        row.append(heading, snip, actions);
         row.addEventListener("click", () => select(node, res.snippet));
         box.appendChild(row);
       }
@@ -7054,6 +7108,7 @@ async function boot() {
     const editor = createNoteEditor(editorHost, {
       content: markdown,
       onWikiLinkClick: navigateWikiTarget,
+      onMarkdownLinkClick: (target) => navigateMarkdownTarget(path, target),
       getWikiLinkCandidates: wikiLinkCandidates,
       toolbarExtras: aiToolbarExtras,
       onChange: () => {

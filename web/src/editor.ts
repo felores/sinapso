@@ -56,6 +56,7 @@ export interface NoteEditorOptions {
   content: string;
   onChange?: () => void;
   onWikiLinkClick?: (target: string) => void;
+  onMarkdownLinkClick?: (target: string) => void;
   /** When set on a writable editor, typing `[[` opens a fuzzy note list built
    *  from the current candidates. Read-only editors never autocomplete. */
   getWikiLinkCandidates?: () => readonly WikiLinkCandidate[];
@@ -234,7 +235,6 @@ const HIDDEN_MARKS = new Set([
   "EmphasisMark",
   "CodeMark",
   "LinkMark",
-  "URL",
 ]);
 
 // Notes are small; decorating the full doc keeps behavior deterministic in
@@ -305,12 +305,15 @@ export const livePreviewPlugin = ViewPlugin.fromClass(
 // ---------- wiki links ----------
 
 const WIKI_RE = /\[\[([^\]|\n]+)(?:\|([^\]\n]+))?\]\]/g;
-const EXTERNAL_LINK_RE = /(?<!!)\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g;
+const MARKDOWN_LINK_RE =
+  /(?<!!)\[([^\]\n]+)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g;
+const BARE_EXTERNAL_LINK_RE = /(?<!\]\()(?<!\[\[)\bhttps?:\/\/[^\s<>()\]]+/g;
 
 class LinkWidget extends WidgetType {
   constructor(
     readonly label: string,
     readonly href: string,
+    readonly onClick?: (target: string) => void,
   ) {
     super();
   }
@@ -318,9 +321,18 @@ class LinkWidget extends WidgetType {
     const el = document.createElement("a");
     el.className = "cm-md-link";
     el.textContent = this.label;
-    el.href = this.href;
-    el.target = "_blank";
-    el.rel = "noopener noreferrer";
+    el.href = this.onClick ? "#" : this.href;
+    if (!this.onClick) {
+      el.target = "_blank";
+      el.rel = "noopener noreferrer";
+    }
+    // Keep the editor selection out of the link so its click reaches the anchor.
+    el.onmousedown = (ev) => ev.preventDefault();
+    if (this.onClick)
+      el.onclick = (ev) => {
+        ev.preventDefault();
+        this.onClick?.(this.href);
+      };
     return el;
   }
   override eq(other: LinkWidget): boolean {
@@ -352,7 +364,10 @@ class WikiLinkWidget extends WidgetType {
   }
 }
 
-function wikiLinkPlugin(onClick?: (target: string) => void) {
+function wikiLinkPlugin(
+  onClick?: (target: string) => void,
+  onMarkdownLinkClick?: (target: string) => void,
+) {
   return ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
@@ -366,6 +381,10 @@ function wikiLinkPlugin(onClick?: (target: string) => void) {
       }
       build(view: EditorView): DecorationSet {
         const b = new RangeSetBuilder<Decoration>();
+        const ranges: { from: number; to: number; decoration: Decoration }[] =
+          [];
+        const add = (from: number, to: number, decoration: Decoration) =>
+          ranges.push({ from, to, decoration });
         for (const { from, to } of decorationRanges(view)) {
           const text = view.state.doc.sliceString(from, to);
           WIKI_RE.lastIndex = 0;
@@ -374,39 +393,68 @@ function wikiLinkPlugin(onClick?: (target: string) => void) {
             const start = from + m.index;
             const end = start + m[0].length;
             if (selectionTouches(view.state, start, end)) {
-              b.add(start, end, Decoration.mark({ class: "cm-wikilink-raw" }));
+              add(start, end, Decoration.mark({ class: "cm-wikilink-raw" }));
             } else {
-              b.add(
+              add(
                 start,
                 end,
                 Decoration.replace({
-                  widget: new WikiLinkWidget(
-                    m[1].trim(),
-                    (m[2] || m[1]).trim(),
-                    onClick,
-                  ),
+                  widget: /^https?:\/\//.test(m[1].trim())
+                    ? new LinkWidget(m[1].trim(), m[2]?.trim() || m[1].trim())
+                    : new WikiLinkWidget(
+                        m[1].trim(),
+                        (m[2] || m[1]).trim(),
+                        onClick,
+                      ),
                 }),
               );
             }
             m = WIKI_RE.exec(text);
           }
-          EXTERNAL_LINK_RE.lastIndex = 0;
-          let external = EXTERNAL_LINK_RE.exec(text);
-          while (external) {
-            const start = from + external.index;
-            const end = start + external[0].length;
+          MARKDOWN_LINK_RE.lastIndex = 0;
+          let markdown = MARKDOWN_LINK_RE.exec(text);
+          while (markdown) {
+            const start = from + markdown.index;
+            const end = start + markdown[0].length;
             if (!selectionTouches(view.state, start, end)) {
-              b.add(
+              add(
                 start,
                 end,
                 Decoration.replace({
-                  widget: new LinkWidget(external[1], external[2]),
+                  widget: new LinkWidget(
+                    markdown[1],
+                    markdown[2],
+                    /^https?:\/\//.test(markdown[2])
+                      ? undefined
+                      : onMarkdownLinkClick,
+                  ),
                 }),
               );
             }
-            external = EXTERNAL_LINK_RE.exec(text);
+            markdown = MARKDOWN_LINK_RE.exec(text);
+          }
+          BARE_EXTERNAL_LINK_RE.lastIndex = 0;
+          let bare = BARE_EXTERNAL_LINK_RE.exec(text);
+          while (bare) {
+            const start = from + bare.index;
+            const end = start + bare[0].length;
+            if (!selectionTouches(view.state, start, end)) {
+              add(
+                start,
+                end,
+                Decoration.replace({
+                  widget: new LinkWidget(bare[0], bare[0]),
+                }),
+              );
+            }
+            bare = BARE_EXTERNAL_LINK_RE.exec(text);
           }
         }
+        ranges
+          .sort((a, b) => a.from - b.from || a.to - b.to)
+          .forEach(({ from, to, decoration }) => {
+            b.add(from, to, decoration);
+          });
         return b.finish();
       }
     },
@@ -748,7 +796,7 @@ function buildExtensions(
     // Fallback token colors for fenced-code languages (ts, py, …).
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     livePreviewPlugin,
-    wikiLinkPlugin(opts.onWikiLinkClick),
+    wikiLinkPlugin(opts.onWikiLinkClick, opts.onMarkdownLinkClick),
     blockPreviewField,
     parseSettleWatcher,
     tooltipHost(tooltipParent),

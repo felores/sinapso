@@ -144,11 +144,13 @@ describe("buildSearchIndex: MiniSearch-backed full-text search (R3d)", () => {
       ].join("\n"),
     );
     note("unrelated.md", "# Unrelated\n\nNo matching terms here.\n");
+    note("value-proposition.md", "# Unrelated\n\nNo matching terms here.\n");
 
     const nodes = [
       { id: "alpha.md", title: "Alpha Guide" },
       { id: "beta.md", title: "beta" },
       { id: "unrelated.md", title: "Unrelated" },
+      { id: "value-proposition.md", title: "Unrelated" },
     ];
     idx = buildSearchIndex(nodes, VAULT);
   });
@@ -188,6 +190,18 @@ describe("buildSearchIndex: MiniSearch-backed full-text search (R3d)", () => {
       expect(typeof h.title).toBe("string");
       expect(typeof h.score).toBe("number");
       expect(typeof h.snippet).toBe("string");
+    }
+  });
+
+  it("matches filename words across spaces, separators, and camelCase", () => {
+    for (const query of [
+      "value proposition",
+      "valueproposition",
+      "valueProposition",
+    ]) {
+      expect(idx.search(query).map((hit) => hit.id)).toContain(
+        "value-proposition.md",
+      );
     }
   });
 

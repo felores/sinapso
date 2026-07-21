@@ -2652,6 +2652,11 @@ body > :not(#graph) {
 }
 .note-editor .cm-md-link {
   color: var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+}
+.note-editor .cm-md-link:hover {
+  text-decoration: underline;
 }
 .note-editor .cm-md-url {
   color: var(--muted);
@@ -3552,6 +3557,34 @@ body > :not(#graph) {
 .rel-title {
   font-size: 13.5px;
   color: var(--fg);
+}
+.rel-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rel-score {
+  color: var(--muted);
+  font-size: 11px;
+}
+.rel-actions {
+  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rel-add {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+.rel-add:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .rel-snippet {
   font-size: 13px;
