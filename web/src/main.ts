@@ -2165,6 +2165,7 @@ async function boot() {
         `/api/note?id=${encodeURIComponent(n.id)}${fromHistory ? "&nolog=1" : ""}`,
       );
       if (generation !== readerOpenGeneration) return;
+      if (!fromHistory) await refreshReaderHistory();
       // The editor owns the note verbatim (frontmatter included, folded by
       // the editor itself). `stripped` is kept only for word count and the
       // wiki-ingest preview, which work over the body text.
@@ -2319,9 +2320,6 @@ async function boot() {
       void appendRelated(n, relatedSlot);
       void appendOrphanLink(n, orphanSlot);
       appendNoteQuestions(n, questionsSlot);
-      // A fresh open (not history nav) is logged server-side; sync the reader
-      // history so the panel's prev/next and the corner button reflect it.
-      if (!fromHistory) void refreshReaderHistory();
       void loadNoteVersions(n);
     } catch {
       if (generation !== readerOpenGeneration) return;
@@ -6690,30 +6688,37 @@ async function boot() {
       );
       return;
     }
-    const entry = inboxCursorState.items.find((item) => item.id === path);
-    const graphNode = byId.get(path);
-    const node =
-      graphNode ??
-      ({
-        id: path,
-        title:
-          entry?.title || path.split("/").pop()?.replace(/\.md$/i, "") || path,
-        pillar: "other",
-        words: 0,
-        in: 0,
-        out: 0,
-      } satisfies GNode);
+    let graphNode = byId.get(path);
+    if (!graphNode) {
+      try {
+        applyGraphUpdate(await api<Graph>("/api/graph"));
+        graphNode = byId.get(path);
+      } catch {
+        // Fall through to the incremental scan below.
+      }
+    }
+    if (!graphNode) {
+      try {
+        const result = await api<{ graph?: Graph }>("/api/rescan", {
+          method: "POST",
+        });
+        if (result.graph) applyGraphUpdate(result.graph);
+        graphNode = byId.get(path);
+      } catch {
+        // Keep the current panel and graph selection intact on failure.
+      }
+    }
+    if (!graphNode) {
+      researchError(i18n.t("research.graphRefreshFailed"));
+      return;
+    }
     await teardownResearchVaultEditor({ flush: false });
     renderInboxListInto($("#research-body"));
     $("#research-title").textContent = i18n.t("inbox.title");
-    selected = node;
-    focusSet = graphNode ? bfs(path, focusDepth) : null;
-    syncNodeUrl(node);
-    if (graphNode) flyTo(node);
-    repaint();
+    focusGraphNode(graphNode);
     readerLeftPinned = true;
     setReaderCtxLeft(true);
-    await openReader(node);
+    await openReader(graphNode);
   }
 
   async function mountResearchVaultNote(

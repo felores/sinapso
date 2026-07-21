@@ -777,6 +777,31 @@ test("save-to-inbox remains usable when the graph payload is unavailable", async
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {
     const harness = await installVoiceHarness(page);
+    const sessionToken = await token(page);
+    await page.request.delete("/api/reader-history", {
+      headers: { "x-sinapso-token": sessionToken },
+    });
+    const graph = (await (await page.request.get("/api/graph")).json()) as {
+      nodes: Array<{ id: string; phantom?: boolean }>;
+    };
+    const previousNote = graph.nodes.find(
+      (node) =>
+        !node.phantom && node.id !== "inbox/visible-when-node-missing.md",
+    )?.id;
+    expect(previousNote).toBeTruthy();
+    await page.evaluate((id) => {
+      window.location.hash = new URLSearchParams({ node: id }).toString();
+    }, previousNote!);
+    await expect(page.locator("#reader-path")).toHaveText(previousNote!);
+    await expect
+      .poll(async () => {
+        const response = await page.request.get("/api/reader-history");
+        const body = (await response.json()) as {
+          entries: Array<{ id: string }>;
+        };
+        return body.entries.map((entry) => entry.id);
+      })
+      .toEqual([previousNote!]);
     const doc = await createDocument(
       page,
       "Visible When Node Missing",
@@ -811,6 +836,26 @@ test("save-to-inbox remains usable when the graph payload is unavailable", async
       "/api/note?id=inbox/visible-when-node-missing.md",
     );
     expect(noteCheck.status()).toBe(200);
+
+    await page.locator("#research-save-inbox").click();
+    await expect(page.locator("#reader-path")).toHaveText(
+      "inbox/visible-when-node-missing.md",
+    );
+    const historyResponse = await page.request.get("/api/reader-history");
+    const historyBody = (await historyResponse.json()) as {
+      entries: Array<{ id: string }>;
+    };
+    expect(historyBody.entries.map((entry) => entry.id)).toEqual([
+      "inbox/visible-when-node-missing.md",
+      previousNote!,
+    ]);
+    await expect(page.locator("#reader-prev")).toBeEnabled();
+    await page.locator("#reader-prev").click();
+    await expect(page.locator("#reader-path")).toHaveText(previousNote!);
+    await page.locator("#reader-next").click();
+    await expect(page.locator("#reader-path")).toHaveText(
+      "inbox/visible-when-node-missing.md",
+    );
   } finally {
     await assertCleanBrowser();
   }
@@ -976,12 +1021,22 @@ test("an Inbox note footer transfers the saved note to the left Notes panel", as
   await page.request.post("/api/rescan", {
     headers: { "x-sinapso-token": sessionToken },
   });
+  const graph = (await (await page.request.get("/api/graph")).json()) as {
+    nodes: Array<{ id: string; phantom?: boolean }>;
+  };
+  const previousNote = graph.nodes.find(
+    (node) => !node.phantom && node.id !== noteId,
+  )?.id;
+  expect(previousNote).toBeTruthy();
   try {
     await page.addInitScript(() => {
       localStorage.setItem("sinapso-qmd-prompted", "1");
       localStorage.setItem("sinapso-lang", "en");
     });
-    await page.goto("/");
+    await page.goto(`/#node=${encodeURIComponent(previousNote!)}`);
+    await expect(page.locator("#reader-path")).toHaveText(previousNote!, {
+      timeout: 15_000,
+    });
     await page.locator("#new-doc-btn").click();
     await page.getByRole("button", { name: "Cancel" }).click();
     await page
@@ -1035,6 +1090,20 @@ test("an Inbox note footer transfers the saved note to the left Notes panel", as
     await expect(page.locator("#reader .cm-content")).toContainText(
       "Saved before transfer.",
     );
+    await expect(page.locator("#reader-path")).toHaveText(noteId);
+    await expect
+      .poll(() => new URLSearchParams(page.url().split("#")[1]).get("node"))
+      .toBe(noteId);
+    await expect
+      .poll(async () => {
+        const response = await page.request.get("/api/reader-history");
+        const body = (await response.json()) as {
+          entries: Array<{ id: string }>;
+        };
+        return body.entries.map((entry) => entry.id);
+      })
+      .toEqual([noteId, previousNote!]);
+    await expect(page.locator("#reader-prev")).toBeEnabled();
     await expect(page.locator("#reader-next")).toBeDisabled();
     await expect(page.locator(".inbox-list")).toBeVisible();
     await expect(page.locator("#research-footer")).toHaveClass(/hidden/);
