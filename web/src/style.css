@@ -2782,6 +2782,38 @@ body > :not(#graph) {
   padding: 3px 4px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
+
+/* Wikilink autocomplete (plan 023): bridge CodeMirror's native completion
+   tooltip classes to Sinapso theme variables. No custom list markup. */
+.cm-tooltip.cm-tooltip-autocomplete {
+  border: 1px solid var(--border);
+  background: linear-gradient(var(--panel), var(--panel)), var(--bg);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  max-width: min(440px, calc(100% - 2px), calc(100vw - 16px));
+  overflow: hidden;
+}
+.cm-tooltip-autocomplete > ul {
+  font-family: inherit;
+  max-height: min(40vh, 280px);
+}
+.cm-tooltip-autocomplete > ul > li {
+  padding: 4px 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--fg);
+}
+.cm-completionLabel {
+  color: var(--fg);
+}
+.cm-completionDetail {
+  color: var(--muted);
+  font-size: 0.85em;
+}
 .cm-tb-row {
   display: flex;
   align-items: center;

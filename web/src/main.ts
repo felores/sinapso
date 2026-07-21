@@ -36,7 +36,12 @@ import DOMPurify from "dompurify";
 import * as THREE from "three";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import * as i18n from "./i18n";
-import { createNoteEditor, type NoteEditor } from "./editor";
+import {
+  createNoteEditor,
+  type NoteEditor,
+  type WikiLinkCandidate,
+} from "./editor";
+import { createWikiTargetResolver } from "./wiki-links";
 import { createAutosave, type Autosave, type AutosaveState } from "./autosave";
 import {
   createResearchDocument,
@@ -465,6 +470,7 @@ async function boot() {
     byId.set(n.id, n);
     byBasename.set(n.title.toLowerCase(), n);
   }
+  let resolveWikiTarget = createWikiTargetResolver(data.nodes);
   const degree = (n: GNode) => n.in + n.out;
 
   const initialSelectionParams = new URLSearchParams(window.location.search);
@@ -2108,11 +2114,29 @@ async function boot() {
     hideReaderBanner();
   }
 
+  // Scanner-equivalent wikilink target resolution (plan 023 KTD7). Normalize
+  // by trimming, stripping any heading, and dropping a terminal `.md`; then
+  // resolve exact lowercase path, filename basename (with the same fallback
+  // the scanner applies when the supplied path misses), the legacy title-keyed
+  // map, and finally a phantom id. Shared by the editor widget click and the
+  // delegated reader-body click path so links resolve identically everywhere.
   function navigateWikiTarget(target: string) {
-    const t = target.toLowerCase();
-    const node =
-      byBasename.get(t.split("/").pop()!) ?? byId.get(`phantom:${t}`);
+    const node = resolveWikiTarget(target);
     if (node) select(node);
+  }
+
+  // Lazy candidate list for [[ ]] autocomplete: read the current graph on
+  // every session, exclude phantoms, surface title + path-without-.md.
+  function wikiLinkCandidates(): readonly WikiLinkCandidate[] {
+    const out: WikiLinkCandidate[] = [];
+    for (const n of data.nodes) {
+      if (n.phantom) continue;
+      out.push({
+        target: n.id.replace(/\.md$/i, ""),
+        label: n.title,
+      });
+    }
+    return out;
   }
 
   // ---- AI selection assist (plan 018 U7): thinker-tier instruction over
@@ -2402,6 +2426,7 @@ async function boot() {
       noteEditor = createNoteEditor(editorHost, {
         content: markdown,
         onWikiLinkClick: navigateWikiTarget,
+        getWikiLinkCandidates: wikiLinkCandidates,
         toolbarExtras: aiToolbarExtras,
         onChange: () => {
           noteAutosave?.notifyChange();
@@ -2987,9 +3012,7 @@ async function boot() {
   $("#reader-body").addEventListener("click", (e) => {
     const a = (e.target as HTMLElement).closest("a.wiki") as HTMLElement | null;
     if (!a) return;
-    const t = (a.dataset.target ?? "").toLowerCase();
-    const node =
-      byBasename.get(t.split("/").pop()!) ?? byId.get(`phantom:${t}`);
+    const node = resolveWikiTarget(a.dataset.target ?? "");
     if (node) select(node);
   });
 
@@ -7031,6 +7054,7 @@ async function boot() {
     const editor = createNoteEditor(editorHost, {
       content: markdown,
       onWikiLinkClick: navigateWikiTarget,
+      getWikiLinkCandidates: wikiLinkCandidates,
       toolbarExtras: aiToolbarExtras,
       onChange: () => {
         autosave?.notifyChange();
@@ -8007,6 +8031,7 @@ async function boot() {
     const editor = createNoteEditor(editorHost, {
       content: doc.content,
       onWikiLinkClick: navigateWikiTarget,
+      getWikiLinkCandidates: wikiLinkCandidates,
       toolbarExtras: extras,
       onChange: () => {
         researchDocumentController?.autosave.notifyChange();
@@ -9029,7 +9054,6 @@ async function boot() {
 
     // 4. Add new nodes at the centroid of their already-positioned neighbors.
     const jitter = () => (Math.random() - 0.5) * 24;
-    const kept = data.nodes.filter((n) => nextById.has(n.id));
     for (const nn of next.nodes) {
       if (byId.has(nn.id)) continue;
       const node: GNode = { ...nn };
@@ -9051,13 +9075,16 @@ async function boot() {
       node.z = (c ? sz / c : 0) + jitter();
       byId.set(node.id, node);
       byBasename.set(node.title.toLowerCase(), node);
-      kept.push(node);
     }
 
     // 5. Commit the new node / link / meta sets.
-    data.nodes = kept;
+    data.nodes = next.nodes.flatMap((node) => {
+      const retained = byId.get(node.id);
+      return retained ? [retained] : [];
+    });
     data.links = next.links;
     data.meta = next.meta;
+    resolveWikiTarget = createWikiTargetResolver(data.nodes);
     if (fingerprintChanged) arrLayoutMem.clear();
     if (selected) {
       const current = byId.get(selected.id);

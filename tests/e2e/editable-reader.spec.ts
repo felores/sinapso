@@ -678,3 +678,123 @@ test("flush on close: an edit right before closing the reader still lands", asyn
     await removeTestNote(page, file);
   }
 });
+
+// Plan 023: wikilink autocomplete — real popup, filtering, selection, save,
+// render/open loop, responsive placement, and diagnostics.
+test.describe("wikilink autocomplete", () => {
+  test("opens on [[, filters, accepts, saves, and the rendered link opens", async ({
+    page,
+  }) => {
+    test.setTimeout(75_000);
+    const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+    const file = await createTestNote(page);
+    try {
+      await openTestNote(page);
+      await clickIntoParagraph(page, "first paragraph stays untouched");
+      await page.keyboard.press("End");
+      await page.keyboard.type(" link: ");
+      // Let CM's autocompletion debounce settle from the previous keystrokes.
+      await page.waitForTimeout(200);
+      // Typing `[[` opens the popup immediately (activateOnTyping).
+      await page.keyboard.type("[[");
+      const list = page.locator(".cm-tooltip-autocomplete > ul");
+      await expect(list).toBeVisible({ timeout: 5_000 });
+      // Filter by a fragment of the target note title.
+      await page.keyboard.type("alpha n");
+      await expect(list.locator("li")).toHaveCount(1, { timeout: 5_000 });
+      await expect(list.locator("li")).toContainText("Alpha Note");
+      // Enter accepts; one transaction inserts the exact path target.
+      const saved = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === "/api/notes" &&
+          response.request().method() === "PUT" &&
+          response.ok(),
+      );
+      await page.keyboard.press("Enter");
+      await saved;
+      await expect
+        .poll(() => readFileSync(file, "utf-8"), { timeout: 15_000 })
+        .toContain("link: [[alpha-note]]");
+      // Move the cursor away so live preview renders the link widget.
+      await page.keyboard.press("ArrowDown");
+      const wiki = page.locator("#reader-editor .cm-wikilink", {
+        hasText: "alpha-note",
+      });
+      await expect(wiki).toBeVisible();
+      await wiki.click();
+      // The reader swaps to Alpha Note; wait for its body to mount.
+      await expect(page.locator("#reader-editor .cm-content")).toContainText(
+        "Alpha links to",
+        { timeout: 10_000 },
+      );
+    } finally {
+      await assertCleanBrowser();
+      await removeTestNote(page, file);
+    }
+  });
+
+  test("Escape dismisses without changing the buffer", async ({ page }) => {
+    test.setTimeout(60_000);
+    const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+    const file = await createTestNote(page);
+    try {
+      await openTestNote(page);
+      await clickIntoParagraph(page, "first paragraph stays untouched");
+      await page.keyboard.press("End");
+      await page.keyboard.type(" stay[[");
+      const list = page.locator(".cm-tooltip-autocomplete > ul");
+      await expect(list).toBeVisible({ timeout: 5_000 });
+      const before = await list
+        .locator('li[aria-selected="true"]')
+        .textContent();
+      await page.keyboard.press("ArrowDown");
+      await expect(list.locator('li[aria-selected="true"]')).not.toHaveText(
+        before ?? "",
+      );
+      await page.keyboard.press("Escape");
+      await expect(list).toBeHidden({ timeout: 3_000 });
+      await page.locator("#reader-close").click();
+      await expect
+        .poll(() => readFileSync(file, "utf-8"), { timeout: 10_000 })
+        .toContain("stay[[");
+    } finally {
+      await assertCleanBrowser();
+      await removeTestNote(page, file);
+    }
+  });
+
+  test("popup stays within the viewport at 390x844", async ({ page }) => {
+    test.setTimeout(60_000);
+    const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+    const file = await createTestNote(page);
+    try {
+      await page.addInitScript(() =>
+        localStorage.setItem("sinapso-theme", "manuscript"),
+      );
+      await page.setViewportSize({ width: 390, height: 844 });
+      await openTestNote(page);
+      await clickIntoParagraph(page, "first paragraph stays untouched");
+      await page.keyboard.press("End");
+      await page.keyboard.type(" [[");
+      const tooltip = page.locator(".cm-tooltip.cm-tooltip-autocomplete");
+      await expect(tooltip).toBeVisible({ timeout: 5_000 });
+      const box = await tooltip.boundingBox();
+      expect(box).toBeTruthy();
+      if (!box) throw new Error("autocomplete tooltip has no bounding box");
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(390);
+      expect(box.y + box.height).toBeLessThanOrEqual(844);
+      const reader = await page.locator("#reader").boundingBox();
+      expect(reader).toBeTruthy();
+      if (!reader) throw new Error("reader has no bounding box");
+      expect(box.x).toBeGreaterThanOrEqual(reader.x);
+      expect(box.y).toBeGreaterThanOrEqual(reader.y);
+      expect(box.x + box.width).toBeLessThanOrEqual(reader.x + reader.width);
+      expect(box.y + box.height).toBeLessThanOrEqual(reader.y + reader.height);
+    } finally {
+      await assertCleanBrowser();
+      await removeTestNote(page, file);
+    }
+  });
+});

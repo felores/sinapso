@@ -5,6 +5,14 @@ import { describe, expect, it, vi } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { ensureSyntaxTree } from "@codemirror/language";
+import { undo } from "@codemirror/commands";
+import {
+  closeCompletion,
+  completionKeymap,
+  completionStatus,
+  currentCompletions,
+  startCompletion,
+} from "@codemirror/autocomplete";
 import {
   createNoteEditor,
   detectEol,
@@ -13,6 +21,7 @@ import {
   livePreviewPlugin,
   toLf,
   type NoteEditor,
+  type WikiLinkCandidate,
 } from "./editor.js";
 
 // jsdom has no layout; CodeMirror probes Range rects during measure cycles.
@@ -336,6 +345,278 @@ describe("block previews (tables + code blocks)", () => {
     const ed = mount(tableMd);
     expect(ed.view.dom.querySelector(".cm-md-table")).toBeTruthy();
     expect(ed.getContent()).toBe(tableMd);
+    ed.destroy();
+  });
+});
+
+// Plan 023: wikilink autocomplete. Source activation, insertion, and
+// rejection rules; native keymap and filtering are exercised end-to-end in
+// Playwright.
+describe("wikilink autocomplete", () => {
+  const candidates: WikiLinkCandidate[] = [
+    { target: "team/a/brief", label: "Brief (A)" },
+    { target: "team/b/brief", label: "Brief (B)" },
+    { target: "welcome", label: "Welcome" },
+  ];
+
+  // autocompletion closes the popup on blur and debounces source queries
+  // (~50ms). Focus + start, then wait for the source to settle. Re-focus
+  // after the wait because jsdom can lose focus between awaits.
+  async function startAndSettle(view: NoteEditor["view"]): Promise<void> {
+    view.focus();
+    startCompletion(view);
+    await new Promise((r) => setTimeout(r, 120));
+    view.focus();
+  }
+
+  function mountWiki(
+    content: string,
+    opts: Partial<Parameters<typeof createNoteEditor>[1]> = {},
+  ): NoteEditor {
+    return mount(content, {
+      getWikiLinkCandidates: () => candidates,
+      ...opts,
+    });
+  }
+
+  function cursorAfter(view: NoteEditor["view"], text: string) {
+    const pos = view.state.doc.toString().indexOf(text) + text.length;
+    view.dispatch({ selection: { anchor: pos } });
+  }
+
+  it("opens immediately at an unclosed [[cad", async () => {
+    const ed = mountWiki("body [[");
+    cursorAfter(ed.view, "[[");
+    await startAndSettle(ed.view);
+    expect(completionStatus(ed.view.state)).toBe("active");
+    const comps = currentCompletions(ed.view.state);
+    expect(comps.map((c) => c.label)).toEqual([
+      "Brief (A)",
+      "Brief (B)",
+      "Welcome",
+    ]);
+    ed.destroy();
+  });
+
+  it("inserts exact path target, one closing pair, cursor after ]]", async () => {
+    const ed = mountWiki("body [[");
+    cursorAfter(ed.view, "[[");
+    await startAndSettle(ed.view);
+    // Drive the completion's apply function directly. In the real browser the
+    // acceptCompletion command does the same thing; in jsdom focus/timing
+    // make the public command flaky, and Playwright proves the integration.
+    const comps = currentCompletions(ed.view.state);
+    expect(comps.length).toBe(3);
+    const first = comps[0];
+    const from = ed.view.state.doc.toString().indexOf("[[") + 2;
+    (
+      first.apply as (
+        v: NoteEditor["view"],
+        c: typeof first,
+        f: number,
+        t: number,
+      ) => void
+    )(ed.view, first, from, from);
+    expect(ed.getContent()).toBe("body [[team/a/brief]]");
+    expect(ed.view.state.selection.main.head).toBe(
+      ed.view.state.doc.toString().length,
+    );
+    ed.destroy();
+  });
+
+  it("replaces the typed query, not just appends", async () => {
+    const ed = mountWiki("body [[wel");
+    cursorAfter(ed.view, "[[wel");
+    await startAndSettle(ed.view);
+    const comps = currentCompletions(ed.view.state);
+    // Source returned 3 candidates; native fuzzy filter narrowed to Welcome.
+    expect(comps.length).toBe(1);
+    expect(comps[0].label).toBe("Welcome");
+    const first = comps[0];
+    const from = ed.view.state.doc.toString().indexOf("[[") + 2;
+    (
+      first.apply as (
+        v: NoteEditor["view"],
+        c: typeof first,
+        f: number,
+        t: number,
+      ) => void
+    )(ed.view, first, from, ed.view.state.selection.main.head);
+    expect(ed.getContent()).toBe("body [[welcome]]");
+    ed.destroy();
+  });
+
+  it("keeps completion valid while typing spaces in note titles", async () => {
+    const ed = mountWiki("body [[Brief ");
+    cursorAfter(ed.view, "[[Brief ");
+    await startAndSettle(ed.view);
+    expect(completionStatus(ed.view.state)).toBe("active");
+    expect(currentCompletions(ed.view.state)).toHaveLength(2);
+    ed.destroy();
+  });
+
+  it("one undo restores the pre-acceptance source", async () => {
+    const ed = mountWiki("body [[wel");
+    cursorAfter(ed.view, "[[wel");
+    await startAndSettle(ed.view);
+    const comps = currentCompletions(ed.view.state);
+    const first = comps[0];
+    const from = ed.view.state.doc.toString().indexOf("[[") + 2;
+    (
+      first.apply as (
+        v: NoteEditor["view"],
+        c: typeof first,
+        f: number,
+        t: number,
+      ) => void
+    )(ed.view, first, from, ed.view.state.selection.main.head);
+    expect(ed.getContent()).toBe("body [[welcome]]");
+    undo(ed.view);
+    expect(ed.getContent()).toBe("body [[wel");
+    ed.destroy();
+  });
+
+  it("Escape closes the list and leaves source unchanged", async () => {
+    const ed = mountWiki("body [[wel");
+    cursorAfter(ed.view, "[[wel");
+    await startAndSettle(ed.view);
+    expect(completionStatus(ed.view.state)).toBe("active");
+    closeCompletion(ed.view);
+    expect(completionStatus(ed.view.state)).toBeNull();
+    expect(ed.getContent()).toBe("body [[wel");
+    ed.destroy();
+  });
+
+  it("does not activate without an opener", async () => {
+    const ed = mountWiki("just text");
+    cursorAfter(ed.view, "just ");
+    await startAndSettle(ed.view);
+    expect(completionStatus(ed.view.state)).toBeNull();
+    ed.destroy();
+  });
+
+  it("rejects after # (heading/alias markers)", async () => {
+    const ed = mountWiki("body [[welcome#");
+    cursorAfter(ed.view, "[[welcome#");
+    await startAndSettle(ed.view);
+    expect(completionStatus(ed.view.state)).toBeNull();
+    ed.destroy();
+  });
+
+  it("rejects after an alias marker", async () => {
+    const ed = mountWiki("body [[welcome|");
+    cursorAfter(ed.view, "[[welcome|");
+    await startAndSettle(ed.view);
+    expect(completionStatus(ed.view.state)).toBeNull();
+    ed.destroy();
+  });
+
+  it("rejects YAML frontmatter by cursor position", async () => {
+    const ed = mountWiki("---\ntitle: x\n---\nbody\n");
+    const text = ed.view.state.doc.toString();
+    const pos = text.indexOf("title:") + 2; // inside frontmatter
+    ed.view.dispatch({ selection: { anchor: pos } });
+    await startAndSettle(ed.view);
+    expect(completionStatus(ed.view.state)).toBeNull();
+    ed.destroy();
+  });
+
+  it("rejects fenced code", async () => {
+    const fenced = "before\n\n```\ncode here\n```\n";
+    const ed = mountWiki(fenced);
+    ensureSyntaxTree(ed.view.state, ed.view.state.doc.length, 2000);
+    const codeLine = ed.view.state.doc.toString().indexOf("code");
+    ed.view.dispatch({ selection: { anchor: codeLine } });
+    ed.view.dispatch({ changes: { from: codeLine + 9, insert: "[[" } });
+    ed.view.dispatch({
+      selection: {
+        anchor: ed.view.state.doc.toString().indexOf("[[") + 2,
+      },
+    });
+    await startAndSettle(ed.view);
+    expect(completionStatus(ed.view.state)).toBeNull();
+    ed.destroy();
+  });
+
+  it("rejects inline code", async () => {
+    const ed = mountWiki("before `code [[` after");
+    ensureSyntaxTree(ed.view.state, ed.view.state.doc.length, 2000);
+    cursorAfter(ed.view, "code [[");
+    await startAndSettle(ed.view);
+    expect(completionStatus(ed.view.state)).toBeNull();
+    ed.destroy();
+  });
+
+  it("does not activate in a read-only editor", async () => {
+    const ed = mountWiki("body [[", { readOnly: true });
+    cursorAfter(ed.view, "[[");
+    await startAndSettle(ed.view);
+    expect(completionStatus(ed.view.state)).toBeNull();
+    ed.destroy();
+  });
+
+  it("does not activate when no candidate callback is supplied", async () => {
+    const ed = mount("body [[");
+    cursorAfter(ed.view, "[[");
+    await startAndSettle(ed.view);
+    expect(completionStatus(ed.view.state)).toBeNull();
+    ed.destroy();
+  });
+
+  it("does not activate when candidate callback returns empty", async () => {
+    const ed = mount("body [[", { getWikiLinkCandidates: () => [] });
+    cursorAfter(ed.view, "[[");
+    await startAndSettle(ed.view);
+    expect(completionStatus(ed.view.state)).toBeNull();
+    ed.destroy();
+  });
+
+  it("respects dynamic read-only toggling", async () => {
+    const ed = mountWiki("body [[");
+    cursorAfter(ed.view, "[[");
+    await startAndSettle(ed.view);
+    expect(completionStatus(ed.view.state)).toBe("active");
+    ed.setReadOnly(true);
+    expect(completionStatus(ed.view.state)).toBeNull();
+    ed.setReadOnly(false);
+    await startAndSettle(ed.view);
+    expect(completionStatus(ed.view.state)).toBe("active");
+    ed.destroy();
+  });
+
+  it("does not bind Tab to completion acceptance", () => {
+    expect(completionKeymap.some((binding) => binding.key === "Tab")).toBe(
+      false,
+    );
+  });
+
+  it("reads fresh candidates for each completion session", async () => {
+    let current = [{ target: "old", label: "Old" }];
+    const ed = mount("body [[", { getWikiLinkCandidates: () => current });
+    cursorAfter(ed.view, "[[");
+    await startAndSettle(ed.view);
+    expect(currentCompletions(ed.view.state).map((item) => item.label)).toEqual(
+      ["Old"],
+    );
+    closeCompletion(ed.view);
+    current = [{ target: "new", label: "New" }];
+    await startAndSettle(ed.view);
+    expect(currentCompletions(ed.view.state).map((item) => item.label)).toEqual(
+      ["New"],
+    );
+    ed.destroy();
+  });
+
+  it("lists only what the candidate callback returns", async () => {
+    const ed = mount("body [[", {
+      // Caller is responsible for excluding phantoms (main.ts does this).
+      getWikiLinkCandidates: () => [{ target: "real", label: "Real" }],
+    });
+    cursorAfter(ed.view, "[[");
+    await startAndSettle(ed.view);
+    const comps = currentCompletions(ed.view.state);
+    expect(comps.length).toBe(1);
+    expect(comps[0].label).toBe("Real");
     ed.destroy();
   });
 });

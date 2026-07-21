@@ -299,6 +299,85 @@ test.beforeEach(async ({ page }) => {
   await clearHistory(page);
 });
 
+test("working documents accept wikilink autocomplete with the mouse", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  try {
+    const draft = await createDocument(page, "Linked draft", "Draft body");
+    const harness = await installVoiceHarness(page);
+    await harness.show(draft.id, "show_document");
+    const editor = page.locator(".research-document-editor .cm-content");
+    await editor.click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" [[alpha n");
+    const option = page.locator(".cm-tooltip-autocomplete li", {
+      hasText: "Alpha Note",
+    });
+    await expect(option).toBeVisible();
+    await option.click();
+    await expect
+      .poll(async () => {
+        const stored = await page.request.get(`/api/document/${draft.id}`);
+        const body: DocumentResponse = await stored.json();
+        return body.content;
+      })
+      .toContain("[[alpha-note]]");
+  } finally {
+    await assertCleanBrowser();
+  }
+});
+
+test("Research vault notes expose wikilink autocomplete", async ({ page }) => {
+  test.setTimeout(60_000);
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  const noteId = "inbox/autocomplete-research.md";
+  const file = join(E2E_VAULT, noteId);
+  const sessionToken = await token(page);
+  try {
+    writeFileSync(file, "# Autocomplete Research\n\nResearch body.\n");
+    await page.request.post("/api/rescan", {
+      headers: { "x-sinapso-token": sessionToken },
+    });
+    await page.addInitScript(() =>
+      localStorage.setItem("sinapso-qmd-prompted", "1"),
+    );
+    await page.goto("/");
+    await page.locator("#new-doc-btn").click();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page
+      .locator(".inbox-list-item", { hasText: "autocomplete-research" })
+      .click();
+    const editor = page.locator("#research .cm-content");
+    await expect(editor).toContainText("Research body.");
+    await editor.click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" [[alpha n");
+    await expect(
+      page.locator(".cm-tooltip-autocomplete li", { hasText: "Alpha Note" }),
+    ).toBeVisible();
+    const saved = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/notes" &&
+        response.request().method() === "PUT" &&
+        response.ok(),
+    );
+    await page.keyboard.press("Enter");
+    await saved;
+    await expect
+      .poll(() => readFileSync(file, "utf-8"))
+      .toContain("[[alpha-note]]");
+    await page.locator("#research-close").click();
+  } finally {
+    rmSync(file, { force: true });
+    await page.request.post("/api/rescan", {
+      headers: { "x-sinapso-token": sessionToken },
+    });
+    await assertCleanBrowser();
+  }
+});
+
 test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user navigation", async ({
   page,
 }) => {

@@ -36,12 +36,29 @@ import {
   defaultHighlightStyle,
 } from "@codemirror/language";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import {
+  autocompletion,
+  closeCompletion,
+  pickedCompletion,
+  type CompletionContext,
+  type CompletionResult,
+} from "@codemirror/autocomplete";
 import { tags } from "@lezer/highlight";
+
+export interface WikiLinkCandidate {
+  /** Vault-relative path without the trailing `.md`. Inserted between `[[ ]]`. */
+  target: string;
+  /** Display title shown as the primary label. */
+  label: string;
+}
 
 export interface NoteEditorOptions {
   content: string;
   onChange?: () => void;
   onWikiLinkClick?: (target: string) => void;
+  /** When set on a writable editor, typing `[[` opens a fuzzy note list built
+   *  from the current candidates. Read-only editors never autocomplete. */
+  getWikiLinkCandidates?: () => readonly WikiLinkCandidate[];
   readOnly?: boolean;
   /** Trailing slot in the selection toolbar (U7 AI input). */
   toolbarExtras?: ToolbarExtras;
@@ -323,6 +340,7 @@ class WikiLinkWidget extends WidgetType {
     const el = document.createElement("span");
     el.className = "cm-wikilink wiki";
     el.textContent = this.label;
+    el.onmousedown = (ev) => ev.preventDefault();
     el.onclick = (ev) => {
       ev.preventDefault();
       this.onClick?.(this.target);
@@ -402,7 +420,84 @@ function wikiLinkPlugin(onClick?: (target: string) => void) {
   );
 }
 
-// ---------- block previews: tables render, code blocks chip ----------
+// ---------- wikilink autocomplete (plan 023) ----------
+
+// Active only for an unclosed `[[target` immediately before the cursor on the
+// same line. Headings (`#`), aliases (`|`), and the closer `]]` end the range.
+function activeWikiOpen(ctx: CompletionContext): number | null {
+  const { state } = ctx;
+  const pos = ctx.pos;
+  const line = state.doc.lineAt(pos);
+  const upto = line.text.slice(0, pos - line.from);
+  const open = upto.lastIndexOf("[[");
+  if (open < 0) return null;
+  const tail = upto.slice(open + 2);
+  if (tail.includes("]]") || tail.includes("#") || tail.includes("|")) {
+    return null;
+  }
+  return line.from + open + 2;
+}
+
+function inProtectedContext(ctx: CompletionContext): boolean {
+  const { state } = ctx;
+  const pos = ctx.pos;
+  const fm = state.field(fmField, false);
+  if (fm && fm.end > 0 && pos <= fm.end) return true;
+  let inCode = false;
+  syntaxTree(state).iterate({
+    from: pos,
+    to: pos,
+    enter: (node) => {
+      if (
+        node.name === "FencedCode" ||
+        node.name === "CodeBlock" ||
+        node.name === "InlineCode" ||
+        node.name === "CodeMark" ||
+        node.name === "CodeText"
+      ) {
+        inCode = true;
+        return false;
+      }
+      return undefined;
+    },
+  });
+  return inCode;
+}
+
+function wikiLinkCompletionSource(
+  getCandidates: () => readonly WikiLinkCandidate[],
+) {
+  return (ctx: CompletionContext): CompletionResult | null => {
+    if (ctx.state.readOnly) return null;
+    const from = activeWikiOpen(ctx);
+    if (from === null) return null;
+    if (inProtectedContext(ctx)) return null;
+    const candidates = getCandidates();
+    if (candidates.length === 0) return null;
+    return {
+      from,
+      to: ctx.pos,
+      options: candidates.map((c) => ({
+        label: c.label,
+        detail: c.target,
+        apply: (view, completion, applyFrom, applyTo) => {
+          // from/to point at the query text after `[[`. Replace the query
+          // with `target]]` so the already-typed opener stays put and the
+          // cursor lands after the closer (one transaction = one undo).
+          const insert = `${c.target}]]`;
+          view.dispatch({
+            changes: { from: applyFrom, to: applyTo, insert },
+            selection: { anchor: applyFrom + insert.length },
+            annotations: pickedCompletion.of(completion),
+          });
+        },
+      })),
+      // Stay open only while the cursor remains in a plain unclosed target
+      // on the same line: reject `]]`, `#`, `|`, and any newline.
+      validFor: (text) => !/[\]#|\n]/.test(text),
+    };
+  };
+}
 
 /** Rendered preview of a markdown table; click places the cursor inside so
  * the raw source reveals for editing (same pattern as wiki links, scaled
@@ -658,6 +753,17 @@ function buildExtensions(
     parseSettleWatcher,
     tooltipHost(tooltipParent),
     opts.readOnly ? [] : selectionToolbar(opts.toolbarExtras),
+    opts.getWikiLinkCandidates
+      ? autocompletion({
+          override: [wikiLinkCompletionSource(opts.getWikiLinkCandidates)],
+          // The default completion keymap (Arrows/Enter/Escape/Ctrl-Space) is
+          // installed by autocompletion itself at highest precedence; Tab keeps
+          // its existing editor behavior because it is not in completionKeymap.
+          activateOnTyping: true,
+          defaultKeymap: true,
+          icons: false,
+        })
+      : [],
     history(),
     drawSelection(),
     EditorView.lineWrapping,
@@ -699,6 +805,7 @@ export function createNoteEditor(
       view.setState(createEditorState(content, opts, parent));
     },
     setReadOnly(readOnly: boolean) {
+      if (readOnly) closeCompletion(view);
       view.dispatch({
         effects: readOnlyCompartment.reconfigure(readOnlyExtensions(readOnly)),
       });
