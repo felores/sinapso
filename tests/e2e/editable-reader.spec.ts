@@ -256,6 +256,260 @@ test("AE1: typing autosaves; only the edit differs, frontmatter byte-identical",
   }
 });
 
+test("live graph links locally move the edited node and its camera", async ({
+  page,
+}) => {
+  test.setTimeout(45_000);
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  const file = await createTestNote(page);
+  try {
+    await openTestNote(page);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () =>
+              (window as unknown as { __sinapso: { settled: boolean } })
+                .__sinapso.settled,
+          ),
+        { timeout: 15_000 },
+      )
+      .toBe(true);
+    const before = await page.evaluate((sourceId) => {
+      const debug = (
+        window as unknown as {
+          __sinapso: {
+            graph: {
+              graphData(): {
+                nodes: Array<{ id: string; x: number; y: number; z: number }>;
+                links: Array<{
+                  source: string | { id: string };
+                  target: string | { id: string };
+                }>;
+              };
+              camera(): { position: { x: number; y: number; z: number } };
+            };
+          };
+        }
+      ).__sinapso;
+      const nodes = debug.graph.graphData().nodes;
+      const source = nodes.find((node) => node.id === sourceId)!;
+      const target = nodes.find((node) => node.id === "alpha-note.md")!;
+      const unrelated = nodes.find((node) => node.id === "beta-note.md")!;
+      const camera = debug.graph.camera().position;
+      return {
+        source: { x: source.x, y: source.y, z: source.z },
+        target: { x: target.x, y: target.y, z: target.z },
+        unrelated: { x: unrelated.x, y: unrelated.y, z: unrelated.z },
+        cameraOffset: {
+          x: camera.x - source.x,
+          y: camera.y - source.y,
+          z: camera.z - source.z,
+        },
+      };
+    }, NOTE_ID);
+
+    await clickIntoParagraph(page, "first paragraph stays untouched");
+    await page.keyboard.press("End");
+    const saved = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/notes" &&
+        response.request().method() === "PUT" &&
+        response.ok(),
+    );
+    await page.keyboard.type(" [[alpha-note]]");
+    await saved;
+    await expect
+      .poll(
+        () =>
+          page.evaluate((sourceId) => {
+            const debug = (
+              window as unknown as {
+                __sinapso: {
+                  settled: boolean;
+                  graph: {
+                    graphData(): {
+                      links: Array<{
+                        source: string | { id: string };
+                        target: string | { id: string };
+                      }>;
+                    };
+                  };
+                };
+              }
+            ).__sinapso;
+            const id = (end: string | { id: string }) =>
+              typeof end === "string" ? end : end.id;
+            return debug.graph
+              .graphData()
+              .links.some(
+                (link) =>
+                  id(link.source) === sourceId &&
+                  id(link.target) === "alpha-note.md",
+              );
+          }, NOTE_ID),
+        { timeout: 15_000 },
+      )
+      .toBe(true);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () =>
+              (window as unknown as { __sinapso: { settled: boolean } })
+                .__sinapso.settled,
+          ),
+        { timeout: 15_000 },
+      )
+      .toBe(true);
+
+    const after = await page.evaluate((sourceId) => {
+      const debug = (
+        window as unknown as {
+          __sinapso: {
+            graph: {
+              graphData(): {
+                nodes: Array<{
+                  id: string;
+                  x: number;
+                  y: number;
+                  z: number;
+                  fx?: number;
+                  fy?: number;
+                  fz?: number;
+                }>;
+              };
+              camera(): { position: { x: number; y: number; z: number } };
+            };
+          };
+        }
+      ).__sinapso;
+      const nodes = debug.graph.graphData().nodes;
+      const source = nodes.find((node) => node.id === sourceId)!;
+      const target = nodes.find((node) => node.id === "alpha-note.md")!;
+      const unrelated = nodes.find((node) => node.id === "beta-note.md")!;
+      const camera = debug.graph.camera().position;
+      return {
+        source: { x: source.x, y: source.y, z: source.z },
+        target: { x: target.x, y: target.y, z: target.z },
+        unrelated: { x: unrelated.x, y: unrelated.y, z: unrelated.z },
+        cameraOffset: {
+          x: camera.x - source.x,
+          y: camera.y - source.y,
+          z: camera.z - source.z,
+        },
+        temporaryPins: nodes.filter(
+          (node) => node.fx != null || node.fy != null || node.fz != null,
+        ).length,
+      };
+    }, NOTE_ID);
+
+    const distance = (
+      a: { x: number; y: number; z: number },
+      b: { x: number; y: number; z: number },
+    ) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+    expect(distance(after.source, before.source)).toBeGreaterThan(1);
+    expect(distance(after.target, before.target)).toBeLessThan(0.01);
+    expect(distance(after.unrelated, before.unrelated)).toBeLessThan(0.01);
+    expect(distance(after.cameraOffset, before.cameraOffset)).toBeLessThan(0.1);
+    expect(after.temporaryPins).toBe(0);
+  } finally {
+    await assertCleanBrowser();
+    await removeTestNote(page, file);
+  }
+});
+
+test("reduced motion hot-swaps a link without moving node or camera", async ({
+  page,
+}) => {
+  test.setTimeout(45_000);
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  const file = await createTestNote(page);
+  try {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await openTestNote(page);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () =>
+              (window as unknown as { __sinapso: { settled: boolean } })
+                .__sinapso.settled,
+          ),
+        { timeout: 15_000 },
+      )
+      .toBe(true);
+    const snapshot = () =>
+      page.evaluate((sourceId) => {
+        const debug = (
+          window as unknown as {
+            __sinapso: {
+              graph: {
+                graphData(): {
+                  nodes: Array<{
+                    id: string;
+                    x: number;
+                    y: number;
+                    z: number;
+                    fx?: number;
+                    fy?: number;
+                    fz?: number;
+                  }>;
+                  links: Array<{
+                    source: string | { id: string };
+                    target: string | { id: string };
+                  }>;
+                };
+                camera(): { position: { x: number; y: number; z: number } };
+              };
+            };
+          }
+        ).__sinapso;
+        const graphData = debug.graph.graphData();
+        const source = graphData.nodes.find((node) => node.id === sourceId)!;
+        const camera = debug.graph.camera().position;
+        const id = (end: string | { id: string }) =>
+          typeof end === "string" ? end : end.id;
+        return {
+          source: { x: source.x, y: source.y, z: source.z },
+          camera: { x: camera.x, y: camera.y, z: camera.z },
+          linked: graphData.links.some(
+            (link) =>
+              id(link.source) === sourceId &&
+              id(link.target) === "alpha-note.md",
+          ),
+          temporaryPins: graphData.nodes.filter(
+            (node) => node.fx != null || node.fy != null || node.fz != null,
+          ).length,
+        };
+      }, NOTE_ID);
+    const before = await snapshot();
+
+    await clickIntoParagraph(page, "first paragraph stays untouched");
+    await page.keyboard.press("End");
+    const saved = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/notes" &&
+        response.request().method() === "PUT" &&
+        response.ok(),
+    );
+    await page.keyboard.type(" [[alpha-note]]");
+    await saved;
+    await expect.poll(async () => (await snapshot()).linked).toBe(true);
+    const after = await snapshot();
+    const distance = (
+      a: { x: number; y: number; z: number },
+      b: { x: number; y: number; z: number },
+    ) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+    expect(distance(after.source, before.source)).toBeLessThan(0.01);
+    expect(distance(after.camera, before.camera)).toBeLessThan(0.01);
+    expect(after.temporaryPins).toBe(0);
+  } finally {
+    await assertCleanBrowser();
+    await removeTestNote(page, file);
+  }
+});
+
 test("AE1b: opening and closing without edits never touches the file", async ({
   page,
 }) => {

@@ -27,7 +27,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { scanVault } from "../scanner/scan.js";
+import { scanVault, structuralLinkSignature } from "../scanner/scan.js";
 import {
   defaultPrompts,
   effectivePrompts,
@@ -2233,8 +2233,13 @@ export function createApp(
         actor: "user",
         baseHash: typeof baseHash === "string" ? baseHash : undefined,
       });
-      if (!r.unchanged) refreshAfterWrite();
-      res.json({ ok: true, id: r.id, baseHash: noteHash(content) });
+      const graphResult = refreshAfterEdit(r, content);
+      res.json({
+        ok: true,
+        id: r.id,
+        baseHash: noteHash(content),
+        ...graphResult,
+      });
     } catch (e) {
       writeFail(res, e, "edit");
     }
@@ -2308,8 +2313,13 @@ export function createApp(
           actor: "agent",
           baseHash: typeof baseHash === "string" ? baseHash : undefined,
         });
-        if (!r.unchanged) refreshAfterWrite();
-        res.json({ ok: true, id: r.id, baseHash: noteHash(content) });
+        const graphResult = refreshAfterEdit(r, content);
+        res.json({
+          ok: true,
+          id: r.id,
+          baseHash: noteHash(content),
+          ...graphResult,
+        });
       } catch (e) {
         writeFail(res, e, "agent edit");
       }
@@ -3196,6 +3206,38 @@ export function createApp(
     } catch (error) {
       console.error("Post-create graph refresh failed:", error);
       return false;
+    }
+  }
+
+  function refreshAfterEdit(
+    result: {
+      id: string;
+      unchanged?: boolean;
+      previousContent?: string;
+    },
+    content: string,
+  ): { graph?: ReturnType<typeof scanVault>; graphRefreshFailed?: true } {
+    if (result.unchanged) return {};
+    refreshAfterWrite();
+    if (
+      result.previousContent === undefined ||
+      structuralLinkSignature(
+        result.previousContent,
+        result.id,
+        graph.nodes.map((node) => node.id),
+      ) ===
+        structuralLinkSignature(
+          content,
+          result.id,
+          graph.nodes.map((node) => node.id),
+        )
+    )
+      return {};
+    try {
+      return { graph: scanAndReload(graph.meta.vaultPath) };
+    } catch (error) {
+      console.error("Post-edit graph refresh failed:", error);
+      return { graphRefreshFailed: true };
     }
   }
 

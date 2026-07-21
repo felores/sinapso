@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { scanVault } from "./scan";
+import {
+  extractStructuralLinkTargets,
+  scanVault,
+  structuralLinkSignature,
+} from "./scan";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -9,6 +13,54 @@ const FIXTURES = resolve(HERE, "fixtures");
 const scan = () => scanVault({ vault: FIXTURES });
 
 describe("scanner: link resolution", () => {
+  it("extracts the same targets used by the scanner", () => {
+    expect(
+      extractStructuralLinkTargets(
+        "[[Alpha#section|label]] [Beta](../beta.md) ![image](image.md) [web](https://example.com)",
+        "notes/source.md",
+      ),
+    ).toEqual(["Alpha", "beta"]);
+  });
+
+  it("compares structural links as an order-independent multiset", () => {
+    const source = "notes/source.md";
+    expect(
+      structuralLinkSignature(
+        "[[Alpha|first]] [[Beta]] [[Alpha#section]]",
+        source,
+      ),
+    ).toBe(
+      structuralLinkSignature(
+        "Prose changed. [[beta|renamed]] [[alpha]] [[ALPHA]]",
+        source,
+      ),
+    );
+    expect(structuralLinkSignature("[[Alpha]]", source)).not.toBe(
+      structuralLinkSignature("[[Alpha]] [[Alpha]]", source),
+    );
+  });
+
+  it("canonicalizes mixed link syntax to resolved scanner endpoints", () => {
+    const source = "folder/source.md";
+    const nodes = [source, "folder/target.md"];
+    expect(structuralLinkSignature("[[target]]", source, nodes)).toBe(
+      structuralLinkSignature("[target](target.md)", source, nodes),
+    );
+    expect(
+      structuralLinkSignature("[[target]] [target](target.md)", source, nodes),
+    ).not.toBe(structuralLinkSignature("[[target]]", source, nodes));
+  });
+
+  it("ignores non-note Markdown targets in structural signatures", () => {
+    const source = "notes/source.md";
+    expect(
+      structuralLinkSignature(
+        "[anchor](#part) [site](https://example.com) [mail](mailto:a@b.com) [text](file.txt) ![image](image.md)",
+        source,
+      ),
+    ).toBe("");
+  });
+
   it("resolves [[wiki]] links by basename", () => {
     const g = scan();
     const ids = g.nodes.map((n) => n.id);

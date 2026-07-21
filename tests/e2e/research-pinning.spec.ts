@@ -1,6 +1,7 @@
 import { expect, test, type Page, type WebSocketRoute } from "@playwright/test";
 import {
   mkdirSync,
+  readFileSync,
   readdirSync,
   rmSync,
   utimesSync,
@@ -962,10 +963,16 @@ test("R8/R9 Inbox toggle is persistent, aria-pressed toggles, and prev/next navi
       "First Inbox body for toggle nav.",
     );
     await expect(page.locator("#research-pos")).toHaveText(/^2\//);
+    await page.locator("#research .cm-content").click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" Saved before switching notes.");
     await page.locator("#research-next").click();
     await expect(page.locator("#research .cm-content")).toContainText(
       "Second Inbox body for toggle nav.",
     );
+    await expect
+      .poll(() => readFileSync(fileA, "utf-8"))
+      .toContain("Saved before switching notes.");
 
     // Next from page 1 returns to the Inbox list at page 0.
     await page.locator("#research-next").click();

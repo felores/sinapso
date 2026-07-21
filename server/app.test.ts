@@ -1931,6 +1931,123 @@ describe("server: plan 020 U5 agent-actor note routes (/api/agent/notes)", () =>
     }
   });
 
+  it("returns graph data only when a note edit changes structural links", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sinapso-edit-graph-"));
+    try {
+      const vault = join(dir, "vault");
+      const data = join(dir, "data");
+      mkdirSync(vault, { recursive: true });
+      mkdirSync(data, { recursive: true });
+      writeFileSync(join(vault, "a.md"), "# A\nbody\n");
+      writeFileSync(join(vault, "b.md"), "# B\n");
+      const gp = join(data, "graph.json");
+      scanVault({ vault, out: gp });
+      const cfgPath = join(data, "config.json");
+      updateConfig({}, cfgPath);
+      const { app: app2 } = createApp(gp, undefined, { configPath: cfgPath });
+      const token = (await request(app2).get("/api/session")).body.token;
+
+      let read = await request(app2).get("/api/note?id=a.md&nolog=1");
+      const prose = await request(app2)
+        .put("/api/notes")
+        .set("x-sinapso-token", token)
+        .send({
+          id: "a.md",
+          content: "# A\nchanged prose\n",
+          baseHash: read.body.baseHash,
+        });
+      expect(prose.status).toBe(200);
+      expect(prose.body.graph).toBeUndefined();
+
+      read = await request(app2).get("/api/note?id=a.md&nolog=1");
+      const linked = await request(app2)
+        .put("/api/notes")
+        .set("x-sinapso-token", token)
+        .send({
+          id: "a.md",
+          content: "# A\nchanged prose [[b]]\n",
+          baseHash: read.body.baseHash,
+        });
+      expect(linked.status).toBe(200);
+      expect(linked.body.graph.links).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ source: "a.md", target: "b.md" }),
+        ]),
+      );
+
+      read = await request(app2).get("/api/note?id=a.md&nolog=1");
+      const aliasOnly = await request(app2)
+        .put("/api/notes")
+        .set("x-sinapso-token", token)
+        .send({
+          id: "a.md",
+          content: "# A\nchanged prose [[B#section|renamed]]\n",
+          baseHash: read.body.baseHash,
+        });
+      expect(aliasOnly.status).toBe(200);
+      expect(aliasOnly.body.graph).toBeUndefined();
+
+      read = await request(app2).get("/api/note?id=a.md&nolog=1");
+      const duplicate = await request(app2)
+        .put("/api/agent/notes")
+        .set("x-sinapso-token", token)
+        .send({
+          id: "a.md",
+          content: "# A\n[[b]] [B](b.md)\n",
+          baseHash: read.body.baseHash,
+        });
+      expect(duplicate.status).toBe(200);
+      expect(duplicate.body.graph.links).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            source: "a.md",
+            target: "b.md",
+            weight: 2,
+          }),
+        ]),
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a structural edit durable when its graph refresh fails", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sinapso-edit-refresh-fail-"));
+    const vault = join(dir, "vault");
+    const data = join(dir, "data");
+    const gp = join(data, "graph.json");
+    try {
+      mkdirSync(vault, { recursive: true });
+      mkdirSync(data, { recursive: true });
+      writeFileSync(join(vault, "a.md"), "# A\n");
+      writeFileSync(join(vault, "b.md"), "# B\n");
+      scanVault({ vault, out: gp });
+      const cfgPath = join(data, "config.json");
+      updateConfig({}, cfgPath);
+      const { app: app2 } = createApp(gp, undefined, { configPath: cfgPath });
+      const token = (await request(app2).get("/api/session")).body.token;
+      const read = await request(app2).get("/api/note?id=a.md&nolog=1");
+      rmSync(gp);
+      mkdirSync(gp);
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      const edited = await request(app2)
+        .put("/api/notes")
+        .set("x-sinapso-token", token)
+        .send({
+          id: "a.md",
+          content: "# A\n[[b]]\n",
+          baseHash: read.body.baseHash,
+        });
+      log.mockRestore();
+      expect(edited.status).toBe(200);
+      expect(edited.body.graphRefreshFailed).toBe(true);
+      expect(typeof edited.body.baseHash).toBe("string");
+      expect(readFileSync(join(vault, "a.md"), "utf-8")).toContain("[[b]]");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("GET /api/note returns baseHash alongside markdown", async () => {
     const dir = mkdtempSync(join(tmpdir(), "sinapso-note-hash-"));
     try {

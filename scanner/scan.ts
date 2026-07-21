@@ -254,6 +254,59 @@ function resolveMdLink(dir: string, target: string): string | null {
   return norm || null;
 }
 
+export function extractStructuralLinkTargets(
+  text: string,
+  sourcePath: string,
+): string[] {
+  const links: string[] = [];
+  for (const match of text.matchAll(WIKI_LINK)) {
+    const raw = match[1].trim();
+    if (raw) links.push(raw);
+  }
+  const dir = sourcePath.includes("/")
+    ? sourcePath.slice(0, sourcePath.lastIndexOf("/"))
+    : "";
+  for (const match of text.matchAll(MD_LINK)) {
+    const target = resolveMdLink(dir, match[1]);
+    if (target) links.push(target);
+  }
+  return links;
+}
+
+export function structuralLinkSignature(
+  text: string,
+  sourcePath: string,
+  nodeIds?: readonly string[],
+): string {
+  const counts = new Map<string, number>();
+  const byBasename = new Map<string, string>();
+  const byPath = new Map<string, string>();
+  if (nodeIds) {
+    for (const id of [...nodeIds].sort()) {
+      if (id.startsWith("phantom:")) continue;
+      const path = id.replace(/\.md$/i, "").toLowerCase();
+      const basename = path.split("/").pop()!;
+      if (!byBasename.has(basename)) byBasename.set(basename, id);
+      byPath.set(path, id);
+    }
+  }
+  for (const target of extractStructuralLinkTargets(text, sourcePath)) {
+    const raw = target.toLowerCase();
+    const resolved = nodeIds
+      ? raw.includes("/")
+        ? (byPath.get(raw) ?? byBasename.get(raw.split("/").pop()!))
+        : byBasename.get(raw)
+      : undefined;
+    const normalized =
+      resolved?.toLowerCase() ?? (nodeIds ? `phantom:${raw}` : raw);
+    counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+  }
+  return [...counts]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([target, count]) => `${JSON.stringify(target)}:${count}`)
+    .join("|");
+}
+
 function walk(root: string, excludes: string[]): FileStat[] {
   const excludeSet = new Set(
     excludes.map((e) => e.replace(/\\/g, "/").toLowerCase()),
@@ -328,21 +381,7 @@ export function scanVault(opts: ScanOptions): VaultGraph {
       continue;
     }
     const text = readFileSync(resolve(vault, f.rel), "utf-8");
-    const links: string[] = [];
-    for (const m of text.matchAll(WIKI_LINK)) {
-      const raw = m[1].trim();
-      if (raw) links.push(raw);
-    }
-    // Standard markdown links to .md files (the OKF link syntax). Resolved here
-    // to a vault-relative path because the relative target depends on this
-    // file's directory; the global resolver below then treats it path-first.
-    const dir = f.rel.includes("/")
-      ? f.rel.slice(0, f.rel.lastIndexOf("/"))
-      : "";
-    for (const m of text.matchAll(MD_LINK)) {
-      const t = resolveMdLink(dir, m[1]);
-      if (t) links.push(t);
-    }
+    const links = extractStructuralLinkTargets(text, f.rel);
     // OKF tags (frontmatter list) take precedence; fall back to inline #tags.
     const fm = parseFrontmatter(text);
     const tags: string[] = [];

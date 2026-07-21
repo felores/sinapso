@@ -220,7 +220,7 @@ export interface EditOptions {
 export function guardedEdit(
   deps: WriteDeps,
   opts: EditOptions,
-): { id: string; unchanged?: boolean } {
+): { id: string; unchanged?: boolean; previousContent?: string } {
   requireVault(deps.vaultRoot);
   const full = confine(deps.vaultRoot, opts.id);
   if (!existsSync(full)) throw new WriteError(404, "note not found");
@@ -239,7 +239,7 @@ export function guardedEdit(
     action: "edit",
     path: id,
   });
-  return { id };
+  return { id, previousContent: current };
 }
 
 export interface MoveOptions {

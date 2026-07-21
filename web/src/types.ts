@@ -11,6 +11,9 @@ export interface GNode {
   x?: number;
   y?: number;
   z?: number;
+  fx?: number;
+  fy?: number;
+  fz?: number;
 }
 
 export interface GLink {

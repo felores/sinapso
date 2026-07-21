@@ -144,6 +144,12 @@ interface CreatedNoteResponse {
   graphRefreshFailed?: boolean;
 }
 
+interface NoteEditResponse {
+  baseHash: string;
+  graph?: Graph;
+  graphRefreshFailed?: boolean;
+}
+
 const $ = <T extends HTMLElement>(sel: string) =>
   document.querySelector(sel) as T;
 
@@ -919,6 +925,7 @@ async function boot() {
   const validArr = (v: string | null): Arrangement =>
     ARRANGEMENT_ORDER.includes(v as Arrangement) ? (v as Arrangement) : "links";
   let arrangement: Arrangement = "links"; // boot always simulates structural
+  let arrangementOperationGeneration = 0;
   let semanticLinks: GLink[] = [];
   let semanticReady = false;
   let semLinesOn = prefs.getSemLines();
@@ -926,6 +933,134 @@ async function boot() {
   let semPos: Float32Array | null = null;
   let semLines: THREE.LineSegments | null = null;
   const arrLayoutMem = new Map<Arrangement, Record<string, number[]>>();
+
+  type FixedCoordinateSnapshot = {
+    hasFx: boolean;
+    hasFy: boolean;
+    hasFz: boolean;
+    fx: number | null | undefined;
+    fy: number | null | undefined;
+    fz: number | null | undefined;
+  };
+  type LiveRelayout = {
+    sourceId: string;
+    previousSource: { x: number; y: number; z: number };
+    fixedSnapshots: Map<string, FixedCoordinateSnapshot>;
+    followCamera: boolean;
+    previousWarmupTicks: number;
+    previousCooldownTicks: number;
+  };
+  let liveRelayout: LiveRelayout | null = null;
+
+  function fixedValue(node: GNode, key: "fx" | "fy" | "fz") {
+    return (node as unknown as Record<string, number | null | undefined>)[key];
+  }
+
+  function hasOwn(node: GNode, key: "fx" | "fy" | "fz") {
+    return Object.prototype.hasOwnProperty.call(node, key);
+  }
+
+  function setFixed(
+    node: GNode,
+    key: "fx" | "fy" | "fz",
+    value: number | null | undefined,
+  ) {
+    (node as unknown as Record<string, number | null | undefined>)[key] = value;
+  }
+
+  function finishLiveRelayout() {
+    const current = liveRelayout;
+    if (!current) return;
+    liveRelayout = null;
+    for (const [id, snapshot] of current.fixedSnapshots) {
+      const node = byId.get(id);
+      if (!node) continue;
+      if (snapshot.hasFx) setFixed(node, "fx", snapshot.fx);
+      else delete (node as unknown as Record<string, unknown>).fx;
+      if (snapshot.hasFy) setFixed(node, "fy", snapshot.fy);
+      else delete (node as unknown as Record<string, unknown>).fy;
+      if (snapshot.hasFz) setFixed(node, "fz", snapshot.fz);
+      else delete (node as unknown as Record<string, unknown>).fz;
+    }
+    graph
+      .warmupTicks(current.previousWarmupTicks)
+      .cooldownTicks(current.previousCooldownTicks);
+  }
+
+  function beginLiveRelayout(source: GNode): boolean {
+    if (
+      fixedValue(source, "fx") != null ||
+      fixedValue(source, "fy") != null ||
+      fixedValue(source, "fz") != null
+    )
+      return false;
+    const fixedSnapshots = new Map<string, FixedCoordinateSnapshot>();
+    for (const node of data.nodes) {
+      if (node.id === source.id) continue;
+      fixedSnapshots.set(node.id, {
+        hasFx: hasOwn(node, "fx"),
+        hasFy: hasOwn(node, "fy"),
+        hasFz: hasOwn(node, "fz"),
+        fx: fixedValue(node, "fx"),
+        fy: fixedValue(node, "fy"),
+        fz: fixedValue(node, "fz"),
+      });
+      setFixed(node, "fx", node.x ?? 0);
+      setFixed(node, "fy", node.y ?? 0);
+      setFixed(node, "fz", node.z ?? 0);
+    }
+    liveRelayout = {
+      sourceId: source.id,
+      previousSource: {
+        x: source.x ?? 0,
+        y: source.y ?? 0,
+        z: source.z ?? 0,
+      },
+      fixedSnapshots,
+      followCamera: selected?.id === source.id,
+      previousWarmupTicks: graph.warmupTicks(),
+      previousCooldownTicks: graph.cooldownTicks(),
+    };
+    graph.warmupTicks(0).cooldownTicks(45);
+    return true;
+  }
+
+  function cancelLiveCameraFollow() {
+    if (liveRelayout) liveRelayout.followCamera = false;
+  }
+
+  function updateLiveCameraFollow() {
+    const current = liveRelayout;
+    if (!current?.followCamera) return;
+    if (selected?.id !== current.sourceId) {
+      current.followCamera = false;
+      return;
+    }
+    const source = byId.get(current.sourceId);
+    if (!source) {
+      current.followCamera = false;
+      return;
+    }
+    const next = {
+      x: source.x ?? 0,
+      y: source.y ?? 0,
+      z: source.z ?? 0,
+    };
+    const dx = next.x - current.previousSource.x;
+    const dy = next.y - current.previousSource.y;
+    const dz = next.z - current.previousSource.z;
+    const camera = graph.camera();
+    camera.position.x += dx;
+    camera.position.y += dy;
+    camera.position.z += dz;
+    const controls = graph.controls() as {
+      target?: THREE.Vector3;
+      update?: () => void;
+    };
+    controls.target?.add(new THREE.Vector3(dx, dy, dz));
+    controls.update?.();
+    current.previousSource = next;
+  }
 
   function updateSemanticPositions() {
     if (!semLines || !semPos || !semGeo) return;
@@ -1031,9 +1166,37 @@ async function boot() {
 
   const linkForce = graph.d3Force("link");
 
+  function configureLinkStrength(links: GLink[]) {
+    const deg = new Map<string, number>();
+    const bump = (endpoint: string | GNode) => {
+      const id = typeof endpoint === "object" ? endpoint.id : endpoint;
+      deg.set(id, (deg.get(id) ?? 0) + 1);
+    };
+    for (const link of links) {
+      bump(link.source);
+      bump(link.target);
+    }
+    if (!linkForce) return;
+    (
+      linkForce as unknown as { strength(fn: (link: GLink) => number): void }
+    ).strength((link: GLink) => {
+      const source = endNode(link.source).id;
+      const target = endNode(link.target).id;
+      const base =
+        1 / Math.max(1, Math.min(deg.get(source) ?? 1, deg.get(target) ?? 1));
+      return link.__sem ? base * 0.4 : base;
+    });
+  }
+
   async function applyArrangement(mode: Arrangement) {
+    const operationGeneration = ++arrangementOperationGeneration;
+    finishLiveRelayout();
     if (mode !== "links") {
       const ok = await fetchSemantic();
+      if (operationGeneration !== arrangementOperationGeneration) {
+        ($("#arrange") as HTMLSelectElement).value = arrangement;
+        return;
+      }
       if (!ok) {
         // semantic layer unavailable: stay on links
         arrangement = "links";
@@ -1046,36 +1209,14 @@ async function boot() {
     prefs.setArrangement(mode);
     updateSemanticVisibility();
 
-    // Active sim edge set: structural for links/hybrid, semantic for semantic/hybrid.
+    // Reuse cached positions if we have them; otherwise settle once.
+    const cached = await loadArrangementLayout(mode);
+    if (operationGeneration !== arrangementOperationGeneration) return;
+    finishLiveRelayout();
     const links: GLink[] = [];
     if (mode !== "semantic") for (const l of data.links) links.push(l);
     if (mode !== "links") for (const l of semanticLinks) links.push(l);
-
-    // Per-link strength: d3's default (1/min degree) for structural, dampened
-    // for semantic so links stay the skeleton and semantics only fill gaps.
-    const deg = new Map<string, number>();
-    const bump = (e: string | GNode) => {
-      const id = typeof e === "object" ? e.id : e;
-      deg.set(id, (deg.get(id) ?? 0) + 1);
-    };
-    for (const l of links) {
-      bump(l.source);
-      bump(l.target);
-    }
-    if (linkForce) {
-      (
-        linkForce as unknown as { strength(fn: (l: GLink) => number): void }
-      ).strength((l: GLink) => {
-        const a = endNode(l.source).id;
-        const b = endNode(l.target).id;
-        const base =
-          1 / Math.max(1, Math.min(deg.get(a) ?? 1, deg.get(b) ?? 1));
-        return l.__sem ? base * 0.4 : base;
-      });
-    }
-
-    // Reuse cached positions if we have them; otherwise settle once.
-    const cached = await loadArrangementLayout(mode);
+    configureLinkStrength(links);
     if (cached) {
       for (const n of data.nodes) {
         const p = cached[n.id];
@@ -1101,19 +1242,31 @@ async function boot() {
     }
   }
 
-  graph.onEngineTick(updateLinkPositions);
+  graph.onEngineTick(() => {
+    updateLinkPositions();
+    updateSemanticPositions();
+    updateLiveCameraFollow();
+  });
   // capture/debug hook: scripts/capture.ts frames the camera through this,
   // and waits on `settled` before shooting a freshly-simulated vault.
   const dbg = { graph, settled: false };
   (window as unknown as { __sinapso: typeof dbg }).__sinapso = dbg;
 
   graph.onEngineStop(() => {
+    finishLiveRelayout();
     updateLinkPositions();
+    updateSemanticPositions();
+    updateLinkColors();
     saveLayout();
     dbg.settled = true;
     hideLoading(); // constellation has settled
     tryHandleInitialSelection();
   });
+  (
+    graph.controls() as {
+      addEventListener?: (type: string, listener: () => void) => void;
+    }
+  ).addEventListener?.("start", cancelLiveCameraFollow);
   graph.onNodeDrag(() => updateLinkPositions());
   // Cached-layout boots never tick the engine; draw the buffer directly.
   setTimeout(() => {
@@ -1751,12 +1904,44 @@ async function boot() {
   let noteEditor: NoteEditor | null = null;
   let noteAutosave: Autosave | null = null;
   let editorNoteId: string | null = null;
+  let readerEditorGeneration = 0;
   // Hex hash of the current autosave base, kept warm so the beforeunload
   // keepalive PUT can carry the staleness guard without an async hash.
   let editorBaseHashHex: string | null = null;
+  let graphSaveRequestOrdinal = 0;
+  let latestAppliedGraphOrdinal = 0;
+  let graphVaultGeneration = 0;
 
   function activeVaultPath(): string {
     return data.meta.vaultPath ?? "";
+  }
+
+  function applySavedGraph(
+    response: NoteEditResponse,
+    ordinal: number,
+    vaultGeneration: number,
+    motionEligible: boolean,
+    noteId: string,
+  ): void {
+    if (vaultGeneration !== graphVaultGeneration) return;
+    if (response.graphRefreshFailed)
+      upsertActivityCard({
+        id: "graph-refresh",
+        state: "error",
+        label: "activity.error",
+        detail: i18n.t("research.graphRefreshFailed"),
+      });
+    if (
+      !response.graph ||
+      response.graph.meta.vaultPath !== activeVaultPath() ||
+      ordinal <= latestAppliedGraphOrdinal
+    )
+      return;
+    latestAppliedGraphOrdinal = ordinal;
+    applyGraphUpdate(
+      response.graph,
+      motionEligible ? { liveSourceId: noteId } : undefined,
+    );
   }
 
   /** PUT through the guarded write path. `base` = the content whose hash the
@@ -1766,19 +1951,36 @@ async function boot() {
     content: string,
     base: string | null,
   ): Promise<"saved" | "conflict"> {
+    const graphOrdinal = ++graphSaveRequestOrdinal;
+    const editorGeneration = readerEditorGeneration;
+    const vaultGeneration = graphVaultGeneration;
     try {
       const json: Record<string, string> = { id: noteId, content };
       if (base !== null) {
         if (!editorBaseHashHex) throw new Error("missing note base hash");
         json.baseHash = editorBaseHashHex;
       }
-      const { baseHash } = await api<{ baseHash: string }>("/api/notes", {
+      const response = await api<NoteEditResponse>("/api/notes", {
         method: "PUT",
         json,
       });
-      editorBaseHashHex = baseHash;
+      const ownsEditor =
+        editorGeneration === readerEditorGeneration && editorNoteId === noteId;
+      if (ownsEditor) editorBaseHashHex = response.baseHash;
+      applySavedGraph(
+        response,
+        graphOrdinal,
+        vaultGeneration,
+        ownsEditor,
+        noteId,
+      );
       const m = prefs.getEditorMirror();
-      if (m && m.noteId === noteId && m.vault === activeVaultPath())
+      if (
+        ownsEditor &&
+        m &&
+        m.noteId === noteId &&
+        m.vault === activeVaultPath()
+      )
         prefs.clearEditorMirror();
       return "saved";
     } catch (e) {
@@ -1833,13 +2035,24 @@ async function boot() {
 
   async function reloadNoteFromDisk() {
     if (!editorNoteId || !noteEditor || !noteAutosave) return;
+    const noteId = editorNoteId;
+    const editor = noteEditor;
+    const autosave = noteAutosave;
+    const generation = readerEditorGeneration;
     try {
       const { markdown, baseHash } = await api<{
         markdown: string;
         baseHash: string;
-      }>(`/api/note?id=${encodeURIComponent(editorNoteId)}&nolog=1`);
-      noteEditor.setContent(markdown);
-      noteAutosave.reset(markdown);
+      }>(`/api/note?id=${encodeURIComponent(noteId)}&nolog=1`);
+      if (
+        generation !== readerEditorGeneration ||
+        editorNoteId !== noteId ||
+        noteEditor !== editor ||
+        noteAutosave !== autosave
+      )
+        return;
+      editor.setContent(markdown);
+      autosave.reset(markdown);
       editorBaseHashHex = baseHash;
     } catch {
       /* note gone or unreachable; editor keeps local content, stays dirty */
@@ -1890,6 +2103,7 @@ async function boot() {
     noteEditor?.destroy();
     noteEditor = null;
     editorNoteId = null;
+    readerEditorGeneration++;
     hideAssistPreview();
     hideReaderBanner();
   }
@@ -2166,6 +2380,7 @@ async function boot() {
       );
       if (generation !== readerOpenGeneration) return;
       if (!fromHistory) await refreshReaderHistory();
+      if (generation !== readerOpenGeneration) return;
       // The editor owns the note verbatim (frontmatter included, folded by
       // the editor itself). `stripped` is kept only for word count and the
       // wiki-ingest preview, which work over the body text.
@@ -5931,6 +6146,7 @@ async function boot() {
   let researchVaultAutosave: Autosave | null = null;
   let researchVaultPath: string | null = null;
   let researchVaultBaseHashHex: string | null = null;
+  let researchEditorGeneration = 0;
   // Stale async-open protection (R17): each open captures a generation; a
   // slow note-fetch that resolves after a newer open must bail.
   const vaultSessionToken = new GenerationToken();
@@ -6291,6 +6507,8 @@ async function boot() {
       researchVaultPath = null;
       researchVaultBaseHashHex = null;
       inboxPathOpen = null;
+      researchEditorGeneration++;
+      $("#research-banner").classList.add("hidden");
       return;
     }
     if (opts.flush) {
@@ -6328,6 +6546,8 @@ async function boot() {
     researchVaultPath = null;
     researchVaultBaseHashHex = null;
     inboxPathOpen = null;
+    researchEditorGeneration++;
+    $("#research-banner").classList.add("hidden");
   }
 
   async function saveVaultNote(
@@ -6335,6 +6555,9 @@ async function boot() {
     content: string,
     base: string | null,
   ): Promise<"saved" | "conflict"> {
+    const graphOrdinal = ++graphSaveRequestOrdinal;
+    const editorGeneration = researchEditorGeneration;
+    const vaultGeneration = graphVaultGeneration;
     try {
       const json: Record<string, string> = { id: path, content };
       if (base !== null) {
@@ -6342,13 +6565,23 @@ async function boot() {
           throw new Error("missing note base hash");
         json.baseHash = researchVaultBaseHashHex;
       }
-      const { baseHash } = await api<{ baseHash: string }>("/api/notes", {
+      const response = await api<NoteEditResponse>("/api/notes", {
         method: "PUT",
         json,
       });
-      researchVaultBaseHashHex = baseHash;
+      const ownsEditor =
+        editorGeneration === researchEditorGeneration &&
+        researchVaultPath === path;
+      if (ownsEditor) researchVaultBaseHashHex = response.baseHash;
+      applySavedGraph(
+        response,
+        graphOrdinal,
+        vaultGeneration,
+        ownsEditor,
+        path,
+      );
       const m = prefs.getEditorMirror();
-      if (m && m.noteId === path && m.vault === activeVaultPath())
+      if (ownsEditor && m && m.noteId === path && m.vault === activeVaultPath())
         prefs.clearEditorMirror();
       return "saved";
     } catch (e) {
@@ -6378,13 +6611,24 @@ async function boot() {
   async function reloadResearchVaultFromDisk() {
     if (!researchVaultPath || !researchVaultEditor || !researchVaultAutosave)
       return;
+    const path = researchVaultPath;
+    const editor = researchVaultEditor;
+    const autosave = researchVaultAutosave;
+    const generation = researchEditorGeneration;
     try {
       const { markdown, baseHash } = await api<{
         markdown: string;
         baseHash: string;
-      }>(`/api/note?id=${encodeURIComponent(researchVaultPath)}&nolog=1`);
-      researchVaultEditor.setContent(markdown);
-      researchVaultAutosave.reset(markdown);
+      }>(`/api/note?id=${encodeURIComponent(path)}&nolog=1`);
+      if (
+        generation !== researchEditorGeneration ||
+        researchVaultPath !== path ||
+        researchVaultEditor !== editor ||
+        researchVaultAutosave !== autosave
+      )
+        return;
+      editor.setContent(markdown);
+      autosave.reset(markdown);
       researchVaultBaseHashHex = baseHash;
     } catch {
       /* note gone or unreachable; editor keeps local content */
@@ -6598,6 +6842,7 @@ async function boot() {
     const decision = decideTransfer("research", currentOwnership(path));
     if (decision.kind === "already-owns") {
       // Same note re-clicked in the list: focus the existing editor.
+      vaultSessionToken.next();
       researchVaultEditor?.view.focus();
       return true;
     }
@@ -6623,6 +6868,32 @@ async function boot() {
     // Stale-open protection: each open captures a generation; a slower prior
     // open that resolves later sees isCurrent(generation) === false and bails.
     const generation = vaultSessionToken.next();
+    if (researchVaultPath && researchVaultPath !== path) {
+      const currentAutosave = researchVaultAutosave;
+      if (currentAutosave) {
+        try {
+          await currentAutosave.flush();
+        } catch {
+          /* surfaced via onState */
+        }
+        if (
+          currentAutosave.state() === "conflict" ||
+          currentAutosave.state() === "error"
+        ) {
+          researchVaultEditor?.view.focus();
+          researchError(
+            i18n.t(
+              currentAutosave.state() === "conflict"
+                ? "research.transfer.blockedConflict"
+                : "research.transfer.blockedError",
+            ),
+          );
+          return false;
+        }
+      }
+      await teardownResearchVaultEditor({ flush: false });
+      if (!vaultSessionToken.isCurrent(generation)) return false;
+    }
     // For transfers: flush the other owner's editor before taking it over.
     const fromOwner =
       decision.kind === "transfer-clean" ||
@@ -6756,27 +7027,29 @@ async function boot() {
     const editorHost = document.createElement("div");
     editorHost.className = "inbox-editor note-editor";
     body.appendChild(editorHost);
+    let autosave: Autosave | null = null;
     const editor = createNoteEditor(editorHost, {
       content: markdown,
       onWikiLinkClick: navigateWikiTarget,
       toolbarExtras: aiToolbarExtras,
       onChange: () => {
-        researchVaultAutosave?.notifyChange();
+        autosave?.notifyChange();
         updateBrandStats();
         syncVoiceContext();
       },
+    });
+    autosave = createAutosave({
+      baseContent: markdown,
+      getContent: () => editor.getContent(),
+      save: (content, base) => saveVaultNote(path, content, base),
+      onState: renderResearchVaultSaveState,
     });
     researchVaultEditor = editor;
     researchVaultPath = path;
     inboxPathOpen = path;
     inboxCursorState = setCursorTo(inboxCursorState, path);
     updateHistoryNav();
-    researchVaultAutosave = createAutosave({
-      baseContent: markdown,
-      getContent: () => researchVaultEditor?.getContent() ?? markdown,
-      save: (content, base) => saveVaultNote(path, content, base),
-      onState: renderResearchVaultSaveState,
-    });
+    researchVaultAutosave = autosave;
     researchVaultBaseHashHex = baseHash;
     setResearchFooterContext(true);
     $("#research-footer").classList.remove("hidden");
@@ -6793,14 +7066,28 @@ async function boot() {
         {
           label: i18n.t("editor.mirror.restore"),
           run: () => {
-            researchVaultEditor?.setContent(mirror.content);
+            if (
+              !vaultSessionToken.isCurrent(generation) ||
+              researchVaultPath !== path ||
+              researchVaultEditor !== editor ||
+              researchVaultAutosave !== autosave
+            )
+              return;
+            editor.setContent(mirror.content);
             prefs.clearEditorMirror();
-            researchVaultAutosave?.notifyChange();
+            autosave.notifyChange();
           },
         },
         {
           label: i18n.t("editor.mirror.discard"),
-          run: () => prefs.clearEditorMirror(),
+          run: () => {
+            if (
+              vaultSessionToken.isCurrent(generation) &&
+              researchVaultPath === path &&
+              researchVaultEditor === editor
+            )
+              prefs.clearEditorMirror();
+          },
         },
       );
     }
@@ -8689,7 +8976,14 @@ async function boot() {
   // (so they sit among their links). Phantom→real reconciliation falls out of
   // the by-id diff: the phantom id disappears, the real id appears, and the
   // inbound edges in next.links already point at the real id.
-  function applyGraphUpdate(next: Graph) {
+  function applyGraphUpdate(
+    next: Graph,
+    options: { liveSourceId?: string } = {},
+  ) {
+    arrangementOperationGeneration++;
+    finishLiveRelayout();
+    if (data.meta.vaultPath !== next.meta.vaultPath) graphVaultGeneration++;
+    const fingerprintChanged = data.meta.fingerprint !== next.meta.fingerprint;
     const nextById = new Map(next.nodes.map((n) => [n.id, n] as const));
     const endId = (e: string | GNode) => (typeof e === "object" ? e.id : e);
 
@@ -8764,6 +9058,14 @@ async function boot() {
     data.nodes = kept;
     data.links = next.links;
     data.meta = next.meta;
+    if (fingerprintChanged) arrLayoutMem.clear();
+    if (selected) {
+      const current = byId.get(selected.id);
+      if (current) {
+        selected = current;
+        focusSet = bfs(current.id, focusDepth);
+      }
+    }
 
     // 6. Drop semantic edges whose endpoints no longer exist (stale post-rescan).
     semanticLinks = semanticLinks.filter(
@@ -8780,16 +9082,28 @@ async function boot() {
     const links: GLink[] = [];
     if (arrangement !== "semantic") for (const l of data.links) links.push(l);
     if (arrangement !== "links") for (const l of semanticLinks) links.push(l);
+    configureLinkStrength(links);
 
-    // 9. Re-register without reheating: existing nodes hold x/y/z, new nodes hold
-    //    their centroid seed, cooldownTicks(0) runs no ticks → nothing reflows.
-    graph.warmupTicks(0).cooldownTicks(0);
+    // 9. Structural edits may locally settle the edited source while every
+    // other node stays pinned. All other hot-swaps preserve exact positions.
+    const source = options.liveSourceId
+      ? byId.get(options.liveSourceId)
+      : undefined;
+    const animate = !!(
+      source &&
+      arrangement !== "semantic" &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches &&
+      beginLiveRelayout(source)
+    );
+    if (!animate) graph.warmupTicks(0).cooldownTicks(0);
+    dbg.settled = false;
     graph.graphData({ nodes: data.nodes, links });
     if (titleChanged) graph.nodeThreeObject(graph.nodeThreeObject()); // refresh labels
 
-    // 10. Persist the updated layout under the new fingerprint.
+    // 10. Animated updates persist on engine stop; stationary updates can save
+    // immediately because graphData runs no ticks at cooldown zero.
     layoutSaved = false;
-    saveLayout();
+    if (!animate) saveLayout();
 
     // 11. Paint the new meshes/links once their objects exist.
     requestAnimationFrame(() =>
@@ -9513,6 +9827,7 @@ async function boot() {
   });
   $("#mi-resetcam").addEventListener("click", () => {
     closeMenus();
+    cancelLiveCameraFollow();
     clearSelection();
     graph.zoomToFit(1000, 60);
   });
@@ -10349,6 +10664,7 @@ async function boot() {
     shiftHeld = e.shiftKey;
     if (e.key.startsWith("Arrow")) {
       e.preventDefault();
+      cancelLiveCameraFollow();
       if (e.repeat) return; // the fly loop handles held keys
       if (!heldArrows.size) flyStart = performance.now(); // (re)start the ramp
       heldArrows.add(e.key);

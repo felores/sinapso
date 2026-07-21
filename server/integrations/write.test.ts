@@ -18,6 +18,7 @@ import { TOKEN_HEADER } from "./security";
 import {
   guardedAppendLink,
   guardedCreate,
+  guardedEdit,
   guardedMove,
   noteHash,
   readChangeLog,
@@ -57,6 +58,23 @@ const { app } = createApp(graphPath, undefined, {
   },
 });
 const token = async () => (await request(app).get("/api/session")).body.token;
+
+describe("guardedEdit", () => {
+  it("returns the authoritative previous content only for changed writes", () => {
+    const path = join(VAULT, "previous-content.md");
+    writeFileSync(path, "before");
+    const changed = guardedEdit(
+      { vaultRoot: VAULT, dataDir: DATA },
+      { id: "previous-content.md", content: "after", actor: "user" },
+    );
+    expect(changed.previousContent).toBe("before");
+    const unchanged = guardedEdit(
+      { vaultRoot: VAULT, dataDir: DATA },
+      { id: "previous-content.md", content: "after", actor: "user" },
+    );
+    expect(unchanged).toEqual({ id: "previous-content.md", unchanged: true });
+  });
+});
 
 describe("POST /api/notes (create)", () => {
   it("rejects a request without the session token (KTD12)", async () => {
