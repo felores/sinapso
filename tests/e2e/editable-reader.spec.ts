@@ -323,6 +323,7 @@ test("related notes show relevance and add a protected Connections link", async 
     });
     await openTestNote(page);
     const related = page.locator("#related");
+    await expect(page.locator("#orphan-link")).toHaveCount(0);
     await expect(related).toContainText("Alpha Note");
     await expect(related).not.toContainText("Index");
     await expect(related).not.toContainText("Log");

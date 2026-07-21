@@ -2562,7 +2562,6 @@ async function boot() {
         openNoteWords >= 300 || stripped.length >= 2000;
       const wikiSlot = document.createElement("div");
       const relatedSlot = document.createElement("div");
-      const orphanSlot = document.createElement("div");
       const questionsSlot = document.createElement("div");
       if (showBottomWikiAction && !currentWiki && !isRawIngested)
         wikiSlot.appendChild(
@@ -2570,9 +2569,8 @@ async function boot() {
             ? renderReaderRawSourceAction(wikiPreview, rawSourceWiki, "bottom")
             : renderReaderWikiAction(wikiPreview, "bottom"),
         );
-      body.append(wikiSlot, relatedSlot, orphanSlot, questionsSlot);
+      body.append(wikiSlot, relatedSlot, questionsSlot);
       void appendRelated(n, relatedSlot);
-      void appendOrphanLink(n, orphanSlot);
       appendNoteQuestions(n, questionsSlot);
       void loadNoteVersions(n);
     } catch {
@@ -3982,6 +3980,21 @@ async function boot() {
     crypto.randomUUID?.() ??
     `view-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   let viewSequence = 0;
+
+  function alignMobileSearchResults() {
+    const topbar = $("#topbar");
+    if (!topbar.classList.contains("topbar-rail") || window.innerWidth <= 500) {
+      results.style.removeProperty("left");
+      results.style.removeProperty("right");
+      results.style.removeProperty("width");
+      return;
+    }
+    const input = searchBox.getBoundingClientRect();
+    const wrap = $("#search-wrap").getBoundingClientRect();
+    results.style.left = `${input.left - wrap.left}px`;
+    results.style.right = "auto";
+    results.style.width = `${input.width}px`;
+  }
 
   function currentSelectionSnapshot(): SelectionSnapshot {
     return buildSelectionSnapshot(selectionContextState);
@@ -6052,8 +6065,7 @@ async function boot() {
     const token = ++relatedToken;
     const box = document.createElement("section");
     box.id = "related";
-    box.innerHTML =
-      '<h3>Related notes <span class="rel-tag">semantic</span></h3><p class="rel-info muted">finding related notes…</p>';
+    box.innerHTML = `<h3>${i18n.t("related.title")} <span class="rel-tag">${i18n.t("related.semantic")}</span></h3><p class="rel-info muted">${i18n.t("related.finding")}</p>`;
     body.appendChild(box);
     try {
       const data = await api<{
@@ -6084,7 +6096,7 @@ async function boot() {
           ),
       );
       if (!results.length) {
-        info.textContent = "no related notes found";
+        info.textContent = i18n.t("related.empty");
         return;
       }
       info.remove();
@@ -6142,8 +6154,7 @@ async function boot() {
     } catch {
       if (token !== relatedToken) return;
       const info = box.querySelector(".rel-info") as HTMLElement | null;
-      if (info)
-        info.textContent = "related notes unavailable (semantic search error)";
+      if (info) info.textContent = i18n.t("related.unavailable");
     }
   }
 
@@ -6474,6 +6485,7 @@ async function boot() {
     topbar.classList.toggle("menu-center", menuCol === "center");
     topbar.classList.toggle("menu-right", menuCol === "right");
     topbar.classList.toggle("search-stacked", searchStacked);
+    alignMobileSearchResults();
   }
 
   // Flip the reader's left dock. When the reader is HIDDEN, suppress the
@@ -9376,63 +9388,6 @@ async function boot() {
     void runWebQuery(query);
   }
 
-  // Orphan link suggestion (F034): for a note with no links in or out, offer
-  // its top semantic neighbor as a one-click [[wiki]] link. PREVIEW-THEN-CONFIRM
-  // — nothing is written until the user clicks; the insert goes through the
-  // guarded writer (POST /api/gaps/link -> write.ts) and is journaled.
-  async function appendOrphanLink(n: GNode, slot: HTMLElement) {
-    if (n.phantom || n.in + n.out > 0) return; // orphans only
-    if (!(await fetchSemantic())) return; // needs the semantic edges
-    let best: { id: string; score: number } | null = null;
-    for (const l of semanticLinks) {
-      const s = endNode(l.source).id;
-      const t = endNode(l.target).id;
-      const other = s === n.id ? t : t === n.id ? s : null;
-      if (other && (!best || l.weight > best.score))
-        best = { id: other, score: l.weight };
-    }
-    if (!best) return;
-    const neighbor = byId.get(best.id);
-    if (!neighbor) return;
-    const targetBase = best.id.split("/").pop()!.replace(/\.md$/i, "");
-
-    const box = document.createElement("section");
-    box.id = "orphan-link";
-    const h = document.createElement("h3");
-    h.textContent = "Link suggestion";
-    const p = document.createElement("p");
-    p.className = "muted";
-    p.textContent =
-      "This note has no links. Connect it to its closest note in the vault?";
-    const preview = document.createElement("div");
-    preview.className = "gap-query";
-    preview.textContent = `[[${neighbor.title}]] · ${Math.round(best.score * 100)}% similar`;
-    const btn = document.createElement("button");
-    btn.className = "q-btn q-semantic";
-    btn.textContent = "add this link";
-    btn.title = `Append [[${targetBase}]] to this note`;
-    btn.addEventListener("click", async () => {
-      btn.disabled = true;
-      btn.textContent = "adding…";
-      try {
-        const d = await api<{ added: boolean; error?: string }>(
-          "/api/gaps/link",
-          { json: { id: n.id, target: targetBase } },
-        );
-        btn.textContent = d.added
-          ? "linked ✓ — rescan to see it"
-          : "already linked";
-        btn.disabled = false;
-        btn.onclick = () => rescan(false);
-      } catch {
-        btn.disabled = false;
-        btn.textContent = "add failed — retry";
-      }
-    });
-    box.append(h, p, preview, btn);
-    slot.appendChild(box);
-  }
-
   // Per-note research questions (F019): a button at the end of each note
   // generates 3-5 template questions from THAT note (its unresolved links
   // first). Generation is local and free; executing one runs consent-gated
@@ -9455,12 +9410,12 @@ async function boot() {
         );
         btn.remove();
         const h = document.createElement("h3");
-        h.textContent = "Research questions";
+        h.textContent = i18n.t("q.title");
         box.appendChild(h);
         if (!data.questions.length) {
           const p = document.createElement("p");
           p.className = "muted";
-          p.textContent = "no questions for this note";
+          p.textContent = i18n.t("q.empty");
           box.appendChild(p);
           return;
         }

@@ -4698,26 +4698,17 @@ body > :not(#graph) {
 }
 
 /* ---------- per-note research questions (F019) ---------- */
-#note-questions,
-#orphan-link {
+#note-questions {
   margin-top: 18px;
   border-top: 1px solid var(--border);
   padding-top: 10px;
 }
-#note-questions h3,
-#orphan-link h3 {
+#note-questions h3 {
   margin: 0 0 8px;
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 1px;
   color: var(--muted);
-}
-#orphan-link p {
-  margin: 0 0 8px;
-  font-size: 12.5px;
-}
-#orphan-link .gap-query {
-  margin-bottom: 8px;
 }
 /* F035: matched-passage highlight when opening a semantic hit. The Custom
    Highlight API paints via ::highlight() (only color / background / decoration
