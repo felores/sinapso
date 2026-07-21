@@ -137,6 +137,28 @@ test("note properties toggle without reserving collapsed space", async ({
   }
 });
 
+test("the blank header span copies the open note path", async ({ page }) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  const file = await createTestNote(page);
+  try {
+    await openTestNote(page);
+    const actions = page.locator("#reader-actions");
+    const archive = page.locator("#reader-archive");
+    const right = actions.locator(".reader-actions-right");
+    const [actionsBox, archiveBox, rightBox] = await Promise.all([
+      actions.boundingBox(),
+      archive.boundingBox(),
+      right.boundingBox(),
+    ]);
+    const x = (archiveBox!.x + archiveBox!.width + rightBox!.x) / 2;
+    await page.mouse.click(x, actionsBox!.y + actionsBox!.height / 2);
+    await expect(page.locator(".copy-toast")).toHaveText("Copied!");
+  } finally {
+    await assertCleanBrowser();
+    await removeTestNote(page, file);
+  }
+});
+
 test("wiki notes replace the inline notice with a compact control before Versions", async ({
   page,
 }) => {

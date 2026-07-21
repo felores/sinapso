@@ -257,13 +257,11 @@ describe("wiki ingest proposals", () => {
       .set(TOKEN_HEADER, t)
       .send({
         wikiId: "wiki",
-        operations: [
-          ...proposed.body.operations.slice(1),
-          proposed.body.operations[0],
-        ],
+        operations: proposed.body.operations,
       });
     expect(applied.status).toBe(200);
     expect(applied.body.ids).toContain("wiki/new-page.md");
+    expect(applied.body.primaryId).toBe("wiki/new-page.md");
     expect(readFileSync(join(f.vault, "wiki", "new-page.md"), "utf-8")).toBe(
       "# New\n",
     );

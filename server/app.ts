@@ -185,6 +185,7 @@ import {
   buildWikiIngestProposal,
   readWikiContracts,
   resolveWikiTarget,
+  validateWikiOperations,
 } from "./integrations/wiki-ingest.js";
 import { excerptFor } from "./integrations/excerpt.js";
 import {
@@ -2140,11 +2141,19 @@ export function createApp(
           if (!entry || !convertedFromResearchEntry(entry))
             throw new WriteError(400, "research entry cannot be ingested");
         }
+        const operations = validateWikiOperations(
+          vaultRoot,
+          wiki,
+          b.operations,
+        );
+        const primaryId = operations.find(
+          (operation) => operation.type === "create" && !operation.raw,
+        )?.path;
         const ids = applyWikiIngestOperations(
           writeDeps(),
           vaultRoot,
           wiki,
-          b.operations,
+          operations,
           { sourceNote, existingRaw },
         );
         const graphUpdated = refreshAfterCreate();
@@ -2155,6 +2164,7 @@ export function createApp(
               ok: true,
               ids,
               id: move,
+              primaryId,
               graphUpdated,
               graphRefreshFailed: !graphUpdated,
             });
@@ -2162,6 +2172,7 @@ export function createApp(
             res.json({
               ok: true,
               ids,
+              primaryId,
               graphUpdated,
               graphRefreshFailed: !graphUpdated,
             });
@@ -2171,6 +2182,7 @@ export function createApp(
         res.json({
           ok: true,
           ids,
+          primaryId,
           removedHistory: Boolean(researchId),
           graphUpdated,
           graphRefreshFailed: !graphUpdated,

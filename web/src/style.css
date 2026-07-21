@@ -2742,10 +2742,20 @@ body > :not(#graph) {
   display: none;
 }
 .note-editor .cm-md-codeblock pre {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
   box-sizing: border-box;
   margin: 0;
   max-width: 100%;
+  overflow-x: auto;
+  padding: 10px 12px;
   white-space: pre;
+}
+.note-editor .cm-md-codeblock pre code {
+  background: none;
+  border-radius: 0;
+  padding: 0;
 }
 /* Rendered table preview (block widget); click to edit the source. */
 .note-editor .cm-md-table {

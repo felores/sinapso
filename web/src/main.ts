@@ -3070,8 +3070,9 @@ async function boot() {
     }
   });
 
-  // Click the path in the header to copy it to the clipboard.
-  $("#reader-path").addEventListener("click", async () => {
+  // The whole non-button span of the first header row copies the path, even
+  // when flex layout leaves visual space beside the truncated text.
+  const copyReaderPath = async () => {
     if (!selected || selected.phantom) return;
     try {
       await navigator.clipboard.writeText(selected.id);
@@ -3086,6 +3087,11 @@ async function boot() {
     } catch {
       /* clipboard unavailable (no permission / insecure context) */
     }
+  };
+  $("#reader-path").addEventListener("click", copyReaderPath);
+  $("#reader-actions").addEventListener("click", (event) => {
+    if (!(event.target as HTMLElement).closest("button, #reader-path"))
+      void copyReaderPath();
   });
 
   // ---- reader panel: draggable (header) + resizable (edge/corner) ----
@@ -8740,6 +8746,36 @@ async function boot() {
     return true;
   }
 
+  async function restoreResearchAfterWikiApply() {
+    const body = $("#research-body");
+    if (researchCollection === "inbox") {
+      await teardownResearchVaultEditor({ flush: false });
+      await loadInbox();
+      const next = inboxCursorState.items[0];
+      if (next) {
+        await openInboxNote(next.id);
+        return;
+      }
+      renderInboxListInto(body);
+      $("#research-title").textContent = i18n.t("inbox.title");
+      updateHistoryNav();
+      return;
+    }
+    await teardownResearchDocument();
+    await loadHistory();
+    const current = researchHistory.find(
+      (entry) => entry.id === currentEntryId,
+    );
+    const next = current ?? researchHistory[0];
+    if (next) {
+      await showHistoryEntry(next);
+      return;
+    }
+    currentEntryId = null;
+    body.innerHTML = "";
+    updateHistoryNav();
+  }
+
   interface WikiIngestOperation {
     type: "create" | "edit" | "move";
     path: string;
@@ -8809,6 +8845,7 @@ async function boot() {
       try {
         const data = await api<{
           ids?: string[];
+          primaryId?: string;
           error?: string;
           graphUpdated?: boolean;
           graphRefreshFailed?: boolean;
@@ -8822,21 +8859,15 @@ async function boot() {
         });
         if (!data.ids?.length)
           throw new Error(data.error ?? i18n.t("wiki.applyFail"));
-        const preferred = proposal.operations.findIndex((op) => !op.raw);
-        const id = data.ids[preferred >= 0 ? preferred : 0] ?? data.ids[0];
-        body.innerHTML = `<p class="muted">${i18n.t("wiki.appliedOpening")}</p>`;
+        const id = data.primaryId ?? data.ids[0];
         const opened = await openAfterIngest(id, false, data.graphUpdated);
+        await restoreResearchAfterWikiApply();
         if (!opened) {
           const message = i18n.t(
             data.graphRefreshFailed
               ? "research.graphRefreshFailed"
               : "research.savedNotOpened",
           );
-          body.innerHTML = "";
-          const status = document.createElement("p");
-          status.className = "muted";
-          status.textContent = message;
-          body.appendChild(status);
           researchError(message);
         }
       } catch (e) {

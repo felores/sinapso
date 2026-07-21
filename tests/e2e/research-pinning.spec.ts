@@ -378,6 +378,43 @@ test("Research vault notes expose wikilink autocomplete", async ({ page }) => {
   }
 });
 
+test("Research Inbox notes render code blocks in their own scrolling container", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  const noteId = "inbox/code-block-research.md";
+  const file = join(E2E_VAULT, noteId);
+  const sessionToken = await token(page);
+  try {
+    writeFileSync(
+      file,
+      "# Code Block Research\n\n```ts\nconst veryLongLine = 'this must scroll inside its own code block rather than widening the research panel';\n```\n",
+    );
+    await page.request.post("/api/rescan", {
+      headers: { "x-sinapso-token": sessionToken },
+    });
+    await page.addInitScript(() =>
+      localStorage.setItem("sinapso-qmd-prompted", "1"),
+    );
+    await page.goto("/");
+    await page.locator("#new-doc-btn").click();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page
+      .locator(".inbox-list-item", { hasText: "code-block-research" })
+      .click();
+    const block = page.locator(".inbox-editor .cm-md-codeblock pre");
+    await expect(block).toBeVisible();
+    await expect(block).toHaveCSS("overflow-x", "auto");
+    await expect(block).toHaveCSS("border-top-style", "solid");
+  } finally {
+    rmSync(file, { force: true });
+    await page.request.post("/api/rescan", {
+      headers: { "x-sinapso-token": sessionToken },
+    });
+    await assertCleanBrowser();
+  }
+});
+
 test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user navigation", async ({
   page,
 }) => {
@@ -795,6 +832,258 @@ test("wiki ingest preparation preserves the visible document and surfaces an err
     await errorCard.locator(".ac-dismiss").click();
     await expect(page.locator("#activity-cards")).toBeEmpty();
   } finally {
+    await assertCleanBrowser();
+  }
+});
+
+test("wiki ingest opens the first created wiki note and restores Research", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  try {
+    const harness = await installVoiceHarness(page);
+    const doc = await createDocument(
+      page,
+      "Research Before Ingest",
+      "RESTORE THIS RESEARCH DOCUMENT",
+    );
+    await harness.show(doc.id);
+    let applied = false;
+    await page.route("**/api/wiki-ingest/propose", (route) =>
+      route.fulfill({
+        json: {
+          wiki: { id: "wiki", label: "Test Wiki", path: "wiki" },
+          source: "Research Before Ingest",
+          title: "Derived note",
+          researchId: doc.id,
+          operations: [
+            { type: "create", path: "raw/source.md", raw: true },
+            {
+              type: "create",
+              path: "wiki/primary.md",
+              content: "# Primary wiki note\n",
+            },
+          ],
+        },
+      }),
+    );
+    await page.route("**/api/wiki-ingest/apply", (route) => {
+      applied = true;
+      return route.fulfill({
+        json: {
+          ids: ["wiki/primary.md", "raw/source.md"],
+          primaryId: "wiki/primary.md",
+          graphUpdated: true,
+        },
+      });
+    });
+    await page.route("**/api/graph", async (route) => {
+      const response = await route.fetch();
+      if (!applied) {
+        await route.fulfill({ response });
+        return;
+      }
+      const graph = (await response.json()) as {
+        nodes: Array<Record<string, unknown>>;
+      };
+      await route.fulfill({
+        response,
+        json: {
+          ...graph,
+          nodes: [
+            ...graph.nodes,
+            {
+              id: "wiki/primary.md",
+              title: "Primary wiki note",
+              in: 0,
+              out: 0,
+            },
+          ],
+        },
+      });
+    });
+    await page.route("**/api/note?*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get("id") !== "wiki/primary.md") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        json: {
+          markdown: "# Primary wiki note\n\nCreated by ingest.\n",
+          baseHash: "0".repeat(64),
+        },
+      });
+    });
+    await page.route("**/api/note-versions?*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get("id") !== "wiki/primary.md") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({ json: { versions: [] } });
+    });
+
+    await page.locator("#research-ingest-wiki").click();
+    await page.locator("#research-wiki-menu-ingest").click();
+    await page.locator("#activity-cards .ac-cta-primary").click();
+    await page.locator(".wiki-proposal-actions .web-save").first().click();
+
+    await expect(page.locator("#reader-editor .cm-content")).toContainText(
+      "Primary wiki note",
+    );
+    await expectVisibleQuery(page, "RESTORE THIS RESEARCH DOCUMENT");
+  } finally {
+    await assertCleanBrowser();
+  }
+});
+
+test("wiki ingest restores the next Inbox note after moving its source", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  const sourceId = "inbox/ingest-source.md";
+  const remainingId = "inbox/remaining-note.md";
+  const sourceFile = join(E2E_VAULT, sourceId);
+  const remainingFile = join(E2E_VAULT, remainingId);
+  const sessionToken = await token(page);
+  try {
+    writeFileSync(sourceFile, "# Ingest source\n\nMove me to RAW.\n");
+    writeFileSync(remainingFile, "# Remaining Inbox Note\n\nKeep me open.\n");
+    await page.request.post("/api/rescan", {
+      headers: { "x-sinapso-token": sessionToken },
+    });
+    let applied = false;
+    await page.route("**/api/wiki-ingest/propose", (route) =>
+      route.fulfill({
+        json: {
+          wiki: { id: "wiki", label: "Test Wiki", path: "wiki" },
+          source: "Ingest source",
+          title: "Derived note",
+          sourceNote: sourceId,
+          operations: [
+            {
+              type: "move",
+              path: "raw/ingest-source.md",
+              raw: true,
+              sourceNote: sourceId,
+            },
+            {
+              type: "create",
+              path: "wiki/primary.md",
+              content: "# Primary wiki note\n",
+            },
+          ],
+        },
+      }),
+    );
+    await page.route("**/api/wiki-ingest/apply", (route) => {
+      applied = true;
+      return route.fulfill({
+        json: {
+          ids: ["wiki/primary.md", "raw/ingest-source.md"],
+          primaryId: "wiki/primary.md",
+          graphUpdated: true,
+        },
+      });
+    });
+    await page.route("**/api/inbox", async (route) => {
+      if (!applied) {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        json: {
+          destination: "inbox",
+          entries: [
+            {
+              id: remainingId,
+              title: "Remaining Inbox Note",
+              modifiedAt: new Date().toISOString(),
+              baseHash: "0".repeat(64),
+            },
+          ],
+        },
+      });
+    });
+    await page.route("**/api/graph", async (route) => {
+      const response = await route.fetch();
+      if (!applied) {
+        await route.fulfill({ response });
+        return;
+      }
+      const graph = (await response.json()) as {
+        nodes: Array<Record<string, unknown>>;
+      };
+      await route.fulfill({
+        response,
+        json: {
+          ...graph,
+          nodes: [
+            ...graph.nodes,
+            {
+              id: "wiki/primary.md",
+              title: "Primary wiki note",
+              in: 0,
+              out: 0,
+            },
+          ],
+        },
+      });
+    });
+    await page.route("**/api/note?*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get("id") !== "wiki/primary.md") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        json: {
+          markdown: "# Primary wiki note\n\nCreated by ingest.\n",
+          baseHash: "0".repeat(64),
+        },
+      });
+    });
+    await page.route("**/api/note-versions?*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get("id") !== "wiki/primary.md") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({ json: { versions: [] } });
+    });
+
+    await page.addInitScript(() =>
+      localStorage.setItem("sinapso-qmd-prompted", "1"),
+    );
+    await page.goto("/");
+    await page.locator("#new-doc-btn").click();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page
+      .locator(".inbox-list-item", { hasText: "ingest-source" })
+      .click();
+    await page.locator("#research-save-inbox").click();
+    await expect(page.locator("#reader-editor .cm-content")).toContainText(
+      "Ingest source",
+    );
+    const ingest = page.locator("#reader-wiki-top .web-save");
+    await expect(ingest).toBeEnabled();
+    await ingest.click();
+    await page.locator("#activity-cards .ac-cta-primary").click();
+    await page.locator(".wiki-proposal-actions .web-save").first().click();
+
+    await expect(page.locator("#reader-editor .cm-content")).toContainText(
+      "Primary wiki note",
+    );
+    await expect(page.locator("#research .cm-content")).toContainText(
+      "Remaining Inbox Note",
+    );
+  } finally {
+    rmSync(sourceFile, { force: true });
+    rmSync(remainingFile, { force: true });
+    await page.request.post("/api/rescan", {
+      headers: { "x-sinapso-token": sessionToken },
+    });
     await assertCleanBrowser();
   }
 });
