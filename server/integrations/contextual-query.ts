@@ -1,4 +1,5 @@
 import { tierCompletion, type ResolvedTier } from "./llm.js";
+import { outputLanguageInstruction, type UiLocale } from "./locale.js";
 import type { OpenRouterOptions } from "./openrouter.js";
 
 export interface ContextualQueryResult {
@@ -15,6 +16,7 @@ interface BuildOpts {
   llm?: ResolvedTier | null;
   openrouter?: OpenRouterOptions;
   chat?: Chat;
+  locale?: UiLocale;
 }
 
 interface Slot {
@@ -122,7 +124,7 @@ export async function buildContextualQuery(
         [
           {
             role: "system",
-            content: "You produce concise web search queries.",
+            content: `You produce concise web search queries. ${outputLanguageInstruction(opts.locale ?? "en")}`,
           },
           { role: "user", content: ask },
         ],

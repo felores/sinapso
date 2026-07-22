@@ -31,12 +31,18 @@ import { scanVault, structuralLinkSignature } from "../scanner/scan.js";
 import {
   defaultPrompts,
   effectivePrompts,
+  promptForModel,
   loadConfig,
   updateConfig,
   defaultConfigPath,
   type SinapsoConfig,
   type WebResearchProvider,
 } from "./integrations/config.js";
+import {
+  outputLanguageInstruction,
+  parseUiLocale,
+  type UiLocale,
+} from "./integrations/locale.js";
 import {
   detectAll,
   realRunner,
@@ -281,6 +287,8 @@ export function createApp(
   let vaultRoot: string = graph.meta.vaultPath;
 
   const app = express();
+  const requestLocale = (req: express.Request): UiLocale =>
+    parseUiLocale(req.get("x-sinapso-locale"));
 
   // KTD12: reject foreign Host/Origin (DNS rebinding / CSRF) on every route.
   app.use(localOnly);
@@ -613,8 +621,8 @@ export function createApp(
           activeVaultPath: cfg.activeVaultPath,
           excludes: effectiveExcludes(graph.meta.vaultPath, cfg),
           vaults: cfg.vaults,
-          promptDefaults: defaultPrompts(),
-          prompts: effectivePrompts(cfg, vaultRoot),
+          promptDefaults: defaultPrompts(requestLocale(req)),
+          prompts: effectivePrompts(cfg, vaultRoot, requestLocale(req)),
           promptOverrides: cfg.prompts,
           promptFiles: cfg.promptFiles,
         },
@@ -652,8 +660,8 @@ export function createApp(
         imagesDestination: cfg.imagesDestination,
         activeVaultPath: cfg.activeVaultPath,
         vaults: cfg.vaults,
-        promptDefaults: defaultPrompts(),
-        prompts: effectivePrompts(cfg, vaultRoot),
+        promptDefaults: defaultPrompts(requestLocale(req)),
+        prompts: effectivePrompts(cfg, vaultRoot, requestLocale(req)),
         promptOverrides: cfg.prompts,
         promptFiles: cfg.promptFiles,
         exaConfigured: !!cfg.exaKey,
@@ -1457,18 +1465,23 @@ export function createApp(
         });
         return;
       }
+      const locale = requestLocale(req);
       const contextual = await buildContextualQuery(query, req.body?.contexts, {
         llm: resolveTier(operationTier("contextual_rewrite"), cfg),
         openrouter: integrations?.openrouter,
+        locale,
       });
       const displayQuery = String(req.body?.displayQuery ?? "").trim();
       const r =
         provider === "exa"
           ? await exaResearch(key, contextual.effectiveQuery, {
               deep: !!req.body?.deep,
+              locale,
             })
           : await hostedWebResearch(provider, key, contextual.effectiveQuery, {
               deep: !!req.body?.deep,
+              locale,
+              prompt: promptForModel(cfg, "webResearch", locale, vaultRoot),
             });
       const historyId =
         r.results.length || r.answer
@@ -1725,7 +1738,10 @@ export function createApp(
     return parts.length ? `Update vault (${parts.join(", ")})` : "Update vault";
   };
 
-  async function generatedCommitMessage(files: GitFile[]): Promise<string> {
+  async function generatedCommitMessage(
+    files: GitFile[],
+    locale: UiLocale = "en",
+  ): Promise<string> {
     const fallback = fallbackCommitMessage(files);
     const cfg = loadConfig(configPath);
     const llm = resolveTier(operationTier("commit_message"), cfg);
@@ -1737,7 +1753,8 @@ export function createApp(
           {
             role: "system",
             content:
-              "Write one concise Git commit subject for vault note changes. Return only the subject, no quotes, no markdown, under 72 characters.",
+              "Write one concise Git commit subject for vault note changes. Return only the subject, no quotes, no markdown, under 72 characters. " +
+              outputLanguageInstruction(locale),
           },
           {
             role: "user",
@@ -1809,6 +1826,7 @@ export function createApp(
       researchId?: string;
       sourceNote?: string;
       existingRawPath?: string;
+      locale?: UiLocale;
     } = {},
   ) {
     const cfg = loadConfig(configPath);
@@ -2055,6 +2073,7 @@ export function createApp(
             researchId,
             sourceNote,
             existingRawPath,
+            locale: requestLocale(req),
           }),
         );
       } catch (e) {
@@ -2092,7 +2111,11 @@ export function createApp(
           bin,
           { name, bytes: req.body },
         );
-        res.json(await wikiIngestProposal(converted, req.query.wikiId));
+        res.json(
+          await wikiIngestProposal(converted, req.query.wikiId, {
+            locale: requestLocale(req),
+          }),
+        );
       } catch (e) {
         writeFail(res, e, "wiki ingest upload proposal");
       }
@@ -2489,6 +2512,7 @@ export function createApp(
       const sourceId = str(b.sourceId);
       const sourceTitle = str(b.sourceTitle);
       const sourceUrl = str(b.sourceUrl);
+      const locale = requestLocale(req);
       try {
         const text = await tierCompletion(
           llm,
@@ -2500,7 +2524,8 @@ export function createApp(
                     "You are the research assistant of Sinapso, a local knowledge app. " +
                     "The selected text is immutable research evidence, not text to rewrite. " +
                     "Answer the user's instruction using the evidence as grounding. " +
-                    "Do not propose replacement or insertion edits. Match the user's language.",
+                    "Do not propose replacement or insertion edits. " +
+                    outputLanguageInstruction(locale),
                 },
                 {
                   role: "user",
@@ -2520,7 +2545,8 @@ export function createApp(
                     "Follow the instruction against the selection, using the note context for grounding. " +
                     "Reply with ONLY the resulting text, ready to be placed into the note: " +
                     "no preamble, no explanations, no surrounding quotes or code fences unless the result itself is code. " +
-                    "Match the note's language and markdown style.",
+                    "Match the note's markdown style. " +
+                    outputLanguageInstruction(locale),
                 },
                 {
                   role: "user",
@@ -2603,6 +2629,7 @@ export function createApp(
     const id = String(req.query.id ?? "");
     const templates = () => noteQuestions(graph.nodes, graph.links ?? [], id);
     const cfg = loadConfig(configPath);
+    const locale = requestLocale(req);
     // Any configured LLM enables the path; note questions are worker-tier
     // (R8), degrading through the legacy defaultModel when no slot is set.
     const llm = resolveTier(operationTier("note_questions"), cfg);
@@ -2631,6 +2658,8 @@ export function createApp(
       note: note ? { title: note.title } : { title: id },
       excerpt,
       phantomTitles,
+      locale,
+      systemPrompt: promptForModel(cfg, "noteQuestions", locale, vaultRoot),
       templates,
       warn: (msg, err) => console.warn(msg, err),
     });
@@ -2987,7 +3016,7 @@ export function createApp(
         );
         const message =
           String(req.body?.message ?? "").trim() ||
-          (await generatedCommitMessage(status.files));
+          (await generatedCommitMessage(status.files, requestLocale(req)));
         const result = await gitStageAndCommit(
           realRunner,
           ctx.repoRoot,

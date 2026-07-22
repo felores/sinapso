@@ -19,6 +19,11 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { confineNoteId } from "./paths.js";
+import {
+  outputLanguageInstruction,
+  parseUiLocale,
+  type UiLocale,
+} from "./locale.js";
 
 /** Voice assistant: chosen realtime provider + voice, and a per-provider API
  * key (one only reaches the local voice relay, never the browser). */
@@ -195,19 +200,33 @@ export interface ConfigPatch {
   promptFiles?: Partial<PromptFiles>;
 }
 
-const PROMPT_DEFAULTS: Record<PromptKey, string> = {
-  wikiIngest:
-    "Read the selected wiki contracts and turn the source into proposed Markdown creates/edits that preserve the wiki's conventions, links, index, and log.",
-  noteQuestions:
-    "Generate concise web-research questions that close knowledge gaps around the current note. Reply as JSON strings only.",
-  voiceAssistant:
-    "You are the Sinapso voice assistant. Ground answers in the current view first, use vault tools for note questions, and ask before spending web credit.",
-  webResearch:
-    "Use web research only for user-requested external/current information. Return synthesized answers with sources and never auto-run spending searches while typing.",
+const PROMPT_DEFAULTS: Record<UiLocale, Record<PromptKey, string>> = {
+  en: {
+    wikiIngest:
+      "Read the selected wiki contracts and turn the source into proposed Markdown creates/edits that preserve the wiki's conventions, links, index, and log. Write the proposed Markdown in English.",
+    noteQuestions:
+      "Generate concise web-research questions that close knowledge gaps around the current note. Reply as JSON strings only. Write the questions in English.",
+    voiceAssistant:
+      "You are the Sinapso voice assistant. Ground answers in the current view first, use vault tools for note questions, and ask before spending web credit.",
+    webResearch:
+      "Use web research only for user-requested external/current information. Return synthesized answers with sources and never auto-run spending searches while typing. Respond in English.",
+  },
+  es: {
+    wikiIngest:
+      "Lee los contratos de la wiki seleccionada y convierte la fuente en propuestas de creación o edición Markdown que preserven las convenciones, enlaces, índice y registro de la wiki. Escribe el Markdown propuesto en español.",
+    noteQuestions:
+      "Genera preguntas concisas de investigación web que cierren brechas de conocimiento sobre la nota actual. Responde solo como un arreglo JSON de cadenas. Escribe las preguntas en español.",
+    voiceAssistant:
+      "Eres el asistente de voz de Sinapso. Fundamenta primero las respuestas en la vista actual, usa herramientas de la bóveda para preguntas sobre notas y pide confirmación antes de gastar crédito web.",
+    webResearch:
+      "Usa investigación web solo para información externa o actual solicitada por la persona usuaria. Devuelve respuestas sintetizadas con fuentes y nunca ejecutes búsquedas con costo mientras se escribe. Responde en español.",
+  },
 };
 
-export function defaultPrompts(): Record<PromptKey, string> {
-  return { ...PROMPT_DEFAULTS };
+export function defaultPrompts(
+  locale: UiLocale = "en",
+): Record<PromptKey, string> {
+  return { ...PROMPT_DEFAULTS[parseUiLocale(locale)] };
 }
 
 function defaultPromptFiles(): PromptFiles {
@@ -223,8 +242,9 @@ export function effectivePrompts(
   cfg: Pick<SinapsoConfig, "prompts"> &
     Partial<Pick<SinapsoConfig, "promptFiles" | "activeVaultPath">>,
   vaultRoot = cfg.activeVaultPath ?? "",
+  locale: UiLocale = "en",
 ): Record<PromptKey, string> {
-  const defaults = defaultPrompts();
+  const defaults = defaultPrompts(locale);
   const prompts: Record<PromptKey, string> = {
     wikiIngest: cfg.prompts.wikiIngest ?? defaults.wikiIngest,
     noteQuestions: cfg.prompts.noteQuestions ?? defaults.noteQuestions,
@@ -238,13 +258,28 @@ export function effectivePrompts(
     const file = confineNoteId(vaultRoot, source.path);
     if (!file || !existsSync(file)) continue;
     try {
-      const content = readFileSync(file, "utf-8").trim();
-      if (content) prompts[key] = content;
+      const content = readFileSync(file, "utf-8");
+      if (content.trim()) prompts[key] = content;
     } catch {
       // Keep the inline/default prompt when the optional file cannot be read.
     }
   }
   return prompts;
+}
+
+export function promptForModel(
+  cfg: Pick<SinapsoConfig, "prompts"> &
+    Partial<Pick<SinapsoConfig, "promptFiles" | "activeVaultPath">>,
+  key: PromptKey,
+  locale: UiLocale = "en",
+  vaultRoot = cfg.activeVaultPath ?? "",
+): string {
+  const value = effectivePrompts(cfg, vaultRoot, locale)[key];
+  const isDefault =
+    cfg.prompts[key] === null && !cfg.promptFiles?.[key]?.enabled;
+  return isDefault
+    ? value
+    : `${value}${value.endsWith("\n") ? "\n" : "\n\n"}${outputLanguageInstruction(locale)}`;
 }
 
 export function defaultConfig(): SinapsoConfig {

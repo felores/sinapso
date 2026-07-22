@@ -1,3 +1,5 @@
+import { getLang } from "./i18n.js";
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -13,6 +15,7 @@ export interface ApiOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE";
   json?: unknown;
   body?: BodyInit;
+  signal?: AbortSignal;
   token?: boolean;
   headers?: Record<string, string>;
   fetch?: typeof fetch;
@@ -67,9 +70,10 @@ export async function api<T = unknown>(
   }
   const request = async () => {
     const headers: Record<string, string> = { ...(opts.headers ?? {}) };
+    headers["x-sinapso-locale"] = getLang();
     if (opts.json !== undefined) headers["content-type"] = "application/json";
     if (needsToken) headers["x-sinapso-token"] = await getApiToken(fetchFn);
-    return fetchFn(path, { method, headers, body });
+    return fetchFn(path, { method, headers, body, signal: opts.signal });
   };
   let res = await request();
   if (needsToken && res.status === 403) {
@@ -83,10 +87,9 @@ export async function apiRaw(
   path: string,
   init?: RequestInit & { token?: boolean },
 ): Promise<Response> {
-  if (!init?.token) return fetch(path, init);
-  const token = await getApiToken();
-  const headers = new Headers(init.headers);
-  headers.set("x-sinapso-token", token);
+  const headers = new Headers(init?.headers);
+  headers.set("x-sinapso-locale", getLang());
+  if (init?.token) headers.set("x-sinapso-token", await getApiToken());
   return fetch(path, { ...init, headers });
 }
 

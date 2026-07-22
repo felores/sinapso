@@ -142,12 +142,20 @@ describe("exa adapter", () => {
     });
     expect(state.requests[0].type).toBe("deep");
     expect(state.requests[0].outputSchema).toEqual({ type: "text" });
+    expect(state.queries[0]).toContain("Respond in English.");
     expect(results).toHaveLength(2); // sources still mapped
     expect(answer?.content).toContain("Synthesized research answer");
     expect(answer?.citations).toEqual([
       { url: "https://example.com/zk", title: "Zettelkasten Method" },
       { url: "https://example.com/other", title: "Other Source" },
     ]);
+  });
+
+  it("adds the selected language instruction to Exa deep research", async () => {
+    const { state, makeClient } = fakeExa(() => CANNED_DEEP);
+    const research = createExaAdapter({ makeClient, retryDelays: [1] });
+    await research(KEY, "consulta", { deep: true, locale: "es" });
+    expect(state.queries[0]).toBe("consulta\n\nResponde en español.");
   });
 
   it("deep response without output degrades to answer: null", async () => {

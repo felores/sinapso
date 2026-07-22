@@ -138,6 +138,7 @@ async function installVoiceHarness(page: Page, researchTools = false) {
   let socket: WebSocketRoute | undefined;
   let includeLongEntry = false;
   let includeWebEntry = false;
+  const extraHistoryEntries: Array<Record<string, unknown>> = [];
 
   await page.route("**/api/integrations", async (route) => {
     const response = await route.fetch();
@@ -178,7 +179,7 @@ async function installVoiceHarness(page: Page, researchTools = false) {
     }
     const response = await route.fetch();
     const body: HistoryResponse = await response.json();
-    const entries = [...body.entries];
+    const entries = [...extraHistoryEntries, ...body.entries];
     if (includeLongEntry) entries.unshift(syntheticLongEntry);
     if (includeWebEntry) entries.unshift(syntheticWebEntry);
     await route.fulfill({
@@ -284,6 +285,9 @@ async function installVoiceHarness(page: Page, researchTools = false) {
     },
     includeWebEntry: () => {
       includeWebEntry = true;
+    },
+    addHistoryEntry: (entry: Record<string, unknown>) => {
+      extraHistoryEntries.unshift(entry);
     },
   };
 }
@@ -654,17 +658,43 @@ test("evidence is immutable and long snippets expand without opening the note", 
 test("read-only research selections use the compact opaque action toolbar", async ({
   page,
 }) => {
+  test.setTimeout(75_000);
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  const inboxId = `inbox/selection-terminal-${Date.now()}.md`;
+  const inboxFile = join(E2E_VAULT, inboxId);
   try {
-    const researchRequests: Array<{ query: string; deep: boolean }> = [];
+    const researchRequests: Array<{
+      query: string;
+      deep: boolean;
+      contexts?: {
+        current?: {
+          title?: string;
+          query?: string;
+          url?: string;
+          text?: string;
+        };
+      };
+    }> = [];
+    const releaseResearch: Array<() => Promise<void>> = [];
     await page.route("**/api/research", async (route) => {
       if (new URL(route.request().url()).pathname !== "/api/research") {
         await route.continue();
         return;
       }
       researchRequests.push(route.request().postDataJSON());
-      await route.fulfill({
-        json: { answer: null, results: [], contextWarning: null },
+      await new Promise<void>((resolve) => {
+        releaseResearch.push(async () => {
+          const id = `selection-research-${researchRequests.length}`;
+          await route.fulfill({
+            json: {
+              answer: null,
+              results: [],
+              contextWarning: null,
+              historyId: id,
+            },
+          });
+          resolve();
+        });
       });
     });
     const harness = await installVoiceHarness(page, true);
@@ -677,7 +707,7 @@ test("read-only research selections use the compact opaque action toolbar", asyn
     const buttons = toolbar.locator(".research-selection-actions button");
     await expect(buttons).toHaveCount(3);
     await expect(buttons.nth(0)).toHaveAttribute("title", "Go deep");
-    await expect(buttons.nth(1)).toHaveAttribute("title", "Fact check");
+    await expect(buttons.nth(1)).toHaveAttribute("title", "Alternatives");
     await expect(buttons.nth(2)).toHaveAttribute("title", "Ask AI…");
     await expect(toolbar.locator(".research-selection-input")).toBeHidden();
     await expect(toolbar.locator(".research-selection-answer")).toBeHidden();
@@ -748,22 +778,109 @@ test("read-only research selections use the compact opaque action toolbar", asyn
       ),
     ).not.toBe("none");
 
+    await page.locator("#research-pin").click();
     await buttons.nth(0).click();
     await expect.poll(() => researchRequests.length).toBe(1);
+    await expect(page.locator("#research-body")).toContainText(
+      "Toolbar source 1",
+    );
+    await expect(page.locator("#research-body")).not.toContainText(
+      "researching in depth",
+    );
+    await expect(page.locator("#ops-status")).toContainText(
+      "Researching selected evidence",
+    );
+    await expect(page.locator("#activity-cards")).toBeEmpty();
+    await expect(page.locator("#selection-terminal-cards")).toBeEmpty();
     expect(researchRequests[0]).toMatchObject({
-      query: syntheticWebEntry.results[0].snippet,
+      query: "Find deeper primary-source detail on this topic.",
       deep: true,
+      contexts: {
+        current: {
+          title: syntheticWebEntry.query,
+          query: syntheticWebEntry.query,
+          url: syntheticWebEntry.results[0].url,
+          text: syntheticWebEntry.results[0].snippet,
+        },
+      },
     });
 
-    await harness.show(syntheticWebEntry.id);
-    await page.locator(".web-snippet").first().selectText();
-    await page.locator(".research-selection-actions button").nth(1).click();
+    expect(releaseResearch).toHaveLength(1);
+    await releaseResearch.shift()!();
+    harness.addHistoryEntry({
+      id: "selection-research-1",
+      ts: "2026-01-02T00:00:00.000Z",
+      mode: "web",
+      query: "Find deeper primary-source detail on this topic.",
+      answer: null,
+      results: [],
+    });
+    const readyCard = page.locator("#selection-terminal-cards .terminal-card", {
+      hasText: "Find deeper primary-source detail",
+    });
+    await expect(readyCard).toBeVisible();
+    await expect(
+      readyCard.getByRole("button", { name: "Open research" }),
+    ).toBeVisible();
+    const desktopCard = await readyCard.boundingBox();
+    const desktopResearch = await page.locator("#research").boundingBox();
+    expect(desktopCard).not.toBeNull();
+    expect(desktopResearch).not.toBeNull();
+    expect(desktopCard!.x + desktopCard!.width).toBeLessThanOrEqual(
+      desktopResearch!.x + 1,
+    );
+    await buttons.nth(1).click();
     await expect.poll(() => researchRequests.length).toBe(2);
     expect(researchRequests[1]).toMatchObject({
-      query: "Fact-check this claim using reliable independent sources.",
+      query: "Find credible alternative perspectives on this topic.",
       deep: true,
     });
+    expect(releaseResearch).toHaveLength(1);
+    await releaseResearch.shift()!();
+    harness.addHistoryEntry({
+      id: "selection-research-2",
+      ts: "2026-01-03T00:00:00.000Z",
+      mode: "web",
+      query: "Find credible alternative perspectives on this topic.",
+      answer: null,
+      results: [],
+    });
+    await expect(
+      page.locator("#selection-terminal-cards .terminal-card"),
+    ).toHaveCount(2);
+    writeFileSync(inboxFile, "# Selection terminal\n\nInbox stays editable.\n");
+    await page.locator("#research-toggle-inbox").click();
+    const inboxItem = page.locator(".inbox-list-item", {
+      hasText: "selection-terminal",
+    });
+    await inboxItem.click();
+    const inboxEditor = page.locator("#research .cm-content");
+    await inboxEditor.click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" Dirty before opening result.");
+    await expect(readyCard).toBeVisible();
+    await readyCard.getByRole("button", { name: "Open research" }).click();
+    await expect(page.locator("#research-body")).toContainText(
+      "Find deeper primary-source detail",
+    );
+    await expect
+      .poll(() => readFileSync(inboxFile, "utf-8"))
+      .toContain("Dirty before opening result.");
+    await expect(page.locator("#research-pin")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await page
+      .locator("#selection-terminal-cards .terminal-card", {
+        hasText: "Find credible alternative perspectives",
+      })
+      .getByRole("button", { name: "Open research" })
+      .click();
+    await expect(page.locator("#research-body")).toContainText(
+      "Find credible alternative perspectives",
+    );
   } finally {
+    rmSync(inboxFile, { force: true });
     await assertCleanBrowser();
   }
 });

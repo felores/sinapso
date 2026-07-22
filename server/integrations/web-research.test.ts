@@ -91,4 +91,26 @@ describe("hosted web research", () => {
       { url: "https://example.com/source", title: "Source" },
     ]);
   });
+
+  it("keeps a custom prompt verbatim and adds it to Spanish hosted research", async () => {
+    let body = "";
+    const research = createHostedWebResearchAdapter({
+      fetch: (async (_url: string, init?: RequestInit) => {
+        body = String(init?.body);
+        return new Response(
+          JSON.stringify({ output_text: "Respuesta", citations: [] }),
+          { status: 200 },
+        );
+      }) as typeof fetch,
+    });
+
+    await research("openai", "secret", "consulta", {
+      deep: true,
+      locale: "es",
+      prompt: "Custom prompt.\n\nResponde en español.",
+    });
+    const input = JSON.parse(body).input as string;
+    expect(input).toContain("Custom prompt.\n\nResponde en español.");
+    expect(input).toContain("Investiga esto a fondo");
+  });
 });

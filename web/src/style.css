@@ -1852,6 +1852,99 @@ body > :not(#graph) {
 #activity-cards:empty {
   display: none;
 }
+.terminal-card-host {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(320px, calc(100vw - 24px));
+  z-index: 14;
+  pointer-events: none;
+}
+.terminal-card-host:empty {
+  display: none;
+}
+.terminal-card {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.terminal-card-title {
+  font-weight: 600;
+}
+.terminal-card-detail {
+  color: var(--muted);
+  font-size: 11px;
+}
+.terminal-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.terminal-card button {
+  font: inherit;
+  font-size: 11.5px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.terminal-card button:focus-visible,
+.terminal-card summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.terminal-card-open {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: var(--bg) !important;
+  font-weight: 600 !important;
+}
+.terminal-card-dismiss {
+  margin-left: auto;
+  padding: 0 2px !important;
+  border: 0 !important;
+  color: var(--muted) !important;
+  font-size: 16px !important;
+  line-height: 1 !important;
+}
+.terminal-card-aggregate summary {
+  cursor: pointer;
+  color: var(--fg);
+  font-weight: 600;
+}
+.terminal-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.terminal-card-list button {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .terminal-card-host.terminal-card-mobile {
+    left: 12px !important;
+    right: 12px !important;
+    width: auto !important;
+    overflow-y: auto;
+    max-height: var(--terminal-safe-height);
+  }
+}
 .ac-card {
   pointer-events: auto;
   background: var(--panel-bg, var(--bg, #1b1f2a));

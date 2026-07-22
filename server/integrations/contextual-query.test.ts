@@ -10,6 +10,8 @@ const contexts = {
     source: "research",
     text: "selected research passage",
     title: "Prior research",
+    query: "Original research topic",
+    url: "https://example.com/source",
     truncated: true,
   },
 };
@@ -26,6 +28,8 @@ describe("contextual query helpers", () => {
     expect(out).toContain("zettelkasten");
     expect(out).toContain("Research (Prior research)");
     expect(out).toContain("Selected text: selected research passage");
+    expect(out).not.toContain("Original research topic");
+    expect(out).not.toContain("https://example.com/source");
   });
 
   it("uses OpenRouter rewrite when configured", async () => {
@@ -38,12 +42,35 @@ describe("contextual query helpers", () => {
     });
 
     expect(chat).toHaveBeenCalledOnce();
+    const calls = chat.mock.calls as unknown as [
+      unknown,
+      Array<{ content: string }>,
+    ][];
+    const prompt = calls[0][1][1].content;
+    expect(prompt).toContain("Selected research: Prior research");
+    expect(prompt).toContain("Selected text: selected research passage");
+    expect(prompt).not.toContain("Original research topic");
+    expect(prompt).not.toContain("https://example.com/source");
     expect(out).toMatchObject({
       effectiveQuery: "rewritten web query",
       contextApplied: true,
       contextRewriteSource: "openrouter",
       contextWarning: "Selected context was trimmed before research.",
     });
+  });
+
+  it("adds a selected-language directive to model rewrites", async () => {
+    const chat = vi.fn(async () => JSON.stringify({ query: "consulta" }));
+    await buildContextualQuery("original", contexts, {
+      llm: { provider: "openrouter", model: "test/model", key: "or-key" },
+      chat,
+      locale: "es",
+    });
+    const calls = chat.mock.calls as unknown as [
+      unknown,
+      Array<{ content: string }>,
+    ][];
+    expect(calls[0][1][0].content).toContain("Responde en español.");
   });
 
   it("falls back when no OpenRouter key is configured", async () => {

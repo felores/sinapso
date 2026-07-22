@@ -1,4 +1,5 @@
 import type { ResearchAnswer, ResearchResponse } from "./exa.js";
+import type { UiLocale } from "./locale.js";
 
 export type HostedWebProvider = "google" | "openai" | "xai";
 
@@ -120,12 +121,16 @@ export function createHostedWebResearchAdapter(
     provider: HostedWebProvider,
     key: string,
     query: string,
-    options: { deep?: boolean } = {},
+    options: { deep?: boolean; prompt?: string; locale?: UiLocale } = {},
   ): Promise<ResearchResponse> {
     const spec = PROVIDERS[provider];
-    const prompt = options.deep
-      ? `Research this thoroughly on the web and synthesize the answer with citations:\n\n${query}`
-      : query;
+    const deepInstruction =
+      options.locale === "es"
+        ? "Investiga esto a fondo en la web y sintetiza la respuesta con citas:"
+        : "Research this thoroughly on the web and synthesize the answer with citations:";
+    const prompt = [options.prompt, options.deep ? deepInstruction : "", query]
+      .filter(Boolean)
+      .join("\n\n");
     const google = provider === "google";
     const response = await fetchFn(spec.endpoint, {
       method: "POST",

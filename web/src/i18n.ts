@@ -283,13 +283,16 @@ const EN: Dict = {
   "editor.ai.placeholder": "Ask AI…",
   "editor.ai.evidencePlaceholder": "Ask about this evidence…",
   "research.selection.goDeep": "Go deep",
-  "research.selection.factCheck": "Fact check",
-  "research.selection.factCheckPrompt":
-    "Fact-check this claim using reliable independent sources.",
+  "research.selection.goDeepPrompt":
+    "Find deeper primary-source detail on this topic.",
+  "research.selection.alternatives": "Alternatives",
+  "research.selection.alternativesPrompt":
+    "Find credible alternative perspectives on this topic.",
   "editor.ai.replace": "Replace",
   "editor.ai.insert": "Insert below",
   "editor.ai.dismiss": "Dismiss",
   "editor.ai.error": "The assistant request failed.",
+  "editor.ai.timeout": "The assistant took too long. Try again.",
   "editor.ai.stale": "The selection changed — use Insert below.",
   "reader.copyPath": "Click to copy path",
   "related.title": "Related notes",
@@ -415,6 +418,14 @@ const EN: Dict = {
   "activity.dismiss": "Dismiss",
   "activity.tryAgain": "Try again",
   "activity.viewProposal": "View proposal",
+  "selectionResearch.ops": "Researching selected evidence…",
+  "selectionResearch.ready": "Research ready",
+  "selectionResearch.open": "Open research",
+  "selectionResearch.dismiss": "Dismiss",
+  "selectionResearch.failed": "Selection research failed.",
+  "selectionResearch.capacity":
+    "Open or dismiss a ready research result before starting another.",
+  "selectionResearch.aggregate": "{count} research results ready",
   "q.vault": "vault",
   "q.vaultTitle": "Answer from your vault (semantic search)",
   "q.web": "web",
@@ -700,13 +711,16 @@ const ES: Dict = {
   "editor.ai.placeholder": "Usa la IA…",
   "editor.ai.evidencePlaceholder": "Pregunta sobre esta evidencia…",
   "research.selection.goDeep": "Profundizar",
-  "research.selection.factCheck": "Comprobar",
-  "research.selection.factCheckPrompt":
-    "Comprueba esta afirmación usando fuentes independientes y confiables.",
+  "research.selection.goDeepPrompt":
+    "Encuentra más detalle de fuentes primarias sobre este tema.",
+  "research.selection.alternatives": "Alternativas",
+  "research.selection.alternativesPrompt":
+    "Encuentra perspectivas alternativas y confiables sobre este tema.",
   "editor.ai.replace": "Reemplazar",
   "editor.ai.insert": "Insertar debajo",
   "editor.ai.dismiss": "Descartar",
   "editor.ai.error": "La solicitud al asistente falló.",
+  "editor.ai.timeout": "La solicitud tardó demasiado. Inténtalo de nuevo.",
   "editor.ai.stale": "La selección cambió, usa Insertar debajo.",
   "reader.copyPath": "Haz clic para copiar la ruta",
   "related.title": "Notas relacionadas",
@@ -835,6 +849,14 @@ const ES: Dict = {
   "activity.dismiss": "Cerrar",
   "activity.tryAgain": "Reintentar",
   "activity.viewProposal": "Ver propuesta",
+  "selectionResearch.ops": "Investigando la evidencia seleccionada…",
+  "selectionResearch.ready": "Investigación lista",
+  "selectionResearch.open": "Abrir investigación",
+  "selectionResearch.dismiss": "Cerrar",
+  "selectionResearch.failed": "Falló la investigación de la selección.",
+  "selectionResearch.capacity":
+    "Abre o cierra un resultado listo antes de iniciar otra investigación.",
+  "selectionResearch.aggregate": "{count} resultados de investigación listos",
   "q.vault": "bóveda",
   "q.vaultTitle": "Responder desde tu bóveda (búsqueda semántica)",
   "q.web": "web",
@@ -860,9 +882,14 @@ const ES: Dict = {
 const DICTS: Record<Lang, Dict> = { en: EN, es: ES };
 
 function detect(): Lang {
-  const saved = localStorage.getItem("sinapso-lang");
+  const saved =
+    typeof localStorage === "undefined"
+      ? null
+      : localStorage.getItem("sinapso-lang");
   if (saved === "en" || saved === "es") return saved;
-  return (navigator.language || "en").toLowerCase().startsWith("es")
+  return (typeof navigator === "undefined" ? "en" : navigator.language || "en")
+    .toLowerCase()
+    .startsWith("es")
     ? "es"
     : "en";
 }
@@ -875,9 +902,12 @@ export function getLang(): Lang {
 
 export function setLang(l: Lang): void {
   lang = l;
-  localStorage.setItem("sinapso-lang", l);
-  document.documentElement.lang = l;
-  hydrate();
+  if (typeof localStorage !== "undefined")
+    localStorage.setItem("sinapso-lang", l);
+  if (typeof document !== "undefined") {
+    document.documentElement.lang = l;
+    hydrate();
+  }
 }
 
 export function t(key: string, vars?: Record<string, string | number>): string {

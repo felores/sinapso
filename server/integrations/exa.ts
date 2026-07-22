@@ -10,6 +10,7 @@
  */
 
 import Exa from "exa-js";
+import { outputLanguageInstruction, type UiLocale } from "./locale.js";
 
 export interface ExaClientLike {
   search(query: string, options: Record<string, unknown>): Promise<unknown>;
@@ -117,7 +118,7 @@ export function createExaAdapter(opts: ExaAdapterOptions = {}) {
   return async function research(
     key: string,
     query: string,
-    options: { deep?: boolean; numResults?: number } = {},
+    options: { deep?: boolean; numResults?: number; locale?: UiLocale } = {},
   ): Promise<ResearchResponse> {
     const client = makeClient(key);
     // Deep mode asks for a synthesized text answer (output.content +
@@ -133,10 +134,13 @@ export function createExaAdapter(opts: ExaAdapterOptions = {}) {
           numResults: options.numResults ?? 8,
           contents: { highlights: true },
         };
+    const modelQuery = options.deep
+      ? `${query}\n\n${outputLanguageInstruction(options.locale ?? "en")}`
+      : query;
     let lastErr: unknown;
     for (let attempt = 0; attempt <= delays.length; attempt++) {
       try {
-        const raw = await client.search(query, request);
+        const raw = await client.search(modelQuery, request);
         return {
           results: mapResponse(raw),
           answer: options.deep ? mapAnswer(raw) : null,

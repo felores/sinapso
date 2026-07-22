@@ -1199,6 +1199,52 @@ describe("server: git note versions", () => {
     }
   });
 
+  it("localizes generated commit messages and falls back to English for invalid locales", async () => {
+    const f = gitFixture();
+    try {
+      const configPath = join(f.root, "config.json");
+      const bodies: string[] = [];
+      updateConfig(
+        {
+          openrouterKey: "or-k",
+          workerProvider: "openrouter",
+          workerModel: "test/worker",
+        },
+        configPath,
+      );
+      const { app } = createApp(f.graphPath, undefined, {
+        configPath,
+        openrouter: {
+          fetch: (async (_url: string, init?: RequestInit) => {
+            bodies.push(String(init?.body ?? ""));
+            return new Response(
+              JSON.stringify({
+                choices: [{ message: { content: "Actualiza notas" } }],
+              }),
+              { status: 200 },
+            );
+          }) as never,
+        },
+      });
+      const token = (await request(app).get("/api/session")).body.token;
+      const commit = () =>
+        request(app)
+          .post("/api/git/commit")
+          .set("x-sinapso-token", token)
+          .send({});
+
+      writeFileSync(join(f.vault, "spanish.md"), "# español\n");
+      await commit().set("x-sinapso-locale", "es").expect(200);
+      writeFileSync(join(f.vault, "invalid.md"), "# invalid\n");
+      await commit().set("x-sinapso-locale", "fr").expect(200);
+
+      expect(bodies[0]).toContain("Responde en español.");
+      expect(bodies[1]).toContain("Respond in English.");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it("sync route fast-forwards through the guarded endpoint", async () => {
     const f = gitSyncFixture();
     try {
@@ -1299,6 +1345,7 @@ describe("POST /api/selection-assist (plan 018 U7)", () => {
       const res = await request(app2)
         .post("/api/selection-assist")
         .set("x-sinapso-token", token)
+        .set("x-sinapso-locale", "es")
         .send({
           instruction: "make this tighter",
           selection: "a long rambling line",
@@ -1313,6 +1360,7 @@ describe("POST /api/selection-assist (plan 018 U7)", () => {
       expect(bodies[0]).toContain("a long rambling line");
       expect(bodies[0]).toContain("folder/note.md");
       expect(bodies[0]).toContain("Surrounding lines");
+      expect(bodies[0]).toContain("Responde en español.");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

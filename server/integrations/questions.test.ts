@@ -49,6 +49,17 @@ describe("buildNoteQuestionsPrompt", () => {
     const prompt = buildNoteQuestionsPrompt(undefined, "body", []);
     expect(prompt).toContain("Note title: \n");
   });
+
+  it("assembles Spanish instructions for a Spanish UI locale", () => {
+    const prompt = buildNoteQuestionsPrompt(
+      { title: "Nota" },
+      "cuerpo",
+      [],
+      "es",
+    );
+    expect(prompt).toContain("Genera de 3 a 5 preguntas");
+    expect(prompt).toContain("Título de la nota: Nota");
+  });
 });
 
 describe("parseQuestionsReply", () => {
@@ -126,6 +137,21 @@ describe("noteQuestionsViaLLM", () => {
     expect(messages[1].role).toBe("user");
     expect(messages[1].content).toContain("Note title: T");
     expect(messages[1].content).toContain("Note content (excerpt):\nbody");
+  });
+
+  it("uses a selected-language system prompt without translating an override", async () => {
+    const chat = vi.fn(async () => '["pregunta?"]');
+    await noteQuestionsViaLLM({
+      chat,
+      note: { title: "T" },
+      excerpt: "body",
+      phantomTitles: [],
+      locale: "es",
+      systemPrompt: "Custom prompt.\n\nResponde en español.",
+      templates: () => [],
+    });
+    const messages = (chat.mock.calls[0] as unknown as [ChatMessage[]])[0];
+    expect(messages[0].content).toBe("Custom prompt.\n\nResponde en español.");
   });
 
   it("returns source:templates and calls warn when the LLM throws", async () => {

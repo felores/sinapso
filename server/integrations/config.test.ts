@@ -16,6 +16,7 @@ import {
   defaultPrompts,
   effectivePrompts,
   loadConfig,
+  promptForModel,
   updateConfig,
 } from "./config";
 
@@ -219,9 +220,21 @@ describe("integrations config", () => {
       join(DIR, "prompt-file.json"),
     );
 
-    expect(effectivePrompts(cfg).voiceAssistant).toBe("Prompt from Markdown");
+    expect(effectivePrompts(cfg).voiceAssistant).toBe("Prompt from Markdown\n");
+    expect(promptForModel(cfg, "voiceAssistant", "es")).toBe(
+      "Prompt from Markdown\n\nResponde en español.",
+    );
     cfg.promptFiles.voiceAssistant.path = "../outside.md";
     expect(effectivePrompts(cfg).voiceAssistant).toBe("Inline fallback");
+  });
+
+  it("localizes defaults but preserves custom prompt content before its language constraint", () => {
+    const cfg = defaultConfig();
+    expect(defaultPrompts("es").webResearch).toContain("español");
+    cfg.prompts.webResearch = "Keep this verbatim.";
+    expect(promptForModel(cfg, "webResearch", "es")).toBe(
+      "Keep this verbatim.\n\nResponde en español.",
+    );
   });
 
   it("yields defaults plus a warning on a corrupt file, never a crash", () => {

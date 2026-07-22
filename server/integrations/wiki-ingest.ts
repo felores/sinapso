@@ -1,10 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, relative, resolve, sep } from "node:path";
 import {
-  effectivePrompts,
+  promptForModel,
   type SinapsoConfig,
   type WikiConfig,
 } from "./config.js";
+import type { UiLocale } from "./locale.js";
 import type { ConvertedDocument } from "./ingest.js";
 import type { ChatMessage } from "./openrouter.js";
 import {
@@ -64,7 +65,7 @@ export function resolveWikiTarget(
 
 export async function buildWikiIngestProposal(
   deps: { vaultRoot: string; now?: () => Date },
-  cfg: Pick<SinapsoConfig, "prompts">,
+  cfg: Pick<SinapsoConfig, "prompts" | "promptFiles" | "activeVaultPath">,
   wiki: WikiConfig,
   converted: ConvertedDocument,
   chat: WikiIngestChat,
@@ -73,6 +74,7 @@ export async function buildWikiIngestProposal(
     sourceNote?: string;
     /** Existing canonical RAW path (source already lives in rawDestination). */
     existingRawPath?: string;
+    locale?: UiLocale;
   } = {},
 ): Promise<WikiIngestProposal> {
   const contracts = readWikiContracts(deps.vaultRoot, wiki);
@@ -98,14 +100,23 @@ export async function buildWikiIngestProposal(
     {
       role: "system",
       content:
-        'Return only JSON: {"operations":[{"type":"create|edit","path":"wiki/path.md","content":"markdown"}]}',
+        opts.locale === "es"
+          ? 'Devuelve solo JSON: {"operations":[{"type":"create|edit","path":"wiki/path.md","content":"markdown"}]}'
+          : 'Return only JSON: {"operations":[{"type":"create|edit","path":"wiki/path.md","content":"markdown"}]}',
     },
     {
       role: "user",
-      content: proposalPrompt(cfg, wiki, contracts, converted, {
-        path: rawPath,
-        type: raw?.type ?? "existing",
-      }),
+      content: proposalPrompt(
+        cfg,
+        wiki,
+        contracts,
+        converted,
+        {
+          path: rawPath,
+          type: raw?.type ?? "existing",
+        },
+        opts.locale ?? "en",
+      ),
     },
   ]);
   // Generation-time filtering: drop LLM ops that fall outside the wiki tree
@@ -358,31 +369,37 @@ export function readWikiContracts(
 }
 
 function proposalPrompt(
-  cfg: Pick<SinapsoConfig, "prompts">,
+  cfg: Pick<SinapsoConfig, "prompts" | "promptFiles" | "activeVaultPath">,
   wiki: WikiConfig,
   contracts: Array<{ path: string; content: string }>,
   converted: ConvertedDocument,
   raw: { path: string; type: WikiIngestOperation["type"] | "existing" },
+  locale: UiLocale,
 ): string {
   const contractText = contracts.length
     ? contracts.map((c) => `## ${c.path}\n${c.content}`).join("\n\n")
     : "No contract files found.";
-  const rawVerb =
-    raw.type === "move"
-      ? "will move"
-      : raw.type === "existing"
-        ? "already exists"
-        : "will be stored";
+  const es = locale === "es";
   return [
-    effectivePrompts(cfg).wikiIngest,
-    `Selected wiki: ${wiki.label} (${wiki.path})`,
-    `All derived create/edit paths must stay under ${wiki.path}/.`,
-    "Derived notes may wikilink any known vault note, including notes outside this wiki. Wikilinks must stay within the vault: never use absolute paths, ../ traversal, file: URLs, or external files. Cite external sources with normal https URLs. For vault-relative RAW sources only, use a normal Markdown link such as `[source](../raw/source.md)`; never put source paths in inline or fenced code.",
-    `Canonical RAW source path after approval: ${raw.path}. ${raw.type === "existing" ? "This source already exists at that location; do not recreate or move it." : "This is the only canonical source location; do not present the original Inbox or source location as canonical."}`,
-    `Every derived create/edit note must cite or link ${raw.path} according to the wiki contract.`,
-    "Contract files:",
+    promptForModel(cfg, "wikiIngest", locale),
+    es
+      ? `Wiki seleccionada: ${wiki.label} (${wiki.path})`
+      : `Selected wiki: ${wiki.label} (${wiki.path})`,
+    es
+      ? `Todas las rutas derivadas de creación o edición deben permanecer bajo ${wiki.path}/.`
+      : `All derived create/edit paths must stay under ${wiki.path}/.`,
+    es
+      ? "Las notas derivadas pueden usar wikilinks a cualquier nota conocida de la bóveda. Los wikilinks deben permanecer dentro de la bóveda: nunca uses rutas absolutas, traversal ../, URLs file: ni archivos externos. Cita fuentes externas con URLs https normales. Para fuentes RAW relativas a la bóveda usa un enlace Markdown normal como [fuente](../raw/fuente.md); nunca pongas rutas de fuente en código en línea o cercado."
+      : "Derived notes may wikilink any known vault note, including notes outside this wiki. Wikilinks must stay within the vault: never use absolute paths, ../ traversal, file: URLs, or external files. Cite external sources with normal https URLs. For vault-relative RAW sources only, use a normal Markdown link such as `[source](../raw/source.md)`; never put source paths in inline or fenced code.",
+    es
+      ? `Ruta de fuente RAW canónica tras la aprobación: ${raw.path}. ${raw.type === "existing" ? "Esta fuente ya existe en esa ubicación; no la recrees ni muevas." : "Esta es la única ubicación canónica de la fuente; no presentes la ubicación original de Inbox ni de la fuente como canónica."}`
+      : `Canonical RAW source path after approval: ${raw.path}. ${raw.type === "existing" ? "This source already exists at that location; do not recreate or move it." : "This is the only canonical source location; do not present the original Inbox or source location as canonical."}`,
+    es
+      ? `Cada nota derivada creada o editada debe citar o enlazar ${raw.path} según el contrato de la wiki.`
+      : `Every derived create/edit note must cite or link ${raw.path} according to the wiki contract.`,
+    es ? "Archivos de contrato:" : "Contract files:",
     contractText,
-    "Source markdown:",
+    es ? "Markdown de fuente:" : "Source markdown:",
     `# ${converted.title}\n\n${converted.markdown.slice(0, SOURCE_LIMIT)}`,
   ].join("\n\n");
 }

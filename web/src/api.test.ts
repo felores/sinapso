@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from "vitest";
 import { api, apiRaw, ApiError, getApiToken, resetApiToken } from "./api";
+import { setLang } from "./i18n";
 
 function makeResponse(
   opts: {
@@ -32,6 +33,7 @@ let fetchMock: Mock;
 
 beforeEach(() => {
   resetApiToken();
+  setLang("en");
   fetchMock = vi.fn();
   globalThis.fetch = fetchMock as unknown as typeof fetch;
 });
@@ -46,19 +48,40 @@ describe("api: defaults", () => {
     expect((init as RequestInit).method).toBe("GET");
   });
 
-  it("GET carries no extra headers (no token, no content-type)", async () => {
+  it("GET carries the current locale but no token or content-type", async () => {
     fetchMock.mockResolvedValueOnce(makeResponse({ body: {} }));
     await api("/api/x");
     const [, init] = fetchMock.mock.calls[0];
     const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers["x-sinapso-locale"]).toBe("en");
     expect(headers["x-sinapso-token"]).toBeUndefined();
     expect(headers["content-type"]).toBeUndefined();
+  });
+
+  it("updates the locale signal immediately after a language switch", async () => {
+    setLang("es");
+    fetchMock.mockResolvedValueOnce(makeResponse({ body: {} }));
+    await api("/api/x");
+    const [, init] = fetchMock.mock.calls[0];
+    expect(
+      ((init as RequestInit).headers as Record<string, string>)[
+        "x-sinapso-locale"
+      ],
+    ).toBe("es");
   });
 
   it("returns null for a 204 No Content", async () => {
     fetchMock.mockResolvedValueOnce(makeResponse({ status: 204 }));
     const result = await api("/api/x");
     expect(result).toBeNull();
+  });
+
+  it("forwards an AbortSignal to fetch", async () => {
+    fetchMock.mockResolvedValueOnce(makeResponse({ body: {} }));
+    const controller = new AbortController();
+    await api("/api/x", { signal: controller.signal });
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init as RequestInit).signal).toBe(controller.signal);
   });
 });
 
@@ -274,12 +297,19 @@ describe("apiRaw", () => {
     fetchMock.mockResolvedValueOnce(expected);
     const got = await apiRaw("/api/x");
     expect(got).toBe(expected);
+    const [, init] = fetchMock.mock.calls[0];
+    expect(
+      ((init as RequestInit).headers as Headers).get("x-sinapso-locale"),
+    ).toBe("en");
   });
 
   it("does NOT add x-sinapso-token by default", async () => {
     fetchMock.mockResolvedValueOnce(makeResponse({ body: {} }));
     await apiRaw("/api/x");
-    expect(fetchMock).toHaveBeenCalledWith("/api/x", undefined);
+    const [, init] = fetchMock.mock.calls[0];
+    expect(
+      ((init as RequestInit).headers as Headers).get("x-sinapso-token"),
+    ).toBeNull();
   });
 
   it("with token: true adds x-sinapso-token to the headers", async () => {

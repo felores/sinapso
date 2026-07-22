@@ -59,7 +59,7 @@ import {
 } from "./ai-assist";
 import {
   BOT_ICON_SVG,
-  FACT_CHECK_ICON_SVG,
+  ALTERNATIVES_ICON_SVG,
   GO_DEEP_ICON_SVG,
   type ToolbarExtras,
 } from "./editor-toolbar";
@@ -104,6 +104,17 @@ import {
   isTerminal,
   upsertActivityCard as upsertActivityCardModel,
 } from "./activity-cards";
+import {
+  canReserveActionable,
+  collapseActionable,
+  presentationSurface,
+  removeActionable,
+  reserveActionable,
+  resolveActionable,
+  type ActionableEntry,
+  type ToolPresentationV1,
+} from "./tool-presentation";
+import { renderSelectionResearchTerminals } from "./tool-renderers";
 import {
   buildKeywordQuery,
   buildSelectionSnapshot,
@@ -4340,9 +4351,9 @@ async function boot() {
       GO_DEEP_ICON_SVG,
       i18n.t("research.selection.goDeep"),
     );
-    const factCheck = actionButton(
-      FACT_CHECK_ICON_SVG,
-      i18n.t("research.selection.factCheck"),
+    const alternatives = actionButton(
+      ALTERNATIVES_ICON_SVG,
+      i18n.t("research.selection.alternatives"),
     );
     const bot = actionButton(BOT_ICON_SVG, i18n.t("editor.ai.placeholder"));
     bot.classList.add("cm-tb-chat");
@@ -4358,13 +4369,16 @@ async function boot() {
       positionEvidenceBubble(range);
     };
     goDeep.onclick = () =>
-      void runWebQuery("", snapshot, i18n.t("research.selection.goDeep"), true);
-    factCheck.onclick = () =>
-      void runWebQuery(
-        i18n.t("research.selection.factCheckPrompt"),
+      void runSelectionResearch(
+        i18n.t("research.selection.goDeepPrompt"),
         snapshot,
-        i18n.t("research.selection.factCheck"),
-        true,
+        i18n.t("research.selection.goDeep"),
+      );
+    alternatives.onclick = () =>
+      void runSelectionResearch(
+        i18n.t("research.selection.alternativesPrompt"),
+        snapshot,
+        i18n.t("research.selection.alternatives"),
       );
 
     input.addEventListener("keydown", async (event) => {
@@ -4379,8 +4393,11 @@ async function boot() {
       if (!instruction) return;
       input.disabled = true;
       bot.classList.add("busy");
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 45_000);
       try {
         const result = await api<{ text: string }>("/api/selection-assist", {
+          signal: controller.signal,
           json: {
             instruction,
             selection: slot.text,
@@ -4395,10 +4412,13 @@ async function boot() {
         input.value = "";
         positionEvidenceBubble(range);
       } catch {
-        answer.textContent = i18n.t("editor.ai.error");
+        answer.textContent = i18n.t(
+          controller.signal.aborted ? "editor.ai.timeout" : "editor.ai.error",
+        );
         answer.classList.remove("hidden");
         positionEvidenceBubble(range);
       } finally {
+        window.clearTimeout(timeout);
         input.disabled = false;
         bot.classList.remove("busy");
       }
@@ -6226,6 +6246,17 @@ async function boot() {
     results?: unknown[];
     article?: ArticleData;
     document?: { title: string; content: string; revision: string };
+  };
+  type WebResearchResponse = {
+    answer: ResearchEntry["answer"];
+    results: Array<{
+      title: string;
+      url: string;
+      snippet: string;
+      publishedDate: string | null;
+    }>;
+    historyId?: string;
+    contextWarning?: string | null;
   };
   let researchHistory: ResearchEntry[] = [];
   let historyIdx = -1; // position in researchHistory (0 = newest); -1 = none
@@ -8694,6 +8725,91 @@ async function boot() {
     }
   }
 
+  async function runSelectionResearch(
+    query: string,
+    context: SelectionSnapshot,
+    label: string,
+  ) {
+    if (integrations && !integrations.consents.web) {
+      promptWebConsent();
+      return;
+    }
+    const requestQuery = query.trim() || selectedText(context);
+    if (!requestQuery) return;
+    if (!canReserveActionable(selectionResearchActions)) {
+      setOpsStatus({ label: i18n.t("selectionResearch.capacity") });
+      window.setTimeout(() => {
+        if (!selectionResearchRunning) setOpsStatus(null);
+      }, 4_000);
+      return;
+    }
+    const shownQuery = displayQuery(query, label, context);
+    const runId = crypto.randomUUID();
+    const runningPresentation: ToolPresentationV1 = {
+      version: 1,
+      id: runId,
+      name: "web-research",
+      state: "running",
+    };
+    if (presentationSurface(runningPresentation) !== "ops") return;
+    selectionResearchActions = reserveActionable(
+      selectionResearchActions,
+      runningPresentation,
+      Date.now(),
+    );
+    selectionResearchRunning++;
+    setSelectionResearchOpsStatus();
+    let failure: string | null = null;
+    try {
+      const data = await api<WebResearchResponse>("/api/research", {
+        json: {
+          query: requestQuery,
+          deep: true,
+          contexts: context,
+          displayQuery: shownQuery,
+        },
+      });
+      const readyPresentation: ToolPresentationV1 = {
+        version: 1,
+        id: runId,
+        name: "web-research",
+        state: "success",
+        result: {
+          title: i18n.t("selectionResearch.ready"),
+          text: shownQuery,
+        },
+      };
+      if (presentationSurface(readyPresentation) === "terminal-card") {
+        selectionResearchActions = resolveActionable(
+          selectionResearchActions,
+          runId,
+          readyPresentation,
+          { data, query: shownQuery },
+        );
+        renderSelectionResearchCards();
+      }
+    } catch (e) {
+      selectionResearchActions = removeActionable(
+        selectionResearchActions,
+        runId,
+      );
+      failure =
+        e instanceof ApiError
+          ? ((e.body as { message?: string } | null)?.message ??
+            i18n.t("selectionResearch.failed"))
+          : i18n.t("selectionResearch.failed");
+    } finally {
+      selectionResearchRunning--;
+      if (selectionResearchRunning) setSelectionResearchOpsStatus();
+      else if (failure) {
+        setOpsStatus({ label: failure });
+        window.setTimeout(() => {
+          if (!selectionResearchRunning) setOpsStatus(null);
+        }, 4_000);
+      } else setOpsStatus(null);
+    }
+  }
+
   // Fetch a web result's full text (Exa /contents) and open it as an "article"
   // page in the research column. Spend-bearing, so it walks the web consent gate
   // first, exactly like a web query.
@@ -9669,6 +9785,10 @@ async function boot() {
       i18n.setLang(chip.dataset.lang as i18n.Lang); // persists + re-hydrates static
       syncLangUI();
       refreshDynamicChrome();
+      void refreshIntegrations().then(() => {
+        if (!adminDirty && $("#modal").classList.contains("admin-modal"))
+          renderAdminPrompts();
+      });
       closeMenus();
     });
   }
@@ -9677,10 +9797,60 @@ async function boot() {
   // reflow pass can reposition the anchor without a temporal-dead-zone access;
   // the rest of the activity-card system is wired further below) ----
   const activityHost = $("#activity-cards");
+  const selectionTerminalHost = $("#selection-terminal-cards");
   function relayoutActivityAnchor(): void {
     const rail = $("#topbar").classList.contains("topbar-rail");
     activityHost.classList.toggle("ac-bottom", !rail);
     activityHost.classList.toggle("ac-top", rail);
+  }
+
+  function relayoutSelectionTerminalHost(): void {
+    if (!selectionTerminalHost.childElementCount) return;
+    const topbar = $("#topbar");
+    const search = $("#search-wrap").getBoundingClientRect();
+    const panels = ["#reader", "#research"]
+      .map((id) => $(id))
+      .filter((panel) => !panel.classList.contains("hidden"))
+      .map((panel) => panel.getBoundingClientRect())
+      .filter((panel) => panel.left < window.innerWidth && panel.right > 0);
+    const safeLeft = panels
+      .filter((panel) => panel.left < window.innerWidth / 2)
+      .reduce((left, panel) => Math.max(left, panel.right + 12), 12);
+    const safeRight = panels
+      .filter((panel) => panel.right > window.innerWidth / 2)
+      .reduce(
+        (right, panel) => Math.min(right, panel.left - 12),
+        window.innerWidth - 12,
+      );
+    const safeWidth = Math.max(0, safeRight - safeLeft);
+    const bottomRail = topbar.classList.contains("topbar-rail");
+    selectionTerminalHost.classList.toggle("terminal-card-mobile", bottomRail);
+    if (bottomRail) {
+      const top = 12;
+      const bottom = Math.ceil(search.height) + 16;
+      const width = Math.min(320, window.innerWidth - 24, safeWidth);
+      const left = Math.max(
+        12,
+        Math.min(safeLeft, window.innerWidth - width - 12),
+      );
+      selectionTerminalHost.style.left = `${Math.round(left)}px`;
+      selectionTerminalHost.style.right = "auto";
+      selectionTerminalHost.style.top = `${top}px`;
+      selectionTerminalHost.style.bottom = `${bottom}px`;
+      selectionTerminalHost.style.width = `${Math.round(width)}px`;
+      selectionTerminalHost.style.setProperty(
+        "--terminal-safe-height",
+        `${Math.max(0, window.innerHeight - top - bottom)}px`,
+      );
+      return;
+    }
+    const width = Math.min(320, safeWidth);
+    const left = Math.max(safeLeft, Math.min(search.left, safeRight - width));
+    selectionTerminalHost.style.left = `${Math.round(left)}px`;
+    selectionTerminalHost.style.right = "auto";
+    selectionTerminalHost.style.top = `${Math.round(search.bottom + 8)}px`;
+    selectionTerminalHost.style.bottom = "auto";
+    selectionTerminalHost.style.width = `${Math.round(width)}px`;
   }
 
   // ---- topbar reflow around docked panels ----
@@ -9692,8 +9862,12 @@ async function boot() {
   const relayout = () => {
     layoutTopbar();
     relayoutActivityAnchor();
+    relayoutSelectionTerminalHost();
     clearTimeout(relayoutT);
-    relayoutT = window.setTimeout(layoutTopbar, 300);
+    relayoutT = window.setTimeout(() => {
+      layoutTopbar();
+      relayoutSelectionTerminalHost();
+    }, 300);
   };
   const topbarObs = new MutationObserver(relayout);
   for (const id of ["#reader", "#research"])
@@ -9702,6 +9876,9 @@ async function boot() {
       attributeFilter: ["class", "style"],
     });
   window.addEventListener("resize", layoutTopbar);
+  window.addEventListener("resize", () =>
+    requestAnimationFrame(relayoutSelectionTerminalHost),
+  );
   relayout();
 
   // ---- modal ----
@@ -9772,6 +9949,15 @@ async function boot() {
   // states (search/prepare/propose) self-update; ready/error persist with a
   // CTA/dismiss. The host is pointer-events:none; cards re-enable interaction.
   let activityStack: ActivityCard[] = [];
+  type SelectionResearchAction = {
+    data: WebResearchResponse;
+    query: string;
+  };
+  let selectionResearchActions = new Map<
+    string,
+    ActionableEntry<SelectionResearchAction>
+  >();
+  let selectionResearchRunning = 0;
   // Pending wiki-ingest proposal awaiting the user's review CTA (Frente B).
   let pendingWikiProposal: {
     proposal: WikiIngestProposal;
@@ -9840,7 +10026,39 @@ async function boot() {
     setActivityStack(dismissActivityCardModel(activityStack, id));
   }
 
-  /** CTA routing: ready -> open the pending wiki proposal; error -> retry. */
+  function setSelectionResearchOpsStatus(): void {
+    setOpsStatus({
+      label: i18n.t("selectionResearch.ops"),
+      indeterminate: true,
+    });
+  }
+
+  function renderSelectionResearchCards(): void {
+    renderSelectionResearchTerminals(
+      selectionTerminalHost,
+      selectionResearchActions,
+      {
+        open: i18n.t("selectionResearch.open"),
+        dismiss: i18n.t("selectionResearch.dismiss"),
+        aggregate: i18n.t("selectionResearch.aggregate", {
+          count: [...selectionResearchActions.values()].filter(
+            (entry) => entry.status === "ready",
+          ).length,
+        }),
+      },
+      (id) => void openSelectionResearch(id),
+      (id) => {
+        selectionResearchActions = collapseActionable(
+          selectionResearchActions,
+          id,
+        );
+        renderSelectionResearchCards();
+      },
+    );
+    relayoutSelectionTerminalHost();
+  }
+
+  /** CTA routing: ready -> open the pending item; error -> retry. */
   function onActivityCta(card: ActivityCard): void {
     if (card.state === "ready" && card.id === "wiki-ingest") {
       openPendingWikiProposal();
@@ -9848,6 +10066,26 @@ async function boot() {
       dismissActivityCard(card.id);
       pendingWikiProposal = null;
     }
+  }
+
+  async function openSelectionResearch(id: string): Promise<void> {
+    const pending = selectionResearchActions.get(id)?.value;
+    if (!pending?.data.historyId) {
+      setOpsStatus({ label: i18n.t("selectionResearch.failed") });
+      return;
+    }
+    // The CTA is explicit navigation: use the existing collection switch so a
+    // dirty Inbox editor is flushed before the result replaces its surface.
+    await setResearchCollection("research");
+    await loadHistory();
+    const entry = researchHistory.find(
+      (item) => item.id === pending.data.historyId,
+    );
+    if (!entry || !(await showHistoryEntry(entry))) return;
+    historyIdx = researchHistory.indexOf(entry);
+    updateHistoryNav();
+    selectionResearchActions = removeActionable(selectionResearchActions, id);
+    renderSelectionResearchCards();
   }
 
   /** Render the saved proposal in the research panel (explicit user action). */

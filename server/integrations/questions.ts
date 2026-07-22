@@ -17,9 +17,12 @@
  */
 
 import type { ChatMessage } from "./openrouter.js";
+import type { UiLocale } from "./locale.js";
 
-const SYSTEM_PROMPT =
-  "You generate concise web-research questions. Reply with ONLY a JSON array of strings.";
+const SYSTEM_PROMPTS: Record<UiLocale, string> = {
+  en: "You generate concise web-research questions. Reply with ONLY a JSON array of strings. Write the questions in English.",
+  es: "Generas preguntas concisas de investigación web. Responde SOLO con un arreglo JSON de cadenas. Escribe las preguntas en español.",
+};
 
 const MAX_QUESTIONS = 5;
 
@@ -37,7 +40,23 @@ export function buildNoteQuestionsPrompt(
   note: NoteForPrompt | undefined,
   excerpt: string,
   phantomTitles: string[],
+  locale: UiLocale = "en",
 ): string {
+  if (locale === "es") {
+    const phantomLine = phantomTitles.length
+      ? `La nota menciona estos temas que aún no tienen nota propia: ${phantomTitles.join(", ")}.`
+      : "";
+    return [
+      "Genera de 3 a 5 preguntas de investigación web que cierren las brechas de conocimiento sobre esta nota de mi bóveda.",
+      "Enfócate en lo que falta, no está resuelto o merece más investigación, no en resumir lo que la nota ya cubre.",
+      phantomLine,
+      `Título de la nota: ${note?.title ?? ""}`,
+      `Contenido de la nota (extracto):\n${excerpt}`,
+      'Responde SOLO con un arreglo JSON de preguntas, por ejemplo ["pregunta uno?", "pregunta dos?"]. Sin otro texto.',
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  }
   const phantomLine = phantomTitles.length
     ? `The note references these topics that have no note of their own yet: ${phantomTitles.join(", ")}.`
     : "";
@@ -84,6 +103,8 @@ export interface NoteQuestionsDeps {
   note: NoteForPrompt | undefined;
   excerpt: string;
   phantomTitles: string[];
+  locale?: UiLocale;
+  systemPrompt?: string;
   templates: () => string[];
   warn?: (msg: string, err: unknown) => void;
 }
@@ -106,10 +127,14 @@ export async function noteQuestionsViaLLM(
     deps.note,
     deps.excerpt,
     deps.phantomTitles,
+    deps.locale,
   );
   try {
     const text = await deps.chat([
-      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role: "system",
+        content: deps.systemPrompt ?? SYSTEM_PROMPTS[deps.locale ?? "en"],
+      },
       { role: "user", content: prompt },
     ]);
     const questions = parseQuestionsReply(text);

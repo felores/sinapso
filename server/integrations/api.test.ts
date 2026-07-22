@@ -94,6 +94,17 @@ describe("GET /api/integrations", () => {
     expect(res.body.tools.exa).toEqual({ configured: false });
   });
 
+  it("returns locale-selected built-in prompt defaults and rejects invalid locales", async () => {
+    const spanish = await request(app)
+      .get("/api/integrations")
+      .set("x-sinapso-locale", "es");
+    const invalid = await request(app)
+      .get("/api/integrations")
+      .set("x-sinapso-locale", "fr");
+    expect(spanish.body.admin.promptDefaults.webResearch).toContain("español");
+    expect(invalid.body.admin.promptDefaults.webResearch).toContain("English");
+  });
+
   it("never exposes the Exa key in the status payload", async () => {
     const token = await sessionToken();
     const save = await request(app)
