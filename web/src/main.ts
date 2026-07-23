@@ -99,22 +99,20 @@ import { computeSemanticClusters as computeSemanticClustersPure } from "./cluste
 import { api, apiRaw, ApiError, getApiToken, peekApiToken } from "./api";
 import { createPrefs } from "./prefs";
 import {
-  type ActivityCard,
-  dismissActivityCard as dismissActivityCardModel,
-  isTerminal,
-  upsertActivityCard as upsertActivityCardModel,
-} from "./activity-cards";
-import {
   canReserveActionable,
   collapseActionable,
   presentationSurface,
   removeActionable,
   reserveActionable,
   resolveActionable,
+  restoreInlineActionables,
+  setActionableInline,
   type ActionableEntry,
+  type PresentationContext,
   type ToolPresentationV1,
 } from "./tool-presentation";
-import { renderSelectionResearchTerminals } from "./tool-renderers";
+import { renderTerminalCards } from "./tool-renderers";
+import { createTrustedExternalSourceRegistry } from "./trusted-external-sources";
 import {
   buildKeywordQuery,
   buildSelectionSnapshot,
@@ -1952,13 +1950,26 @@ async function boot() {
     noteId: string,
   ): void {
     if (vaultGeneration !== graphVaultGeneration) return;
-    if (response.graphRefreshFailed)
-      upsertActivityCard({
-        id: "graph-refresh",
+    if (response.graphRefreshFailed && canReserveActionable(workflowActions)) {
+      const id = crypto.randomUUID();
+      const presentation: ToolPresentationV1 = {
+        version: 1,
+        id,
+        name: "graph-refresh",
         state: "error",
-        label: "activity.error",
-        detail: i18n.t("research.graphRefreshFailed"),
-      });
+        result: {
+          title: i18n.t("activity.error"),
+          text: i18n.t("research.graphRefreshFailed"),
+        },
+      };
+      workflowActions = resolveActionable(
+        reserveActionable(workflowActions, presentation, Date.now()),
+        id,
+        presentation,
+        { kind: "graph-refresh" },
+      );
+      renderWorkflowCards();
+    }
     if (
       !response.graph ||
       response.graph.meta.vaultPath !== activeVaultPath() ||
@@ -5865,18 +5876,11 @@ async function boot() {
         }>("/api/integrations/install", { json: { tools: [tool] } });
         const r = data.results?.[0];
         if (r?.status === "instructions" || r?.status === "failed") {
-          showModal(
-            `Install ${tool}`,
-            `<p><b>${r.status}</b></p><p class="muted"></p>`,
-          );
-          ($("#modal-body .muted") as HTMLElement).textContent = r.detail;
+          setOpsStatus({ label: r.detail });
         }
         await refreshIntegrations(true).then(() => refreshQmdStatus());
       } catch {
-        showModal(
-          "Install failed",
-          `<p>Could not install ${tool}. Check the server log.</p>`,
-        );
+        setOpsStatus({ label: i18n.t("workflow.installFailed") });
       } finally {
         btn.disabled = false;
         btn.textContent = "install";
@@ -5929,24 +5933,19 @@ async function boot() {
   }
 
   async function startQmdSetup() {
+    setOpsStatus({ label: i18n.t("ops.qmdEmbed"), indeterminate: true });
     try {
       await api("/api/qmd/setup", { method: "POST" });
       qmdStatus = { state: "indexing" };
       renderQmdSettings();
-      showModal(
-        "Semantic indexing started",
-        "<p>qmd is indexing this vault in the background. Related notes and semantic search will show an “indexing” state until embeddings are ready.</p>",
-      );
     } catch {
-      showModal(
-        "Setup failed",
-        "<p>Could not start qmd setup. Check the server log.</p>",
-      );
+      setOpsStatus({ label: i18n.t("workflow.qmdSetupFailed") });
+      window.setTimeout(() => setOpsStatus(null), 4_000);
     }
   }
   $("#qmd-enable").addEventListener("click", startQmdSetup);
 
-  // ---- qmd index maintenance (A): user-controlled update/embed + progress ----
+  // ---- qmd index maintenance (A): user-controlled update/embed ----
   interface MaintStatus {
     available: boolean;
     running?: boolean;
@@ -5980,22 +5979,16 @@ async function boot() {
     const running = !!m.running;
     ($("#qmd-update") as HTMLButtonElement).disabled = running;
     ($("#qmd-embed") as HTMLButtonElement).disabled = running;
-    const bar = $("#qmd-maint-bar");
-    const fill = bar.querySelector("span") as HTMLElement;
+    const maintStatus = $("#qmd-maint-status");
     const pending = m.index?.pending ?? 0;
     const stale = m.index?.updatedAgo ? ` · updated ${m.index.updatedAgo}` : "";
     if (running) {
-      bar.classList.remove("hidden");
-      // embed shrinks Pending from its peak to 0; update has no such signal, so
-      // it just shows a small "working" sliver.
       maintMaxPending = Math.max(maintMaxPending, pending, 1);
       const pct =
         m.op === "embed"
           ? Math.round((1 - pending / maintMaxPending) * 100)
           : 8;
-      fill.style.width = Math.max(6, pct) + "%";
-      $("#qmd-maint-status").textContent =
-        `${m.op === "embed" ? "embedding" : "updating"}… ${pending} pending`;
+      maintStatus.classList.add("hidden");
       if (!rescanRunning) {
         setOpsStatus({
           label: i18n.t(
@@ -6018,9 +6011,8 @@ async function boot() {
       }
       maintMaxPending = 0;
       maintForceRunning = false;
-      bar.classList.add("hidden");
-      fill.style.width = "0";
-      $("#qmd-maint-status").textContent = m.error
+      maintStatus.classList.remove("hidden");
+      maintStatus.textContent = m.error
         ? `error: ${m.error}`
         : pending
           ? `${pending} pending${stale}`
@@ -6052,8 +6044,9 @@ async function boot() {
     } catch {
       maintForceRunning = false;
       if (!rescanRunning) setOpsStatus(null);
-      $("#qmd-maint-status").textContent =
-        "could not start — check the server log";
+      const maintStatus = $("#qmd-maint-status");
+      maintStatus.classList.remove("hidden");
+      maintStatus.textContent = "could not start — check the server log";
       return false;
     }
   }
@@ -6067,21 +6060,9 @@ async function boot() {
   cbUpd.addEventListener("change", () => prefs.setAutoUpdate(cbUpd.checked));
   cbEmb.addEventListener("change", () => prefs.setAutoEmbed(cbEmb.checked));
 
-  // One-time prompt (R6): qmd installed but nothing covers this vault.
+  // The visible enable control is the explicit setup decision; no modal takeover.
   function maybePromptSetup() {
-    if (qmdStatus.state !== "uncovered" || prefs.wasQmdPrompted()) return;
-    prefs.markQmdPrompted();
-    showModal(
-      "Enable semantic search?",
-      `<p>qmd is installed, but no collection covers this vault yet. Sinapso can create one and index it in the background to power related notes and semantic search.</p>
-       <p style="display:flex;gap:8px"><button id="qmd-setup-yes">Enable</button><button id="qmd-setup-no">Not now</button></p>
-       <p class="muted">You can enable it later in Tools → Integrations.</p>`,
-    );
-    $("#qmd-setup-yes").addEventListener("click", () => {
-      void hideModal();
-      void startQmdSetup();
-    });
-    $("#qmd-setup-no").addEventListener("click", hideModal);
+    if (qmdStatus.state === "uncovered") prefs.markQmdPrompted();
   }
 
   // "Related notes (semantic)" section at the end of every note (R4/R5).
@@ -6399,12 +6380,26 @@ async function boot() {
       );
       updateHistoryNav();
       if (decision === "blocked-pinned") {
-        upsertActivityCard({
-          id: `research-ready:${id}`,
-          state: "ready",
-          label: "research.backgroundReady",
-          detail: i18n.t("research.backgroundPinned"),
-        });
+        if (canReserveActionable(workflowActions)) {
+          const actionId = crypto.randomUUID();
+          const presentation: ToolPresentationV1 = {
+            version: 1,
+            id: actionId,
+            name: "web-research",
+            state: "success",
+            result: {
+              title: i18n.t("research.backgroundReady"),
+              text: i18n.t("research.backgroundPinned"),
+            },
+          };
+          workflowActions = resolveActionable(
+            reserveActionable(workflowActions, presentation, Date.now()),
+            actionId,
+            presentation,
+            { kind: "background-research", value: { historyId: id } },
+          );
+          renderWorkflowCards();
+        }
         announceResearch(i18n.t("research.backgroundReady"));
       } else if (decision === "blocked-dirty") {
         researchError(i18n.t("research.refreshConflict"));
@@ -6585,8 +6580,22 @@ async function boot() {
   }
 
   async function closeResearch() {
+    const returnContext = activeInlineWikiReviewReturnContext();
+    if (returnContext) {
+      if (!(await teardownResearchDocument())) return;
+      if (!(await teardownResearchVaultEditor({ flush: true }))) return;
+      // Closing an inline review returns its sole terminal card before showing
+      // the saved context. A second close performs the normal panel close.
+      workflowActions = restoreInlineActionables(workflowActions);
+      renderWorkflowCards();
+      if (await returnAfterWikiReview(returnContext))
+        focusWikiReviewReturn(returnContext);
+      return;
+    }
     if (!(await teardownResearchDocument())) return;
-    await teardownResearchVaultEditor({ flush: true });
+    if (!(await teardownResearchVaultEditor({ flush: true }))) return;
+    workflowActions = restoreInlineActionables(workflowActions);
+    renderWorkflowCards();
     researchMode = null;
     hideEvidenceBubble();
     $("#research").classList.add("hidden");
@@ -6638,10 +6647,10 @@ async function boot() {
   }
 
   /** Flush-before-destroy for the research-side vault editor (R17).
-   *  Await in-flight save, flush dirty, mirror conflict/error. */
+   *  Await in-flight save, flush dirty, block conflict/error. */
   async function teardownResearchVaultEditor(opts: {
     flush: boolean;
-  }): Promise<void> {
+  }): Promise<boolean> {
     const editor = researchVaultEditor;
     const autosave = researchVaultAutosave;
     const path = researchVaultPath;
@@ -6653,7 +6662,7 @@ async function boot() {
       inboxPathOpen = null;
       researchEditorGeneration++;
       $("#research-banner").classList.add("hidden");
-      return;
+      return true;
     }
     if (opts.flush) {
       const state = autosave.state();
@@ -6672,16 +6681,11 @@ async function boot() {
           /* keep going to mirror fallback */
         }
       } else if (state === "conflict") {
-        // Cannot auto-resolve; preserve the local content in the mirror so
-        // the user does not lose work. The conflict banner re-appears on
-        // re-open via the same path as the reader (prefs.getEditorMirror).
-        prefs.setEditorMirror({
-          vault: activeVaultPath(),
-          noteId: path,
-          content: editor.getContent(),
-          at: Date.now(),
-        });
+        return false; // Cannot auto-resolve without discarding the editor.
       }
+      // flush() reports failures through onState instead of throwing. Do not
+      // dispose an editor whose final save did not reach a clean state.
+      if (autosave.state() !== "clean") return false;
     }
     autosave.dispose();
     editor.destroy();
@@ -6692,6 +6696,7 @@ async function boot() {
     inboxPathOpen = null;
     researchEditorGeneration++;
     $("#research-banner").classList.add("hidden");
+    return true;
   }
 
   async function saveVaultNote(
@@ -7313,15 +7318,17 @@ async function boot() {
   /** Switch the right panel between Research history and Inbox. Flushes the
    *  research-side vault editor first (R17). */
   async function setResearchCollection(coll: ResearchCollection) {
-    if (researchCollection === coll) return;
+    if (researchCollection === coll) return true;
     // Flush-before-switch (R17): a dirty/saving Inbox editor cannot be
     // orphaned silently; mirror only on conflict/error.
-    await teardownResearchVaultEditor({ flush: true });
+    if (!(await teardownResearchVaultEditor({ flush: true }))) return false;
     researchCollection = coll;
     inboxPathOpen = null;
     researchError(null);
     showCollectionChrome();
     const body = $("#research-body");
+    workflowActions = restoreInlineActionables(workflowActions);
+    renderWorkflowCards();
     body.innerHTML = "";
     if (coll === "inbox") {
       body.innerHTML = `<p class="muted">${i18n.t("inbox.loading")}</p>`;
@@ -7344,6 +7351,7 @@ async function boot() {
     }
     updateBrandStats();
     syncVoiceContext();
+    return true;
   }
 
   $("#research-toggle-inbox").addEventListener("click", () => {
@@ -8341,7 +8349,11 @@ async function boot() {
   }
 
   // Re-render a stored entry (no network query, no spend).
-  async function showHistoryEntry(entry: ResearchEntry): Promise<boolean> {
+  async function showHistoryEntry(
+    entry: ResearchEntry,
+    context?: SelectionSnapshot,
+    contextWarning?: string | null,
+  ): Promise<boolean> {
     if (!(await teardownResearchDocument())) return false;
     openResearch(entry.mode);
     currentEntryId = entry.id;
@@ -8349,6 +8361,13 @@ async function boot() {
     researchError(null);
     const body = $("#research-body");
     body.innerHTML = "";
+    appendContextNotices(body, context);
+    if (contextWarning) {
+      const p = document.createElement("p");
+      p.className = "research-notice";
+      p.textContent = contextWarning;
+      body.appendChild(p);
+    }
     if (entry.mode === "web")
       renderWebInto(
         body,
@@ -8679,11 +8698,10 @@ async function boot() {
     if (!requestQuery) return;
     const shownQuery = displayQuery(query, label ?? "Selected text", context);
     const deep = deepOverride ?? webScope === "deep";
-    openResearch("web");
-    const body = $("#research-body");
-    body.innerHTML = `<p class="muted">${i18n.t(
-      deep ? "research.deepBusy" : "research.webBusy",
-    )}</p>`;
+    setOpsStatus({
+      label: i18n.t(deep ? "research.deepBusy" : "research.webBusy"),
+      indeterminate: true,
+    });
     try {
       const data = await api<{
         answer: ResearchEntry["answer"];
@@ -8703,25 +8721,39 @@ async function boot() {
           displayQuery: shownQuery,
         },
       });
-      body.innerHTML = "";
-      appendContextNotices(body, context);
-      if (data.contextWarning) {
-        const p = document.createElement("p");
-        p.className = "research-notice";
-        p.textContent = data.contextWarning;
-        body.appendChild(p);
-      }
-      renderWebInto(body, data, shownQuery);
-      if (data.historyId) await noteQueryPersisted(data.historyId);
-    } catch (e) {
-      body.innerHTML = "";
-      if (e instanceof ApiError) {
-        const msg = (e.body as { message?: string } | null | undefined)
-          ?.message;
-        researchError(msg ?? "research failed");
+      if (!(await setResearchCollection("research"))) return;
+      await loadHistory();
+      const entry = data.historyId
+        ? researchHistory.find((item) => item.id === data.historyId)
+        : undefined;
+      if (entry) {
+        if (!(await showHistoryEntry(entry, context, data.contextWarning)))
+          return;
+        historyIdx = researchHistory.indexOf(entry);
       } else {
-        researchError("research failed — is the server running?");
+        if (!(await teardownResearchDocument())) return;
+        openResearch("web");
+        const body = $("#research-body");
+        body.innerHTML = "";
+        appendContextNotices(body, context);
+        if (data.contextWarning) {
+          const p = document.createElement("p");
+          p.className = "research-notice";
+          p.textContent = data.contextWarning;
+          body.appendChild(p);
+        }
+        renderWebInto(body, data, shownQuery);
       }
+      if (data.historyId) await noteQueryPersisted(data.historyId);
+      setOpsStatus(null);
+    } catch (e) {
+      const msg =
+        e instanceof ApiError
+          ? ((e.body as { message?: string } | null | undefined)?.message ??
+            "research failed")
+          : "research failed — is the server running?";
+      setOpsStatus({ label: msg });
+      window.setTimeout(() => setOpsStatus(null), 4_000);
     }
   }
 
@@ -8736,7 +8768,7 @@ async function boot() {
     }
     const requestQuery = query.trim() || selectedText(context);
     if (!requestQuery) return;
-    if (!canReserveActionable(selectionResearchActions)) {
+    if (!canReserveActionable(workflowActions)) {
       setOpsStatus({ label: i18n.t("selectionResearch.capacity") });
       window.setTimeout(() => {
         if (!selectionResearchRunning) setOpsStatus(null);
@@ -8752,8 +8784,8 @@ async function boot() {
       state: "running",
     };
     if (presentationSurface(runningPresentation) !== "ops") return;
-    selectionResearchActions = reserveActionable(
-      selectionResearchActions,
+    workflowActions = reserveActionable(
+      workflowActions,
       runningPresentation,
       Date.now(),
     );
@@ -8778,21 +8810,22 @@ async function boot() {
           title: i18n.t("selectionResearch.ready"),
           text: shownQuery,
         },
+        sources: externalSourcesFromResearch(data),
       };
-      if (presentationSurface(readyPresentation) === "terminal-card") {
-        selectionResearchActions = resolveActionable(
-          selectionResearchActions,
+      if (
+        presentationSurface(readyPresentation, currentPresentationContext()) ===
+        "terminal-card"
+      ) {
+        workflowActions = resolveActionable(
+          workflowActions,
           runId,
           readyPresentation,
-          { data, query: shownQuery },
+          { kind: "selection-research", value: { data, query: shownQuery } },
         );
-        renderSelectionResearchCards();
+        renderWorkflowCards();
       }
     } catch (e) {
-      selectionResearchActions = removeActionable(
-        selectionResearchActions,
-        runId,
-      );
+      workflowActions = removeActionable(workflowActions, runId);
       failure =
         e instanceof ApiError
           ? ((e.body as { message?: string } | null)?.message ??
@@ -8873,36 +8906,6 @@ async function boot() {
     return true;
   }
 
-  async function restoreResearchAfterWikiApply() {
-    const body = $("#research-body");
-    if (researchCollection === "inbox") {
-      await teardownResearchVaultEditor({ flush: false });
-      await loadInbox();
-      const next = inboxCursorState.items[0];
-      if (next) {
-        await openInboxNote(next.id);
-        return;
-      }
-      renderInboxListInto(body);
-      $("#research-title").textContent = i18n.t("inbox.title");
-      updateHistoryNav();
-      return;
-    }
-    await teardownResearchDocument();
-    await loadHistory();
-    const current = researchHistory.find(
-      (entry) => entry.id === currentEntryId,
-    );
-    const next = current ?? researchHistory[0];
-    if (next) {
-      await showHistoryEntry(next);
-      return;
-    }
-    currentEntryId = null;
-    body.innerHTML = "";
-    updateHistoryNav();
-  }
-
   interface WikiIngestOperation {
     type: "create" | "edit" | "move";
     path: string;
@@ -8927,7 +8930,68 @@ async function boot() {
     via?: string;
   }
 
-  function renderWikiProposal(body: HTMLElement, proposal: WikiIngestProposal) {
+  type WikiReturnContext = {
+    collection: ResearchCollection;
+    id: string | null;
+    actionId: string;
+    invokingCta: HTMLButtonElement | null;
+    focusFallback: HTMLElement | null;
+  };
+
+  function focusConnected(element: HTMLElement | null): void {
+    if (element?.isConnected) element.focus();
+  }
+
+  function focusWikiReviewReturn(context: WikiReturnContext): void {
+    const cta = context.invokingCta;
+    if (
+      cta?.isConnected &&
+      cta.getClientRects().length > 0 &&
+      getComputedStyle(cta).visibility !== "hidden"
+    ) {
+      cta.focus();
+      return;
+    }
+    focusTerminalFallback(context.focusFallback);
+  }
+
+  async function returnAfterWikiReview(
+    context: WikiReturnContext,
+  ): Promise<boolean> {
+    // This restoration is for an active inline review only. Never let an
+    // asynchronous close path reopen a panel the user already closed.
+    if ($("#research").classList.contains("hidden")) return false;
+    if (context.collection === "inbox") {
+      if (!(await setResearchCollection("inbox"))) return false;
+      if (!(await teardownResearchVaultEditor({ flush: false }))) return false;
+      await loadInbox();
+      if (!context.id) {
+        renderInboxListInto($("#research-body"));
+        $("#research-title").textContent = i18n.t("inbox.title");
+        return true;
+      }
+      if (inboxCursorState.items.some((entry) => entry.id === context.id))
+        return openInboxNote(context.id);
+      else {
+        renderInboxListInto($("#research-body"));
+        $("#research-title").textContent = i18n.t("inbox.title");
+      }
+      return true;
+    }
+    if (!context.id) return true;
+    if (!(await setResearchCollection("research"))) return false;
+    await loadHistory();
+    const entry = researchHistory.find((item) => item.id === context.id);
+    return entry ? showHistoryEntry(entry) : true;
+  }
+
+  function renderWikiProposal(
+    body: HTMLElement,
+    proposal: WikiIngestProposal,
+    returnContext: WikiReturnContext,
+  ) {
+    const operationLabel = (type: WikiIngestOperation["type"]) =>
+      i18n.t(`workflow.${type}`);
     body.innerHTML = "";
     const h = document.createElement("h2");
     h.className = "research-query";
@@ -8935,25 +8999,43 @@ async function boot() {
     body.appendChild(h);
     const meta = document.createElement("p");
     meta.className = "muted wiki-proposal-meta";
-    const visible = proposal.operations.filter((op) => !op.raw);
-    const raw = proposal.operations.find((op) => op.raw);
-    meta.textContent = visible.length
-      ? `${visible.length} content page proposal(s).${raw ? ` RAW source ${raw.type === "move" ? "will move" : "will be stored"} first at canonical path ${raw.path}.` : ""}`
-      : raw
-        ? `No content pages were proposed. RAW source ${raw.type === "move" ? "will move" : "will be stored"} first at canonical path ${raw.path}.`
-        : "No operations were proposed.";
+    const counts = proposal.operations.reduce(
+      (out, op) => ({ ...out, [op.type]: out[op.type] + 1 }),
+      { create: 0, edit: 0, move: 0 },
+    );
+    meta.textContent = `${proposal.source} · ${counts.create} ${i18n.t("workflow.create")}, ${counts.edit} ${i18n.t("workflow.edit")}, ${counts.move} ${i18n.t("workflow.move")}.`;
     body.appendChild(meta);
-    for (const op of visible) {
-      const row = document.createElement("div");
+    const operationDetails = document.createElement("details");
+    operationDetails.className = "wiki-proposal-disclosure";
+    const operationSummary = document.createElement("summary");
+    operationSummary.textContent = i18n.t("workflow.showOperations");
+    operationDetails.appendChild(operationSummary);
+    for (const op of proposal.operations.filter((item) => !item.raw)) {
+      const row = document.createElement("details");
       row.className = "wiki-proposal-op";
+      const summary = document.createElement("summary");
       const title = document.createElement("div");
       title.className = "wiki-proposal-title";
-      title.textContent = `${op.type}: ${op.path}`;
+      title.textContent = `${operationLabel(op.type)}: ${op.path}`;
       const pre = document.createElement("pre");
       pre.textContent = op.content ?? "";
-      row.append(title, pre);
-      body.appendChild(row);
+      summary.appendChild(title);
+      row.append(summary, pre);
+      operationDetails.appendChild(row);
     }
+    const raw = proposal.operations.find((op) => op.raw);
+    if (raw) {
+      const rawDetails = document.createElement("details");
+      rawDetails.className = "wiki-proposal-op";
+      const rawSummary = document.createElement("summary");
+      rawSummary.textContent = i18n.t("workflow.showRaw");
+      const rawPath = document.createElement("div");
+      rawPath.className = "wiki-proposal-title";
+      rawPath.textContent = `${operationLabel(raw.type)}: ${raw.path}`;
+      rawDetails.append(rawSummary, rawPath);
+      operationDetails.appendChild(rawDetails);
+    }
+    body.appendChild(operationDetails);
     const actions = document.createElement("div");
     actions.className = "wiki-proposal-actions";
     const approve = document.createElement("button");
@@ -8963,7 +9045,19 @@ async function boot() {
     reject.className = "web-save wiki-proposal-reject";
     reject.textContent = i18n.t("wiki.reject");
     reject.addEventListener("click", () => {
-      body.innerHTML = `<p class="muted">${i18n.t("wiki.rejected")}</p>`;
+      workflowActions = removeActionable(
+        workflowActions,
+        returnContext.actionId,
+      );
+      renderWorkflowCards();
+      body.replaceChildren();
+      const message = document.createElement("p");
+      message.className = "muted";
+      message.textContent = i18n.t("wiki.rejected");
+      body.appendChild(message);
+      void returnAfterWikiReview(returnContext).then(() => {
+        focusWikiReviewReturn(returnContext);
+      });
     });
     approve.addEventListener("click", async () => {
       approve.disabled = true;
@@ -8986,17 +9080,13 @@ async function boot() {
         });
         if (!data.ids?.length)
           throw new Error(data.error ?? i18n.t("wiki.applyFail"));
-        const id = data.primaryId ?? data.ids[0];
-        const opened = await openAfterIngest(id, false, data.graphUpdated);
-        await restoreResearchAfterWikiApply();
-        if (!opened) {
-          const message = i18n.t(
-            data.graphRefreshFailed
-              ? "research.graphRefreshFailed"
-              : "research.savedNotOpened",
-          );
-          researchError(message);
-        }
+        await returnAfterWikiReview(returnContext);
+        workflowActions = removeActionable(
+          workflowActions,
+          returnContext.actionId,
+        );
+        renderWorkflowCards();
+        focusWikiReviewReturn(returnContext);
       } catch (e) {
         approve.disabled = false;
         approve.textContent = i18n.t("wiki.applyFail");
@@ -9009,29 +9099,27 @@ async function boot() {
     body.appendChild(actions);
   }
 
-  async function showWikiProposal(
-    input:
-      | (IngestPreview & { sourceNote?: string })
-      | { researchId: string; sourceNote?: string },
-    wikiId?: string,
-  ) {
-    // Frente B: non-interruptive preparation. Do NOT open/empty the research
-    // panel while the LLM prepares — keep the current document/article/result
-    // exactly visible. Surface progress as a transient activity card + ops
-    // status; on ready, present a non-intrusive CTA (opens the saved proposal
-    // only when the user taps it). Errors show as contextual activity and never
-    // clear the visible content. Approval semantics are unchanged: applying
-    // still happens only after explicit approval inside the proposal.
-    const cardId = "wiki-ingest";
+  async function showWikiProposal(input: WikiProposalInput, wikiId?: string) {
+    if (!canReserveActionable(workflowActions)) {
+      setOpsStatus({ label: i18n.t("workflow.capacity") });
+      window.setTimeout(() => setOpsStatus(null), 4_000);
+      return;
+    }
+    // Preparation owns only #ops-status; current Research or Inbox is untouched.
+    const runId = crypto.randomUUID();
+    workflowActions = reserveActionable(
+      workflowActions,
+      {
+        version: 1,
+        id: runId,
+        name: "wiki-ingest",
+        state: "running",
+      },
+      Date.now(),
+    );
     setOpsStatus({
       label: i18n.t("activity.propose"),
       indeterminate: true,
-    });
-    upsertActivityCard({
-      id: cardId,
-      state: "propose",
-      label: "activity.propose",
-      detail: "wiki.buildingProposal",
     });
     try {
       const proposal = await api<WikiIngestProposal>(
@@ -9047,21 +9135,39 @@ async function boot() {
               : { converted: input, sourceNote: input.sourceNote, wikiId },
         },
       );
-      pendingWikiProposal = {
-        proposal,
-        wikiId: proposal.wiki.id,
-        researchId: proposal.researchId,
-        sourceNote: proposal.sourceNote,
+      const counts = proposal.operations.reduce(
+        (out, op) => ({ ...out, [op.type]: out[op.type] + 1 }),
+        { create: 0, edit: 0, move: 0 },
+      );
+      const ready: ToolPresentationV1 = {
+        version: 1,
+        id: runId,
+        name: "wiki-ingest",
+        state: "decision-required",
+        result: {
+          title: i18n.t("activity.ready"),
+          text: proposal.source.slice(0, 600),
+        },
+        decision: {
+          kind: "review",
+          decisionId: crypto.randomUUID(),
+          review: {
+            reviewId: crypto.randomUUID(),
+            sourceLabel: proposal.source.slice(0, 80),
+            targetLabel: (proposal.wiki.label || proposal.wiki.path).slice(
+              0,
+              80,
+            ),
+            counts,
+          },
+        },
       };
-      setOpsStatus(null);
-      upsertActivityCard({
-        id: cardId,
-        state: "ready",
-        label: "activity.ready",
-        detail: i18n.t("activity.readyHint"),
-        cta: "activity.review",
-        ctaKind: "primary",
+      workflowActions = resolveActionable(workflowActions, runId, ready, {
+        kind: "wiki-review",
+        value: { proposal },
       });
+      setOpsStatus(null);
+      renderWorkflowCards();
     } catch (e) {
       setOpsStatus(null);
       const msg =
@@ -9072,14 +9178,18 @@ async function boot() {
           : e instanceof Error
             ? e.message
             : i18n.t("wiki.ingestFailed");
-      upsertActivityCard({
-        id: cardId,
+      const failed: ToolPresentationV1 = {
+        version: 1,
+        id: runId,
+        name: "wiki-ingest",
         state: "error",
-        label: "activity.error",
-        detail: msg,
-        cta: "activity.tryAgain",
-        ctaKind: "retry",
+        result: { title: i18n.t("activity.error"), text: msg.slice(0, 600) },
+      };
+      workflowActions = resolveActionable(workflowActions, runId, failed, {
+        kind: "wiki-retry",
+        value: { input, wikiId },
       });
+      renderWorkflowCards();
     }
   }
 
@@ -9793,64 +9903,97 @@ async function boot() {
     });
   }
 
-  // ---- activity card host + anchor (declared before the topbar reflow so the
-  // reflow pass can reposition the anchor without a temporal-dead-zone access;
-  // the rest of the activity-card system is wired further below) ----
-  const activityHost = $("#activity-cards");
-  const selectionTerminalHost = $("#selection-terminal-cards");
-  function relayoutActivityAnchor(): void {
-    const rail = $("#topbar").classList.contains("topbar-rail");
-    activityHost.classList.toggle("ac-bottom", !rail);
-    activityHost.classList.toggle("ac-top", rail);
+  // One terminal-only host. Passive work stays in #ops-status.
+  const terminalHost = $("#workflow-terminal-cards");
+
+  function focusTerminalFallback(fallback: HTMLElement | null): void {
+    const target = terminalHost.querySelector<HTMLElement>(
+      ".terminal-card-open, .terminal-card-aggregate > summary, .terminal-choice-row, input",
+    );
+    focusConnected(target?.isConnected ? target : fallback);
   }
 
-  function relayoutSelectionTerminalHost(): void {
-    if (!selectionTerminalHost.childElementCount) return;
+  /** Recomputed at presentation time; run provenance never decides navigation. */
+  function currentPresentationContext(): PresentationContext {
+    return {
+      collection: researchCollection,
+      visibleId: currentVisibleResearchId(),
+      pinnedId: pinnedResearchEntryId,
+      editorDirty: hasUnsavedResearchDocumentEdits(),
+      railBottom: $("#topbar").classList.contains("topbar-rail"),
+    };
+  }
+
+  function relayoutTerminalHost(): void {
     const topbar = $("#topbar");
     const search = $("#search-wrap").getBoundingClientRect();
     const panels = ["#reader", "#research"]
       .map((id) => $(id))
       .filter((panel) => !panel.classList.contains("hidden"))
-      .map((panel) => panel.getBoundingClientRect())
+      // Transitions move the visual rect, but terminal placement must reserve
+      // the panel's destination geometry from its first visible frame.
+      .map((panel) => ({
+        left: panel.offsetLeft,
+        width: panel.offsetWidth,
+        right: panel.offsetLeft + panel.offsetWidth,
+      }))
       .filter((panel) => panel.left < window.innerWidth && panel.right > 0);
     const safeLeft = panels
-      .filter((panel) => panel.left < window.innerWidth / 2)
+      .filter((panel) => panel.left + panel.width / 2 < window.innerWidth / 2)
       .reduce((left, panel) => Math.max(left, panel.right + 12), 12);
     const safeRight = panels
-      .filter((panel) => panel.right > window.innerWidth / 2)
+      .filter((panel) => panel.left + panel.width / 2 >= window.innerWidth / 2)
       .reduce(
         (right, panel) => Math.min(right, panel.left - 12),
         window.innerWidth - 12,
       );
     const safeWidth = Math.max(0, safeRight - safeLeft);
-    const bottomRail = topbar.classList.contains("topbar-rail");
-    selectionTerminalHost.classList.toggle("terminal-card-mobile", bottomRail);
+    const bottomRail = topbar.classList.contains("topbar-bottom-rail");
+    terminalHost.classList.toggle("terminal-card-mobile", bottomRail);
     if (bottomRail) {
-      const top = 12;
-      const bottom = Math.ceil(search.height) + 16;
-      const width = Math.min(320, window.innerWidth - 24, safeWidth);
-      const left = Math.max(
-        12,
-        Math.min(safeLeft, window.innerWidth - width - 12),
+      terminalHost.style.removeProperty("display");
+      const topChrome = topbar.getBoundingClientRect();
+      const bottomChrome = [
+        search,
+        ...["#voice-status", "#voice-spectrum", "#voice-hud", "#ops-status"]
+          .map((id) => $(id).getBoundingClientRect())
+          .filter((rect) => rect.width > 0 && rect.height > 0),
+      ];
+      // The mobile host lives only in the measured center between top chrome
+      // and every bottom-rail/spectrum/status control, never in the rail strip.
+      const top = Math.max(12, Math.ceil(topChrome.bottom) + 12);
+      const safeBottom = Math.max(
+        top,
+        Math.floor(Math.min(...bottomChrome.map((rect) => rect.top)) - 12),
       );
-      selectionTerminalHost.style.left = `${Math.round(left)}px`;
-      selectionTerminalHost.style.right = "auto";
-      selectionTerminalHost.style.top = `${top}px`;
-      selectionTerminalHost.style.bottom = `${bottom}px`;
-      selectionTerminalHost.style.width = `${Math.round(width)}px`;
-      selectionTerminalHost.style.setProperty(
+      const fallback = safeWidth < 160 || safeBottom - top < 44;
+      terminalHost.classList.toggle("terminal-card-fallback", fallback);
+      terminalHost.dataset.terminalPlacement = fallback
+        ? "aggregate"
+        : "central";
+      const bottom = Math.max(12, window.innerHeight - safeBottom);
+      // Keep the mobile terminal in the central rectangle, clear of open panels.
+      terminalHost.style.left = `${Math.round(safeLeft)}px`;
+      terminalHost.style.right = `${Math.round(window.innerWidth - safeRight)}px`;
+      terminalHost.style.top = `${top}px`;
+      terminalHost.style.bottom = `${bottom}px`;
+      terminalHost.style.width = "auto";
+      terminalHost.style.setProperty(
         "--terminal-safe-height",
-        `${Math.max(0, window.innerHeight - top - bottom)}px`,
+        `${Math.max(0, safeBottom - top)}px`,
       );
       return;
     }
+    terminalHost.classList.remove("terminal-card-fallback");
+    terminalHost.dataset.terminalPlacement = "desktop";
+    terminalHost.style.removeProperty("display");
     const width = Math.min(320, safeWidth);
     const left = Math.max(safeLeft, Math.min(search.left, safeRight - width));
-    selectionTerminalHost.style.left = `${Math.round(left)}px`;
-    selectionTerminalHost.style.right = "auto";
-    selectionTerminalHost.style.top = `${Math.round(search.bottom + 8)}px`;
-    selectionTerminalHost.style.bottom = "auto";
-    selectionTerminalHost.style.width = `${Math.round(width)}px`;
+    terminalHost.style.left = `${Math.round(left)}px`;
+    terminalHost.style.right = "auto";
+    terminalHost.style.top = `${Math.round(search.bottom + 8)}px`;
+    terminalHost.style.bottom = "auto";
+    terminalHost.style.width = `${Math.round(width)}px`;
   }
 
   // ---- topbar reflow around docked panels ----
@@ -9861,12 +10004,11 @@ async function boot() {
   let relayoutT = 0;
   const relayout = () => {
     layoutTopbar();
-    relayoutActivityAnchor();
-    relayoutSelectionTerminalHost();
+    relayoutTerminalHost();
     clearTimeout(relayoutT);
     relayoutT = window.setTimeout(() => {
       layoutTopbar();
-      relayoutSelectionTerminalHost();
+      relayoutTerminalHost();
     }, 300);
   };
   const topbarObs = new MutationObserver(relayout);
@@ -9877,7 +10019,7 @@ async function boot() {
     });
   window.addEventListener("resize", layoutTopbar);
   window.addEventListener("resize", () =>
-    requestAnimationFrame(relayoutSelectionTerminalHost),
+    requestAnimationFrame(relayoutTerminalHost),
   );
   relayout();
 
@@ -9944,86 +10086,55 @@ async function boot() {
     bar.setAttribute("aria-valuenow", String(pct));
   }
 
-  // ---- activity card stack (ephemeral, non-blocking) ----
-  // Single bounded stack (max 3) anchored opposite the search bar. Transient
-  // states (search/prepare/propose) self-update; ready/error persist with a
-  // CTA/dismiss. The host is pointer-events:none; cards re-enable interaction.
-  let activityStack: ActivityCard[] = [];
   type SelectionResearchAction = {
     data: WebResearchResponse;
     query: string;
   };
-  let selectionResearchActions = new Map<
-    string,
-    ActionableEntry<SelectionResearchAction>
-  >();
-  let selectionResearchRunning = 0;
-  // Pending wiki-ingest proposal awaiting the user's review CTA (Frente B).
-  let pendingWikiProposal: {
+  type WikiReviewAction = {
     proposal: WikiIngestProposal;
-    wikiId: string;
-    researchId?: string;
-    sourceNote?: string;
-  } | null = null;
+    origin?: Pick<WikiReturnContext, "collection" | "id">;
+  };
+  type WikiProposalInput =
+    | (IngestPreview & { sourceNote?: string })
+    | { researchId: string; sourceNote?: string };
+  type WorkflowAction =
+    | { kind: "selection-research"; value: SelectionResearchAction }
+    | { kind: "wiki-review"; value: WikiReviewAction }
+    | {
+        kind: "wiki-retry";
+        value: { input: WikiProposalInput; wikiId?: string };
+      }
+    | { kind: "graph-refresh" }
+    | { kind: "background-research"; value: { historyId: string } };
+  let workflowActions = new Map<string, ActionableEntry<WorkflowAction>>();
+  const trustedExternalSources = createTrustedExternalSourceRegistry();
 
-  function renderActivityCards(): void {
-    const stack = activityStack;
-    activityHost.innerHTML = "";
-    if (!stack.length) return;
-    for (const card of stack) {
-      const el = document.createElement("div");
-      el.className = `ac-card ac-${card.state}`;
-      el.dataset.id = card.id;
-      const role = card.state === "error" ? "alert" : "status";
-      el.setAttribute("role", role);
-      const label = document.createElement("span");
-      label.className = "ac-label";
-      label.textContent = i18n.t(card.label);
-      el.appendChild(label);
-      if (card.detail) {
-        const d = document.createElement("span");
-        d.className = "ac-detail";
-        d.textContent = card.detail;
-        el.appendChild(d);
-      }
-      const actions = document.createElement("div");
-      actions.className = "ac-actions";
-      if (card.cta) {
-        const cta = document.createElement("button");
-        cta.type = "button";
-        cta.className =
-          card.ctaKind === "retry" ? "ac-cta-retry" : "ac-cta-primary";
-        cta.textContent = i18n.t(card.cta);
-        cta.addEventListener("click", () => onActivityCta(card));
-        actions.appendChild(cta);
-      }
-      // ready/error persist with an explicit dismiss (not hover-only).
-      if (isTerminal(card.state)) {
-        const dismiss = document.createElement("button");
-        dismiss.type = "button";
-        dismiss.className = "ac-dismiss";
-        dismiss.setAttribute("aria-label", i18n.t("activity.dismiss"));
-        dismiss.textContent = "×";
-        dismiss.title = i18n.t("activity.dismiss");
-        dismiss.addEventListener("click", () => dismissActivityCard(card.id));
-        actions.appendChild(dismiss);
-      }
-      if (actions.childNodes.length) el.appendChild(actions);
-      activityHost.appendChild(el);
+  function externalSourcesFromResearch(data: WebResearchResponse) {
+    const sources = [
+      ...(data.answer?.citations ?? []),
+      ...data.results.map(({ url }) => ({ url })),
+    ]
+      .map(({ url }) => trustedExternalSources.register(url))
+      .filter((source): source is { id: string; label: string } => !!source)
+      .map((source) => ({ kind: "external-source" as const, ...source }));
+    return sources.length ? sources : undefined;
+  }
+  let selectionResearchRunning = 0;
+
+  function activeInlineWikiReviewReturnContext(): WikiReturnContext | null {
+    for (const entry of workflowActions.values()) {
+      if (entry.surface !== "inline" || entry.value?.kind !== "wiki-review")
+        continue;
+      const origin = entry.value.value.origin;
+      if (!origin) continue;
+      return {
+        ...origin,
+        actionId: entry.id,
+        invokingCta: null,
+        focusFallback: $("#search"),
+      };
     }
-  }
-
-  function setActivityStack(next: ActivityCard[]): void {
-    activityStack = next;
-    renderActivityCards();
-  }
-
-  function upsertActivityCard(card: ActivityCard): void {
-    setActivityStack(upsertActivityCardModel(activityStack, card));
-  }
-
-  function dismissActivityCard(id: string): void {
-    setActivityStack(dismissActivityCardModel(activityStack, id));
+    return null;
   }
 
   function setSelectionResearchOpsStatus(): void {
@@ -10033,44 +10144,124 @@ async function boot() {
     });
   }
 
-  function renderSelectionResearchCards(): void {
-    renderSelectionResearchTerminals(
-      selectionTerminalHost,
-      selectionResearchActions,
+  function handleWebResearchChoice(decisionId: string, value: string): void {
+    const entry = [...workflowActions.values()].find(
+      (candidate) =>
+        candidate.presentation.name === "web-research" &&
+        candidate.presentation.state === "decision-required" &&
+        candidate.presentation.decision?.kind === "choose" &&
+        candidate.presentation.decision.decisionId === decisionId,
+    );
+    const choice = entry?.presentation.decision?.choice;
+    if (!entry || !choice) return;
+    const candidate = choice.candidates.find((item) => item.id === value);
+    const query = (candidate?.label ?? value).trim().normalize("NFC");
+    if (!query || Array.from(query).length > 600) return;
+    workflowActions = removeActionable(workflowActions, entry.id);
+    renderWorkflowCards();
+    // Code selects the existing guarded research path; presentation data never supplies a route.
+    void runWebQuery(query);
+  }
+
+  function renderWorkflowCards(): void {
+    // Placement decides whether a full card can clear panel content before the
+    // renderer chooses between individual cards and its existing aggregate.
+    relayoutTerminalHost();
+    renderTerminalCards(
+      terminalHost,
+      workflowActions,
       {
         open: i18n.t("selectionResearch.open"),
+        review: i18n.t("activity.review"),
+        retry: i18n.t("activity.tryAgain"),
         dismiss: i18n.t("selectionResearch.dismiss"),
         aggregate: i18n.t("selectionResearch.aggregate", {
-          count: [...selectionResearchActions.values()].filter(
+          count: [...workflowActions.values()].filter(
             (entry) => entry.status === "ready",
           ).length,
         }),
+        other: i18n.t("workflow.other"),
+        otherPlaceholder: i18n.t("workflow.otherPlaceholder"),
+        create: i18n.t("workflow.create"),
+        edit: i18n.t("workflow.edit"),
+        move: i18n.t("workflow.move"),
       },
-      (id) => void openSelectionResearch(id),
-      (id) => {
-        selectionResearchActions = collapseActionable(
-          selectionResearchActions,
-          id,
-        );
-        renderSelectionResearchCards();
+      {
+        open: (id, invokingCta) => void openWorkflowAction(id, invokingCta),
+        dismiss: (id) => {
+          const fallback = $("#search");
+          workflowActions = collapseActionable(workflowActions, id);
+          renderWorkflowCards();
+          focusTerminalFallback(fallback);
+        },
+        chooseWebResearch: handleWebResearchChoice,
       },
+      trustedExternalSources.resolve,
+      terminalHost.classList.contains("terminal-card-fallback"),
     );
-    relayoutSelectionTerminalHost();
+    relayoutTerminalHost();
   }
 
-  /** CTA routing: ready -> open the pending item; error -> retry. */
-  function onActivityCta(card: ActivityCard): void {
-    if (card.state === "ready" && card.id === "wiki-ingest") {
-      openPendingWikiProposal();
-    } else if (card.state === "error" && card.id === "wiki-ingest") {
-      dismissActivityCard(card.id);
-      pendingWikiProposal = null;
+  async function openWorkflowAction(
+    id: string,
+    invokingCta: HTMLButtonElement,
+  ): Promise<void> {
+    const action = workflowActions.get(id)?.value;
+    if (!action) return;
+    if (action.kind === "wiki-review") {
+      const origin =
+        action.value.origin ??
+        ({
+          collection: researchCollection,
+          id: currentVisibleResearchId(),
+        } satisfies Pick<WikiReturnContext, "collection" | "id">);
+      const returnContext = {
+        ...origin,
+        actionId: id,
+        invokingCta,
+        focusFallback: $("#search"),
+      };
+      if (researchCollection === "inbox")
+        if (!(await teardownResearchVaultEditor({ flush: true }))) return;
+      openResearch("ingest");
+      renderWikiProposal(
+        $("#research-body"),
+        action.value.proposal,
+        returnContext,
+      );
+      // Inline hides the terminal card but keeps the unresolved review reserved.
+      workflowActions = setActionableInline(workflowActions, id, {
+        kind: "wiki-review",
+        value: { ...action.value, origin },
+      });
+      renderWorkflowCards();
+      focusConnected(
+        $("#research-body").querySelector<HTMLElement>(
+          ".wiki-proposal-disclosure > summary",
+        ) ?? returnContext.focusFallback,
+      );
+      return;
     }
-  }
-
-  async function openSelectionResearch(id: string): Promise<void> {
-    const pending = selectionResearchActions.get(id)?.value;
-    if (!pending?.data.historyId) {
+    if (action.kind === "wiki-retry") {
+      workflowActions = removeActionable(workflowActions, id);
+      renderWorkflowCards();
+      await showWikiProposal(action.value.input, action.value.wikiId);
+      return;
+    }
+    if (action.kind === "graph-refresh") {
+      workflowActions = removeActionable(workflowActions, id);
+      renderWorkflowCards();
+      await rescan(false);
+      return;
+    }
+    if (action.kind === "background-research") {
+      workflowActions = removeActionable(workflowActions, id);
+      renderWorkflowCards();
+      await showAgentResearch(action.value.historyId);
+      return;
+    }
+    const pending = action.value;
+    if (!pending.data.historyId) {
       setOpsStatus({ label: i18n.t("selectionResearch.failed") });
       return;
     }
@@ -10084,37 +10275,37 @@ async function boot() {
     if (!entry || !(await showHistoryEntry(entry))) return;
     historyIdx = researchHistory.indexOf(entry);
     updateHistoryNav();
-    selectionResearchActions = removeActionable(selectionResearchActions, id);
-    renderSelectionResearchCards();
+    workflowActions = removeActionable(workflowActions, id);
+    renderWorkflowCards();
   }
-
-  /** Render the saved proposal in the research panel (explicit user action). */
-  function openPendingWikiProposal(): void {
-    const pending = pendingWikiProposal;
-    if (!pending) return;
-    openResearch("ingest");
-    const body = $("#research-body");
-    renderWikiProposal(body, pending.proposal);
-    dismissActivityCard("wiki-ingest");
-  }
-
-  // Anchor opposite the search bar: search bar on top -> cards at the bottom;
-  // search bar on the bottom rail -> cards at the top. Toggle the host class on
-  // the same reflow pass that repositions the topbar (see relayoutActivityAnchor
-  // declared with the host before the topbar-reflow block).
 
   // ---- File ----
   async function rescan(full: boolean): Promise<boolean> {
     closeMenus();
+    if (!canReserveActionable(workflowActions)) {
+      setOpsStatus({ label: i18n.t("workflow.capacity") });
+      window.setTimeout(() => {
+        if (!rescanRunning) setOpsStatus(null);
+      }, 4_000);
+      return false;
+    }
+    const runId = crypto.randomUUID();
+    const runningPresentation: ToolPresentationV1 = {
+      version: 1,
+      id: runId,
+      name: "graph-refresh",
+      state: "running",
+    };
+    workflowActions = reserveActionable(
+      workflowActions,
+      runningPresentation,
+      Date.now(),
+    );
     rescanRunning = true;
     setOpsStatus({
       label: i18n.t(full ? "ops.fullRescan" : "ops.rescan"),
       indeterminate: true,
     });
-    showModal(
-      full ? "Full rescan…" : "Rescanning vault…",
-      '<p class="muted">Re-reading the vault and rebuilding the graph…</p>',
-    );
     try {
       // When enabled, refresh qmd alongside the Sinapso graph rescan. This also
       // covers notes created inside Sinapso because those paths call rescan().
@@ -10137,16 +10328,29 @@ async function boot() {
       // full reload only if the server didn't return the graph (older build).
       if (r.graph) {
         applyGraphUpdate(r.graph as Graph);
-        void hideModal();
       } else {
         window.location.reload();
       }
+      workflowActions = removeActionable(workflowActions, runId);
       return true;
     } catch {
-      showModal(
-        "Rescan failed",
-        "<p>Could not rescan. The server needs access to the original vault path.</p>",
+      const failedPresentation: ToolPresentationV1 = {
+        version: 1,
+        id: runId,
+        name: "graph-refresh",
+        state: "error",
+        result: {
+          title: i18n.t("activity.error"),
+          text: i18n.t("workflow.rescanFailed"),
+        },
+      };
+      workflowActions = resolveActionable(
+        workflowActions,
+        runId,
+        failedPresentation,
+        { kind: "graph-refresh" },
       );
+      renderWorkflowCards();
       return false;
     } finally {
       rescanRunning = false;
@@ -10298,14 +10502,13 @@ async function boot() {
       if (!(await hideModal())) return;
       await refreshQmdStatus(true);
       if (qmdStatus.state !== "ready") {
-        showModal(
-          i18n.t("qmd.notReadyTitle"),
-          `<p>${i18n.t("qmd.notReadyBody")}</p>`,
-        );
+        setOpsStatus({ label: i18n.t("qmd.notReadyBody") });
+        window.setTimeout(() => setOpsStatus(null), 4_000);
         return;
       }
       if (!(await startMaint(false, true, true))) {
-        showModal(i18n.t("qmd.busyTitle"), `<p>${i18n.t("qmd.busyBody")}</p>`);
+        setOpsStatus({ label: i18n.t("qmd.busyBody") });
+        window.setTimeout(() => setOpsStatus(null), 4_000);
       }
     });
   }

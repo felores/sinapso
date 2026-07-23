@@ -158,6 +158,7 @@ async function installVoiceHarness(page: Page, researchTools = false) {
                 exa: { configured: true },
                 openrouter: { configured: true },
               },
+              webResearch: { configured: true },
             }
           : {}),
         voice: {
@@ -445,12 +446,12 @@ test("pinning coordinates agent opens, refreshes, conflicts, unpin, and user nav
     await harness.show(resultB);
     await expectVisibleQuery(page, "Persisted result A");
     await expect(page.locator("#research-pos")).toHaveText(/\/2$/);
-    await expect(page.locator("#activity-cards .ac-ready")).toContainText(
-      "new agent result is ready in the background",
-    );
-    await expect(page.locator("#activity-cards .ac-ready")).toContainText(
-      "current result is pinned",
-    );
+    await expect(
+      page.locator("#workflow-terminal-cards .terminal-card"),
+    ).toContainText("new agent result is ready in the background");
+    await expect(
+      page.locator("#workflow-terminal-cards .terminal-card"),
+    ).toContainText("current result is pinned");
 
     await page.locator("#research-next").click();
     await expectVisibleQuery(page, "Agent result B");
@@ -790,8 +791,7 @@ test("read-only research selections use the compact opaque action toolbar", asyn
     await expect(page.locator("#ops-status")).toContainText(
       "Researching selected evidence",
     );
-    await expect(page.locator("#activity-cards")).toBeEmpty();
-    await expect(page.locator("#selection-terminal-cards")).toBeEmpty();
+    await expect(page.locator("#workflow-terminal-cards")).toBeEmpty();
     expect(researchRequests[0]).toMatchObject({
       query: "Find deeper primary-source detail on this topic.",
       deep: true,
@@ -815,7 +815,7 @@ test("read-only research selections use the compact opaque action toolbar", asyn
       answer: null,
       results: [],
     });
-    const readyCard = page.locator("#selection-terminal-cards .terminal-card", {
+    const readyCard = page.locator("#workflow-terminal-cards .terminal-card", {
       hasText: "Find deeper primary-source detail",
     });
     await expect(readyCard).toBeVisible();
@@ -846,7 +846,7 @@ test("read-only research selections use the compact opaque action toolbar", asyn
       results: [],
     });
     await expect(
-      page.locator("#selection-terminal-cards .terminal-card"),
+      page.locator("#workflow-terminal-cards .terminal-card"),
     ).toHaveCount(2);
     writeFileSync(inboxFile, "# Selection terminal\n\nInbox stays editable.\n");
     await page.locator("#research-toggle-inbox").click();
@@ -871,7 +871,7 @@ test("read-only research selections use the compact opaque action toolbar", asyn
       "true",
     );
     await page
-      .locator("#selection-terminal-cards .terminal-card", {
+      .locator("#workflow-terminal-cards .terminal-card", {
         hasText: "Find credible alternative perspectives",
       })
       .getByRole("button", { name: "Open research" })
@@ -885,19 +885,129 @@ test("read-only research selections use the compact opaque action toolbar", asyn
   }
 });
 
-test("activity card host is anchored opposite the search bar", async ({
+test("rescan blocks at seven unresolved actions without dropping a retry", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  let researchRequests = 0;
+  let rescanRequests = 0;
+  try {
+    await page.route("**/api/research", async (route) => {
+      if (new URL(route.request().url()).pathname !== "/api/research") {
+        await route.continue();
+        return;
+      }
+      researchRequests++;
+      await route.fulfill({
+        json: {
+          answer: null,
+          results: [],
+          contextWarning: null,
+          historyId: `capacity-${researchRequests}`,
+        },
+      });
+    });
+    await page.route("**/api/rescan*", async (route) => {
+      rescanRequests++;
+      await route.fulfill({ json: { ok: false, error: "vault unavailable" } });
+    });
+    const harness = await installVoiceHarness(page, true);
+    harness.includeWebEntry();
+    await harness.show(syntheticWebEntry.id);
+    for (let index = 0; index < 7; index++) {
+      await page.locator(".web-snippet").first().selectText();
+      await page.getByRole("button", { name: "Go deep" }).click();
+      await expect.poll(() => researchRequests).toBe(index + 1);
+    }
+    await expect(
+      page.locator("#workflow-terminal-cards .terminal-card"),
+    ).toHaveCount(3);
+
+    await page.evaluate(() =>
+      (document.querySelector("#mi-rescan") as HTMLButtonElement).click(),
+    );
+
+    await expect(page.locator("#ops-status")).toContainText(
+      "Finish or dismiss a ready action before starting another.",
+    );
+    expect(rescanRequests).toBe(0);
+    await expect(
+      page.locator("#workflow-terminal-cards .terminal-card", {
+        hasText: "Could not rescan",
+      }),
+    ).toHaveCount(0);
+  } finally {
+    await assertCleanBrowser();
+  }
+});
+
+test("pending web search preserves pinned research and a dirty Inbox editor", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  const inboxId = `inbox/pending-web-${Date.now()}.md`;
+  const inboxFile = join(E2E_VAULT, inboxId);
+  let releaseResearch: (() => Promise<void>) | undefined;
+  try {
+    await page.route("**/api/research", async (route) => {
+      await new Promise<void>((resolve) => {
+        releaseResearch = async () => {
+          await route.fulfill({
+            json: { answer: null, results: [], contextWarning: null },
+          });
+          resolve();
+        };
+      });
+    });
+    const harness = await installVoiceHarness(page, true);
+    harness.includeWebEntry();
+    await harness.show(syntheticWebEntry.id);
+    await page.locator("#research-pin").click();
+
+    writeFileSync(inboxFile, "# Pending web\n\nInbox stays dirty.\n");
+    await page.locator("#research-toggle-inbox").click();
+    await page.locator(".inbox-list-item", { hasText: "pending-web" }).click();
+    const editor = page.locator("#research .cm-content");
+    await editor.click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" Unsaved while searching.");
+
+    await page.locator("#mode-web").evaluate((button: HTMLButtonElement) => {
+      button.disabled = false;
+    });
+    await page.locator("#mode-web").click();
+    await page.locator("#search").fill("pending normal web search");
+    await page.locator("#search").press("Enter");
+    await expect(page.locator("#ops-status")).toContainText(
+      "researching deeply",
+    );
+    await expect(editor).toContainText("Unsaved while searching.");
+    await expect(page.locator("#research-title")).toHaveText("Inbox Note");
+    await expect(page.locator("#research-toggle-inbox")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.locator("#research-body")).not.toContainText(
+      "researching deeply",
+    );
+
+    await releaseResearch?.();
+  } finally {
+    rmSync(inboxFile, { force: true });
+    await assertCleanBrowser();
+  }
+});
+
+test("terminal workflow host is available without creating a second surface", async ({
   page,
 }) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
   try {
     await page.goto("/");
-    const host = page.locator("#activity-cards");
+    const host = page.locator("#workflow-terminal-cards");
     await expect(host).toBeAttached();
-    // Empty stack -> host renders nothing but stays in the DOM.
+    // Empty host -> no lifecycle card is rendered.
     await expect(host).toBeEmpty();
-    // Desktop default: search bar on top -> cards anchored at the bottom.
-    await expect(host).toHaveClass(/ac-bottom/);
-    await expect(host).not.toHaveClass(/ac-top/);
   } finally {
     await assertCleanBrowser();
   }
@@ -927,7 +1037,7 @@ test("wiki ingest preparation preserves the visible document and surfaces an err
 
     // Trigger "Save + ingest" from the research footer. Propose hits the
     // server without an OpenRouter key -> clean 400 -> the frontend must keep
-    // the document visible and surface a non-blocking error activity card.
+    // the document visible and surface a non-blocking terminal retry card.
     const ingestTrigger = page.locator("#research-ingest-wiki");
     await expect(ingestTrigger).toBeVisible();
     await ingestTrigger.click();
@@ -935,8 +1045,8 @@ test("wiki ingest preparation preserves the visible document and surfaces an err
     await expect(menuIngest).toBeVisible();
     await menuIngest.click();
 
-    // An error activity card appears (role=alert), and it is dismissable.
-    const errorCard = page.locator("#activity-cards .ac-card.ac-error", {
+    // An error terminal card appears (role=alert), and it is dismissable.
+    const errorCard = page.locator("#workflow-terminal-cards .terminal-card", {
       hasText: "Try again",
     });
     await expect(errorCard).toBeVisible({ timeout: 15_000 });
@@ -945,15 +1055,17 @@ test("wiki ingest preparation preserves the visible document and surfaces an err
     // Frente B core contract: the visible document is NOT cleared.
     await expectVisibleQuery(page, "PRESERVED DURING WIKI INGEST");
 
-    // Dismiss the card (not hover-only) -> stack empties.
-    await errorCard.locator(".ac-dismiss").click();
-    await expect(page.locator("#activity-cards")).toBeEmpty();
+    // Dismiss only collapses the unresolved action into the aggregate.
+    await errorCard.locator(".terminal-card-dismiss").click();
+    await expect(
+      page.locator("#workflow-terminal-cards .terminal-card-aggregate"),
+    ).toBeVisible();
   } finally {
     await assertCleanBrowser();
   }
 });
 
-test("wiki ingest opens the first created wiki note and restores Research", async ({
+test("wiki ingest apply preserves the Research return context", async ({
   page,
 }) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
@@ -1043,19 +1155,17 @@ test("wiki ingest opens the first created wiki note and restores Research", asyn
 
     await page.locator("#research-ingest-wiki").click();
     await page.locator("#research-wiki-menu-ingest").click();
-    await page.locator("#activity-cards .ac-cta-primary").click();
+    await page.locator("#workflow-terminal-cards .terminal-card-open").click();
     await page.locator(".wiki-proposal-actions .web-save").first().click();
 
-    await expect(page.locator("#reader-editor .cm-content")).toContainText(
-      "Primary wiki note",
-    );
     await expectVisibleQuery(page, "RESTORE THIS RESEARCH DOCUMENT");
+    await expect(page.locator("#reader-editor .cm-content")).toHaveCount(0);
   } finally {
     await assertCleanBrowser();
   }
 });
 
-test("wiki ingest restores the next Inbox note after moving its source", async ({
+test("wiki ingest apply returns a moved Inbox source to its recorded context", async ({
   page,
 }) => {
   const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
@@ -1186,15 +1296,14 @@ test("wiki ingest restores the next Inbox note after moving its source", async (
     const ingest = page.locator("#reader-wiki-top .web-save");
     await expect(ingest).toBeEnabled();
     await ingest.click();
-    await page.locator("#activity-cards .ac-cta-primary").click();
+    await page.locator("#workflow-terminal-cards .terminal-card-open").click();
     await page.locator(".wiki-proposal-actions .web-save").first().click();
 
     await expect(page.locator("#reader-editor .cm-content")).toContainText(
-      "Primary wiki note",
+      "Ingest source",
     );
-    await expect(page.locator("#research .cm-content")).toContainText(
-      "Remaining Inbox Note",
-    );
+    await expect(page.locator(".inbox-list")).toBeVisible();
+    await expect(page.locator("#research .cm-content")).toHaveCount(0);
   } finally {
     rmSync(sourceFile, { force: true });
     rmSync(remainingFile, { force: true });

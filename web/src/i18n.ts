@@ -426,6 +426,20 @@ const EN: Dict = {
   "selectionResearch.capacity":
     "Open or dismiss a ready research result before starting another.",
   "selectionResearch.aggregate": "{count} research results ready",
+  "workflow.other": "Other...",
+  "workflow.otherPlaceholder": "Type an answer",
+  "workflow.capacity":
+    "Finish or dismiss a ready action before starting another.",
+  "workflow.rescanFailed":
+    "Could not rescan. Try again after checking vault access.",
+  "workflow.installFailed":
+    "Could not install the integration. Check the server log.",
+  "workflow.qmdSetupFailed": "Could not start semantic indexing. Try again.",
+  "workflow.showOperations": "Show proposed operations",
+  "workflow.showRaw": "Show RAW handling",
+  "workflow.create": "create",
+  "workflow.edit": "edit",
+  "workflow.move": "move",
   "q.vault": "vault",
   "q.vaultTitle": "Answer from your vault (semantic search)",
   "q.web": "web",
@@ -857,6 +871,21 @@ const ES: Dict = {
   "selectionResearch.capacity":
     "Abre o cierra un resultado listo antes de iniciar otra investigación.",
   "selectionResearch.aggregate": "{count} resultados de investigación listos",
+  "workflow.other": "Otro...",
+  "workflow.otherPlaceholder": "Escribe una respuesta",
+  "workflow.capacity":
+    "Termina o cierra una acción lista antes de iniciar otra.",
+  "workflow.rescanFailed":
+    "No se pudo reescanear. Inténtalo de nuevo tras revisar el acceso al vault.",
+  "workflow.installFailed":
+    "No se pudo instalar la integración. Revisa el registro del servidor.",
+  "workflow.qmdSetupFailed":
+    "No se pudo iniciar la indexación semántica. Inténtalo de nuevo.",
+  "workflow.showOperations": "Mostrar operaciones propuestas",
+  "workflow.showRaw": "Mostrar manejo de RAW",
+  "workflow.create": "crear",
+  "workflow.edit": "editar",
+  "workflow.move": "mover",
   "q.vault": "bóveda",
   "q.vaultTitle": "Responder desde tu bóveda (búsqueda semántica)",
   "q.web": "web",

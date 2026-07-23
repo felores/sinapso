@@ -1824,34 +1824,6 @@ body > :not(#graph) {
   }
 }
 
-/* ---- activity card stack (ephemeral, non-blocking) ----
-   One bounded stack opposite the search bar. The host is pointer-events:none;
-   each card re-enables interaction. Anchored to the corner opposite the search
-   bar via .ac-bottom (search bar on top) / .ac-top (search bar on bottom rail).
-   --btn-right-inset is the docked right-panel width (set on :root by the
-   topbar reflow) so the stack clears the reader/research panels; the mobile
-   vars lift it above the bottom rail. z-index 14 sits above ops-status (13). */
-#activity-cards {
-  position: fixed;
-  right: calc(12px + var(--btn-right-inset, 0px));
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: min(320px, calc(100vw - var(--btn-right-inset, 0px) - 24px));
-  max-width: 320px;
-  z-index: 14;
-  pointer-events: none;
-}
-#activity-cards.ac-bottom {
-  bottom: calc(14px + var(--mobile-search-h, 0px) + var(--mobile-nav-h, 0px));
-}
-#activity-cards.ac-top {
-  top: calc(12px + var(--mobile-nav-h, 0px));
-  bottom: auto;
-}
-#activity-cards:empty {
-  display: none;
-}
 .terminal-card-host {
   position: fixed;
   display: flex;
@@ -1868,6 +1840,10 @@ body > :not(#graph) {
   pointer-events: auto;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   gap: 6px;
   padding: 10px 12px;
   border: 1px solid var(--border);
@@ -1936,91 +1912,37 @@ body > :not(#graph) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.terminal-choice-rows {
+  display: grid;
+  gap: 5px;
+}
+.terminal-choice-row {
+  text-align: left;
+}
+.terminal-choice-other {
+  width: 100%;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--panel) 84%, var(--bg));
+  color: var(--fg);
+  font: inherit;
+}
 @media (max-width: 640px) {
   .terminal-card-host.terminal-card-mobile {
-    left: 12px !important;
-    right: 12px !important;
-    width: auto !important;
+    /* main.ts measures this full rectangle between top and bottom chrome. */
     overflow-y: auto;
-    max-height: var(--terminal-safe-height);
+    max-height: none;
   }
-}
-.ac-card {
-  pointer-events: auto;
-  background: var(--panel-bg, var(--bg, #1b1f2a));
-  border: 1px solid var(--border, #333);
-  border-radius: 10px;
-  padding: 10px 12px;
-  color: var(--fg, #e6e6e6);
-  font-size: 12px;
-  line-height: 1.35;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  animation: ac-in 0.18s ease;
-}
-.ac-card.ac-ready {
-  border-color: var(--accent, #6c8aff);
-}
-.ac-card.ac-error {
-  border-color: var(--warning, #d77a3a);
-}
-.ac-label {
-  font-weight: 600;
-}
-.ac-detail {
-  color: var(--muted, #9aa0b4);
-  font-size: 11px;
-}
-.ac-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.ac-actions button {
-  font: inherit;
-  font-size: 11.5px;
-  padding: 4px 10px;
-  border-radius: 7px;
-  border: 1px solid var(--border, #333);
-  background: transparent;
-  color: var(--fg, #e6e6e6);
-  cursor: pointer;
-}
-.ac-actions button:focus-visible {
-  outline: 2px solid var(--accent, #6c8aff);
-  outline-offset: 2px;
-}
-.ac-actions .ac-cta-primary {
-  background: var(--accent, #6c8aff);
-  color: var(--bg, #11151f);
-  border-color: var(--accent, #6c8aff);
-  font-weight: 600;
-}
-.ac-card .ac-dismiss {
-  margin-left: auto;
-  background: transparent;
-  border: none;
-  color: var(--muted, #9aa0b4);
-  cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-  padding: 0 2px;
-}
-@keyframes ac-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ac-card {
-    animation: none;
+  /* A full-width panel can consume the measured center. Keep the terminal host
+     as a portal and expose its aggregate to keyboard/assistive technology
+     rather than covering panel text or controls. */
+  .terminal-card-host.terminal-card-fallback {
+    width: 1px !important;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 
@@ -3801,7 +3723,7 @@ body > :not(#graph) {
   border-color: var(--accent);
 }
 
-/* ---------- qmd index maintenance (update / re-embed + progress) ---------- */
+/* ---------- qmd index maintenance (update / re-embed) ---------- */
 #qmd-maint.hidden {
   display: none;
 }
@@ -3849,23 +3771,6 @@ body > :not(#graph) {
 .qmd-maint-btns button:disabled {
   opacity: 0.5;
   cursor: default;
-}
-#qmd-maint-bar {
-  height: 4px;
-  margin-top: 6px;
-  border-radius: 2px;
-  background: var(--border);
-  overflow: hidden;
-}
-#qmd-maint-bar.hidden {
-  display: none;
-}
-#qmd-maint-bar span {
-  display: block;
-  height: 100%;
-  width: 0;
-  background: var(--accent);
-  transition: width 0.4s ease;
 }
 #qmd-maint-status {
   margin-top: 5px;
@@ -4022,13 +3927,23 @@ body > :not(#graph) {
   border-top: 1px solid var(--border);
   padding: 8px;
 }
+.wiki-proposal-disclosure {
+  margin: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.wiki-proposal-disclosure > summary,
+.wiki-proposal-op > summary {
+  cursor: pointer;
+  color: var(--fg);
+}
 .wiki-proposal-title {
   color: var(--accent);
   font-size: 12px;
   margin-bottom: 5px;
 }
 .wiki-proposal-op pre {
-  max-height: calc(25 * 1.5em);
+  max-height: calc(7 * 1.5em);
   overflow: auto;
   white-space: pre-wrap;
   font-size: 11.5px;
@@ -4410,6 +4325,7 @@ body > :not(#graph) {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
   padding: 11px 18px 8px;
   border-bottom: 1px solid var(--border);
 }
