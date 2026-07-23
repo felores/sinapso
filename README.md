@@ -3,76 +3,179 @@
 SINAPSO
 </pre>
 
-**knowledge vault hyper-visualizer**
+**an immersive 3D environment for the Markdown knowledge world you own**
 
-*Your Vault as a navigable 3D universe.*
+*See and create connections, find knowledge gaps, and turn grounded work into durable files.*
 </div>
 
 <p align="center">
-  <img src="assets/hero.png" alt="A vault of ~2,000 notes rendered as a 3D particle galaxy, clusters colored by domain" width="100%">
+  <img src="assets/ui-reader-focus.png" alt="Sinapso interface with an editable Markdown note beside a focused three-dimensional graph neighborhood" width="100%">
 </p>
 
-*Above: a vault of ~2,000 interlinked markdown files as a force-directed particle
-galaxy. The layout engine builds the clusters from the links alone, with zero
-configuration; each color is a knowledge domain, and the bright strands between
-clusters are real cross-domain links.*
+Sinapso turns a folder of linked Markdown into a spatial graph with a research
+and editing workspace beside it. Move through notes and clusters, follow or
+create links, inspect unresolved links, orphans, and sparse areas, and develop
+useful findings without leaving the knowledge world that provides their context.
+
+When configured, Sinapso's real-time voice assistant acts through
+registry-derived interface tools. Within those current limits, it can navigate,
+discover, read, research, and work with documents. It is not a generic chatbot
+over a separate corpus: its tools operate against the current vault and
+workspace, while durable promotion still passes through the Inbox or reviewed,
+guarded wiki operations. Markdown and YAML files remain the source of truth.
+
+## The experience
+
+- **Spatial graph:** see notes, clusters, structural links, semantic
+  relationships, and gaps as a navigable three-dimensional environment.
+- **Research and editing workspace:** keep the selected note beside local
+  discovery, optional Web research, ingestion results, and editable working
+  documents.
+- **Context-aware assistant:** configured real-time voice sessions use the same
+  registry-derived tools to act on the interface within the verified navigation,
+  discovery, reading, research, and document-working limits above.
+- **Safe durable promotion:** capture work to `inbox/`, or review proposed wiki
+  creates, edits, and raw copies before Sinapso applies approved operations
+  through its guarded writer.
+
+## The workflow
+
+1. **Explore.** Scan linked Markdown, move through clusters, search notes, and
+   follow wiki or relative Markdown links.
+2. **Find what is missing.** Inspect unresolved links, orphans, sparse areas,
+   and optional local semantic neighbors.
+3. **Investigate and write.** Keep the current note beside research results,
+   edit Markdown directly, or develop a working document with the configured
+   assistant.
+4. **Promote deliberately.** Save capture-only work to `inbox/`, or approve
+   contract-aware wiki operations before any durable write.
+
+An Obsidian vault is a natural input, but Obsidian is optional. Sinapso also
+works with any folder of linked Markdown and with Open Knowledge Format bundles.
 
 ## Flythrough
 
 <p align="center">
-  <img src="assets/flythrough.gif" alt="Camera orbiting the whole graph, then diving into a cluster as note labels fade in" width="100%">
+  <img src="assets/flythrough.gif" alt="Camera orbiting a Markdown graph and moving into a cluster as note labels appear" width="100%">
 </p>
 
-*Orbit the whole graph, then dive into a cluster; the note labels fade in as the
-camera approaches. [Watch in HD (mp4).](assets/flythrough.mp4)*
+*Orbit the graph, move into a cluster, and open a note without leaving the
+workspace. [Watch in HD (mp4).](assets/flythrough.mp4)*
 
-## What it is
+## What Sinapso reads
 
-Sinapso scans any
-**folder of Markdown files connected by links** and renders the link graph as an
-interactive force-directed map in WebGL: rotate it, fly through it, read any note
-without leaving the map. It reads both link styles: Obsidian `[[wiki links]]`
-resolved by basename, and standard markdown links to `.md` files (`[text](path.md)`)
-resolved by relative path. An Obsidian vault is the natural fit, but **Obsidian
-itself is never required**: the only contract is markdown files in folders, and
-deep links into Obsidian are an optional convenience.
+The scanner understands both common Markdown link styles:
 
-## Why I made it
+- Obsidian `[[wiki links]]`, resolved by basename or vault-relative path
+- Standard links to Markdown files, such as `[text](folder/note.md)`, resolved
+  relative to the source note
 
-Obsidian renders vaults and notes in 2d. When visualizing large data sets, 3d visualizations are often needed for seeing patterns at scale or discovering intersections. Sinapso seeks to solve that problem by providing the ability to traverse and visualize your second brain in a 3d navigatable space.
+YAML frontmatter can provide `title`, `type`, `tags`, and `description`. Folder
+structure, tags, structural links, and optional local semantic relationships
+drive the graph's layout, grouping, and discovery tools.
 
-## Reads Google's Open Knowledge Format
+### Open Knowledge Format
 
-Point Sinapso at an [Open Knowledge Format](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing/)
-bundle — Google Cloud's open spec for markdown knowledge — and it renders like any
-vault: concepts become nodes, the `[name](path.md)` links become edges, and the whole
-bundle becomes a navigable 3D graph.
+Point Sinapso at an
+[Open Knowledge Format](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing/)
+bundle and it is scanned like any other linked Markdown folder:
 
 ```bash
 npx sinapso "C:/path/to/okf-bundle"
 ```
 
-Sinapso reads OKF frontmatter fully: each concept is labeled by its `title` (falling back
-to the filename), and its `type`, `tags`, and `description` are carried into the graph.
-Markdown links between concepts become the edges; the folder hierarchy becomes the
-pillars.
+Concept files become nodes, Markdown links become edges, and supported
+frontmatter is carried into the graph.
+
+## Core capabilities
+
+### Discover and navigate
+
+- **Spatial graph:** drag to rotate, scroll to zoom, right-drag to pan, or use
+  arrow keys to move the camera.
+- **Search and fly:** press `/`, search note titles and content, and open the
+  selected result in context.
+- **Focus mode:** dim everything outside a selected note's depth 1 to 3
+  neighborhood.
+- **Filters:** order `show` and `ignore` rules matched against titles, tags,
+  and folders by fuzzy text or wildcard.
+- **Grouping:** color and group nodes by folder, tag, or optional semantic
+  cluster.
+- **Graph gaps:** inspect unresolved links, orphans, and sparse areas. Phantom
+  nodes represent linked notes that do not exist yet.
+- **View controls:** switch arrangement, theme, node style, graphics tier,
+  labels, glow, unwritten notes, orphans, and semantic lines.
+
+### Read, edit, and link
+
+- **Always-editable Markdown:** clicking a note opens a CodeMirror live-preview
+  editor in a dockable, resizable pane.
+- **Wikilinks:** existing links are navigable, and typing `[[` opens local
+  vault autocomplete.
+- **Guarded autosave:** edits use a base-content hash, surface stale-file
+  conflicts, preserve an unload recovery mirror, and pass through the single
+  path-confined writer.
+- **Live graph updates:** changing a wiki or relative Markdown link rescans the
+  affected structure and updates the graph without discarding a successful
+  file save.
+- **Git note history:** Git-backed vaults can show earlier versions, preview
+  them read-only, and restore the selected note through the guarded writer.
+- **Obsidian handoff:** double-click or right-click a note to open it through
+  the optional `obsidian://` URI.
+
+### Research and durable documents
+
+- **Shared research space:** keyword, semantic, Web, article, and ingestion
+  results open in one right-side column while the current note remains visible.
+- **Research history:** reopen prior results and working documents from local
+  runtime history.
+- **Editable working documents:** create or update a research document across
+  turns, with autosave and explicit conflict actions.
+- **Inbox:** capture useful sources or research as Markdown in `inbox/`, then
+  edit them with the same note workflow.
+- **Wiki promotion:** select an enabled wiki, review contract-aware operations,
+  and apply only the approved creates, edits, or raw copies.
+
+### Assistant and local access surfaces
+
+- **Web and desktop:** use the same workspace in a browser or Electron shell.
+- **CLI:** the `sinapso` command scans and serves a vault; registry-backed calls
+  reach the same loopback product routes.
+- **MCP:** `npm run mcp` starts a stdio MCP server for compatible local clients.
+  Tool calls are proxied to the running Sinapso server with a surface-scoped
+  token. See [Connecting MCP clients](docs/mcp-clients.md).
+- **Real-time voice assistant:** configured Gemini, OpenAI, or xAI real-time
+  sessions can act through the shared registry-derived tools to navigate,
+  discover, read, research, and work with documents.
+
+## Appearance and scale
+
+Ten themes restyle the scene and interface. Four node styles control how notes
+are drawn: **classic**, **dodecahedron**, **starlight**, and **particle**. The
+scanner caches unchanged parses, settled layouts are associated with a graph
+fingerprint, and render budgets keep links and labels practical as vaults grow.
+
+<p align="center">
+  <img src="assets/themes.gif" alt="The Sinapso interface cycling through its available themes" width="100%">
+</p>
 
 ## Quickstart
 
 ```bash
-npx sinapso "C:/path/to/YourVault"     # scan, serve, open in one command
+npx sinapso "/path/to/vault"     # scan, serve, and open
 ```
 
 Or from a clone:
 
 ```bash
 npm install
-npm run scan -- "C:/path/to/YourVault" --exclude "Private/Drafts"
+npm run scan -- "/path/to/vault" --exclude "Private/Drafts"
 npm run build
-npm start          # → http://localhost:5175
+npm start                         # http://localhost:5175
 ```
 
-For development (hot reload): `npm run dev` and open http://localhost:5173.
+For development with hot reload, run `npm run dev` and open
+http://localhost:5173.
 
 ### Desktop app
 
@@ -80,148 +183,10 @@ For development (hot reload): `npm run dev` and open http://localhost:5173.
 npm run desktop
 ```
 
-Builds the frontend, bundles the Electron main process, and opens Sinapso as a
-native window with hardware acceleration unlocked (GPU rasterization,
-zero-copy uploads, no GPU blocklist, `powerPreference: high-performance`). The
-20k-link scene, bloom, and particles all render on the dedicated GPU.
-
-Desktop-only conveniences: **File → Open Vault…** (`Ctrl+Shift+O`) picks any vault
-directory and scans it on the spot; **Rescan Current Vault** (`Ctrl+Shift+R`)
-refreshes the graph after you've added notes; the server binds a random
-localhost-only port.
-
-## How it works
-
-```python
-scanner/   walks the vault, resolves [[wiki links]] by basename (case-
-           insensitive, like Obsidian) and standard [markdown](links.md) by
-           relative path (the OKF link style), emits data/graph.json: nodes,
-           links, pillars, degrees, phantom targets
-server/    Express on localhost: /api/graph + /api/note (markdown read live
-           from disk, path-confined to the vault root)
-web/       Vite + TypeScript + three.js (3d-force-graph): the map, the reader
-           panel, search, legend, focus mode
-```
-
-The scanner is vault-agnostic: point it at any Obsidian vault and the pillars,
-colors, and clusters derive from your folder structure and your links.
-
-### What it does
-
-- **Navigate**: drag to rotate, scroll to zoom, right-drag to pan; arrow keys fly
-  the camera (a tap nudges, holding accelerates to ~6× cruise, and speed scales
-  with distance so long crossings are fast and close-in moves stay precise).
-- **Search and fly**: press `/`, type, hit Enter; the camera travels to the top
-  hit. The server builds a MiniSearch inverted index over note *content* (titles
-  boosted, prefix + fuzzy matching) on first query; ~4 ms per query after that.
-- **Read without leaving the map**: clicking a node opens the rendered Markdown in
-  a draggable, resizable side panel; `[[wiki links]]` inside it are clickable and
-  fly you to the next node. Double-click opens the note in Obsidian itself via
-  the `obsidian://` URI.
-- **Focus mode**: selecting a node dims everything outside its depth-N
-  neighborhood (depth 1–3, like Obsidian's local graph).
-- **Filters**: an ordered list of `show` / `ignore` rules decides which nodes
-  render. Patterns match titles, tags, and folders by fuzzy text or wildcard
-  (`macro*`, `*lipid`); `show` keeps matches (a whitelist), `ignore` hides them.
-  The top rule wins, rules drag to reorder, and the list persists across sessions.
-- **Your groups, your colors**: group nodes by top-level folder *or* by `#tag`;
-  every legend swatch is a color picker, and clicking a legend row toggles that
-  group's visibility.
-- **Weighted node sizing**: node size reflects incoming links, outgoing links,
-  and word count, each with its own weight slider, plus a contrast curve that
-  exaggerates or flattens the spread between hubs and leaf notes.
-- **Phantom nodes**: notes you've linked to but not yet written, rendered the way
-  Obsidian renders unresolved links (off by default); an **orphans** toggle hides
-  notes with no links.
-- **Always-on labels, Obsidian style**: every node carries its name; labels fade
-  in by camera distance, so names appear as you approach a cluster.
-- **Deep links & sharing**: `?focus=`, `?theme=`, and `?nodes=` in the URL preset
-  the view on load; **Tools → Copy Link to Selected Note** generates a shareable
-  link to the current note.
-- **Export & view**: File → **Export Image (PNG)** saves the current view; the
-  View menu adds **Reset Camera** and **Toggle Fullscreen**.
-- **Admin**: File → **Admin...** manages the active vault path, detected wikis,
-  per-wiki ingest destinations, and prompt overrides.
-
-### Built for massive vaults
-
-Sinapso holds the entire graph in view and stays interactive as vaults grow into
-the thousands of notes. Below, the same vault from another angle, ~20k links,
-every node and edge rendered at once:
-
-<p align="center">
-  <img src="assets/big-vault.png" alt="A 1,800-note vault rendered dense, clusters and cross-links visible" width="100%">
-</p>
-
-Sinapso keeps rescan and render cost proportional to what changed:
-
-- **Incremental rescans**: the scanner caches per-file parse results by mtime+size
-  (`scan-cache.json`) and re-reads only the files that changed.
-  Edit one note in a 2k-note vault: `108ms — 1 parsed, 1829 from cache`.
-  At 50k notes the difference is seconds vs. minutes. `--full` forces a cold scan.
-- **Content fingerprint**: a hash of the file manifest keys the layout cache,
-  so a no-op rescan keeps your settled layout.
-- **One-draw-call links**: all links render as a single merged `LineSegments`
-  buffer; per-frame cost stays flat no matter how many links you have.
-- **Label budget**: only the ~140 nearest labels draw per frame.
-- **Lazy full-text index**: the server builds it once per session on first
-  search; ~4 ms per query after that.
-
-## Themes & node styles
-
-Ten themes restyle the entire app (scene, links, starfield, bloom, node palette,
-and UI panels), selectable from the bottom bar, the **View** menu, or `?theme=`
-in the URL. Four node styles set how each note is drawn: **classic** glossy
-spheres, faceted **dodecahedron** gems, glowing **starlight** cores, and
-volumetric swirling **particle** shells (up to 16k points per node, tier-scaled),
-selectable from the **nodes** dropdown or `?nodes=`.
-
-Each shot below pairs a theme with a node style, so the first ten pictures cover
-all ten themes and all four styles; the last two show tag grouping and the view
-from inside a cluster:
-
-<table>
-  <tr>
-    <td width="33%"><img src="assets/theme-midnight.png" alt="Midnight theme, classic spheres"><br><sub><b>Midnight</b>, classic spheres: cool dark default</sub></td>
-    <td width="33%"><img src="assets/theme-cosmos.png" alt="Cosmos theme, particle shells"><br><sub><b>Cosmos</b>, particles: deep space, dense starfield</sub></td>
-    <td width="33%"><img src="assets/theme-gilded.png" alt="Gilded theme, starlight nodes"><br><sub><b>Gilded</b>, starlight: near-black with gold links</sub></td>
-  </tr>
-  <tr>
-    <td width="33%"><img src="assets/theme-manuscript.png" alt="Manuscript theme, classic spheres"><br><sub><b>Manuscript</b>, classic: light parchment</sub></td>
-    <td width="33%"><img src="assets/theme-notebook.png" alt="Notebook theme, dodecahedron nodes"><br><sub><b>Notebook</b>, dodecahedrons: warm beige paper</sub></td>
-    <td width="33%"><img src="assets/theme-dracula.png" alt="Dracula theme, particle shells"><br><sub><b>Dracula</b>, particles: purple-charcoal</sub></td>
-  </tr>
-  <tr>
-    <td width="33%"><img src="assets/theme-nord.png" alt="Nord theme, starlight nodes"><br><sub><b>Nord</b>, starlight: arctic slate-blue</sub></td>
-    <td width="33%"><img src="assets/theme-tokyonight.png" alt="Tokyo Night theme, dodecahedron nodes"><br><sub><b>Tokyo Night</b>, dodecahedrons: deep navy</sub></td>
-    <td width="33%"><img src="assets/theme-gruvbox.png" alt="Gruvbox theme, classic spheres"><br><sub><b>Gruvbox</b>, classic: retro warm dark</sub></td>
-  </tr>
-  <tr>
-    <td width="33%"><img src="assets/theme-monokai.png" alt="Monokai theme, starlight nodes"><br><sub><b>Monokai</b>, starlight: classic editor olive</sub></td>
-    <td width="33%"><img src="assets/view-tags.png" alt="Midnight theme grouped by tag"><br><sub><b>Group by #tag</b>: your tags drive the legend and colors</sub></td>
-    <td width="33%"><img src="assets/view-flythrough.png" alt="Camera inside a cluster, labels faded in"><br><sub><b>Inside a cluster</b>: labels fade in as you approach</sub></td>
-  </tr>
-</table>
-
-### Capabilities
-
-A selected node opens the rendered note in a draggable, resizable reader panel
-while focus mode dims everything outside its neighborhood:
-
-<p align="center"><img src="assets/ui-reader-focus.png" alt="Reader panel and focus mode" width="100%"></p>
-
-Filters carve the graph down to what you want to see: an ordered list of
-`show` / `ignore` rules matched against titles, tags, and folders by fuzzy text
-or wildcard. The top rule wins, rows drag to reorder, and the list persists:
-
-<p align="center"><img src="assets/ui-filters.png" alt="Filters panel with show and ignore rules narrowing the graph" width="100%"></p>
-
-<table>
-  <tr>
-    <td width="50%"><img src="assets/ui-display-settings.png" alt="Display settings panel"><br><sub>⚙ <b>Display settings</b>: live sliders + node-size weighting</sub></td>
-    <td width="50%"><img src="assets/ui-view-menu.png" alt="View menu"><br><sub><b>View menu</b>: themes + graphics tiers</sub></td>
-  </tr>
-</table>
+This builds the frontend, starts the loopback server, and opens the Electron
+shell. **File > Open Vault...** (`Ctrl/Cmd+Shift+O`) selects and scans a local
+folder. **Rescan Current Vault** (`Ctrl/Cmd+Shift+R`) refreshes the graph after
+files change.
 
 ## Controls
 
@@ -230,128 +195,162 @@ or wildcard. The top rule wins, rows drag to reorder, and the list persists:
 | Left-drag | Rotate |
 | Scroll | Zoom |
 | Right-drag | Pan |
-| Arrow keys | Fly: `↑` forward, `↓` back, `←`/`→` strafe |
-| `Shift`+arrows | Pan |
-| `+` / `−` | Zoom |
+| Arrow keys | Fly forward, back, or sideways |
+| `Shift` + arrows | Pan |
+| `+` / `-` | Zoom |
 | `F` | Toggle fullscreen |
 | `R` | Reset camera |
 | `G` / `L` / `U` / `O` | Toggle glow / labels / unwritten / orphans |
-| `Ctrl/Cmd`+`C` | Copy link to selected note |
-| `Ctrl/Cmd`+`O` | Open the selected note in Obsidian |
-| Hover | Highlight node + neighbors |
-| Click | Select, fly to node, open reader |
+| `Ctrl/Cmd` + `C` | Copy a local view link to the selected note |
+| `Ctrl/Cmd` + `O` | Open the selected note in Obsidian |
+| Hover | Highlight a node and its neighbors |
+| Click | Select, fly to, and edit a note |
 | Double-click / right-click | Open the note in Obsidian |
-| `/` | Focus search (`Enter` flies to the top hit) |
-| `Esc` | Close modal / menu, then clear selection |
-
-The **View** menu carries the everyday controls: theme, graphics tier, node
-style, focus depth, group-by, and the glow / labels / unwritten / orphans
-toggles. The **⚙ settings** panel holds the live sliders, and **Help →
-Keyboard & Mouse Controls** lists every input. **Filters** sits bottom-left,
-**⚙ settings** bottom-right, with note/link counts centered between them. In
-the desktop build, `Ctrl/Cmd+Shift+O` opens a vault.
+| `/` | Focus search |
+| `Esc` | Close a modal or menu, then clear selection |
 
 ## Optional integrations
 
-Three mode buttons sit next to the search bar; each lights up only when its
-tool is detected, and Sinapso stays fully functional with none of them.
-**The search field is the single entry point**: the active mode changes what
-Enter does, and results open in a right-side research column (the reader
-docks left while it's open — the note you're reading is the working
-context). Every opened note also ends with a "research questions" action
-that turns that note into 3-5 web queries.
+Sinapso's core scanning, graph, reading, editing, keyword search, and Inbox do
+not require an external service. Optional integrations are detected or
+configured independently.
 
-| Mode | Tool | What Enter does |
-|------|------|--------------|
-| **Semantic** ◈ | [qmd](https://github.com/tobi/qmd) (local) | Semantic search over your notes in the column. Related notes at the end of every note work regardless of the mode button. All local. |
-| **Web** ◍ | [Exa](https://exa.ai) (API key) | Web research in the column, save-as-note into `inbox/`. Never auto-runs while typing. |
-| **Ingest** ⇩ | markitdown (local) + optional OpenRouter key | Converts a path, URL, or browser upload. Capture-only saves immediately; wiki targets preview proposed writes before anything is applied. |
+Three mutually exclusive mode buttons sit beside the search field. The active
+mode changes what Enter does, and results open in the shared research column.
 
-Two install flavors: **core** (default, nothing extra) and **addons** —
-`npx sinapso "<vault>" --addons` or *Settings → install missing addons* —
-which installs only what is missing and never touches an existing setup.
+| Mode | Tool | Behavior |
+|------|------|----------|
+| **Semantic** | [qmd](https://github.com/tobi/qmd), local | Searches local note meaning and supplies related-note and semantic-graph features. qmd's SQLite index is opened read-only. |
+| **Web** | [Exa](https://exa.ai), user key | Runs an explicit web-research request after consent. It never spends credit while the user is only typing. |
+| **Ingest** | markitdown, plus an optional model key for wiki synthesis | Converts a local path, URL, or browser upload. Inbox capture saves directly; wiki targets show proposed operations before apply. |
 
-### Admin, wikis, and ingest
+Two installation flavors are available:
 
-Open **File → Admin...** to manage the current vault and wiki settings.
+```bash
+npx sinapso "<vault>"            # core
+npx sinapso "<vault>" --addons   # install only missing qmd/markitdown tools
+```
 
-- **Vault switching**: browser/CLI mode accepts a typed local path; the Electron
-  desktop app also offers a native folder picker. Switching rescans and hot-swaps
-  the graph.
-- **Wiki discovery**: Sinapso finds folders named exactly `wiki`. All detected
-  wikis start enabled; you can disable, rename, or add manual paths. Contract
+The addons path does not replace an existing qmd or markitdown installation.
+
+### Admin, wikis, and ingestion
+
+Open **File > Admin...** to manage the active vault and local integration
+configuration.
+
+- **Vault switching:** browser and CLI mode accept a typed local path; Electron
+  also provides a native folder picker. Switching rescans and hot-swaps the
+  graph.
+- **Wiki discovery:** folders named exactly `wiki` are detected. Contract
   candidates are `AGENTS.md`, `CLAUDE.md`, `index.md`, and `README.md`.
-- **Raw destination**: Sinapso picks the first existing source folder it finds:
-  `raw/`, `../raw/`, `research/`, `../research/`, `docs/`, then `../docs/`.
-  If none exist, it proposes `../raw/` so the source folder sits beside the
-  wiki. You can still override or blank it per wiki.
-- **Prompt overrides**: Admin exposes local prompt text for wiki ingest, note
-  questions, voice, and web research. Reset restores the built-in default.
-- **Wiki-aware ingest**: one enabled wiki is selected automatically. Multiple
-  enabled wikis show a target selector. `Inbox / capture only` keeps the old
-  immediate save behavior. A wiki target converts the source locally with
-  markitdown, reads that wiki's contracts, asks OpenRouter for structured
-  create/edit proposals, shows a preview, and writes only after you approve.
-- **Voice-aware wiki saves**: the voice assistant receives the enabled wiki
-  paths, raw folders, and contract filenames from Admin. When you ask it to save
-  its working document, it can read the selected wiki contract first, promote the
-  temporary document into the wiki or raw folder, rescan, open the saved note,
-  and remove the temporary history entry.
-- **Git-backed note history**: if your vault is inside a Git repository, the
-  reader shows a Versions selector with commit history for the open note.
-  Selecting an old commit previews that version read-only; a Restore button
-  replaces only the current note's working-copy content with the old version
-  (through the same guarded write path, journaled). It never runs
-  `git checkout`, `reset`, or `revert`, and never moves HEAD or touches other
-  files. Vaults without Git are unaffected.
+- **Raw destination:** each wiki can define where the converted source belongs.
+  A blank destination disables raw-copy proposals.
+- **Prompt overrides:** local prompt text can be customized for wiki ingest,
+  note questions, voice, and web research.
+- **Capture-only ingest:** `Inbox / capture only` converts and writes one note
+  through the guarded writer.
+- **Wiki-aware ingest:** Sinapso converts the source, reads the selected wiki's
+  contracts, requests structured create/edit proposals, confines every target,
+  displays the proposal, and writes only after approval.
+- **Working-document promotion:** research and voice working documents can use
+  the same Inbox or wiki pathways.
 
-### Trust model
+### Voice
 
-- **The core uploads nothing except explicit, user-triggered Git push/sync.**
-  Scanning, rendering, search, and reading are fully local; the server binds to
-  `127.0.0.1` only.
-- **Optional Web and LLM features are explicit.** Web queries go to Exa only
-  after Web consent and with your own key. OpenRouter-backed note questions and
-  wiki-ingest synthesis use your stored OpenRouter key; the relevant note,
-  source excerpt, and wiki contracts are sent to that provider only for the
-  action you requested.
-- **The vault is written only through guarded, user-triggered paths**: the
-  app-authored note writer is path-confined, `.md`-only, never overwrites, and
-  journals changes; Git sync is the separate repo-level exception and must stay
-  clean-tree, token-guarded, fast-forward when possible, merge-commit on clean
-  divergence, and abort-on-conflict.
-- Secrets (Exa, OpenRouter, and voice keys) live in `~/.sinapso/config.json`
-  (mode 600), outside the vault and outside version control, and never appear in
-  API responses.
+Voice sessions are optional and provider-configured. Sinapso supports Gemini
+Live plus OpenAI and xAI real-time APIs. The browser streams microphone audio
+and current view context; provider tool calls are dispatched through Sinapso's
+registry. Enabled wiki paths and contract filenames can be added to the session
+prompt so a requested promotion follows the selected wiki's rules.
 
-## Privacy
+### MCP and CLI
 
-The current local core runs on `localhost`. Scanning, rendering, local search,
-and reading do not send vault data elsewhere. Optional Web and OpenRouter
-features are opt-in by key and action, and explicit Git push or sync is the only
-current repository-level upload path, as described in the trust model above.
+The MCP server uses stdio and opens no additional listener. It fetches a
+surface-scoped token from the loopback server, retries once after token rotation,
+and can call only routes declared for the MCP surface. In-place note replacement
+through MCP is off by default and requires a separate local opt-in.
 
-## Roadmap and business model
+Start Sinapso before starting MCP:
 
-Sinapso is an independent Markdown/YAML knowledge platform. Obsidian remains an
-optional compatibility and editing handoff, not a requirement. The local core is
-free forever, open source, and requires no account. Optional AI features keep the
-current bring-your-own-key, pay-per-use model.
+```bash
+npm start
+npm run mcp
+```
 
-Planned, opt-in managed continuity services will be paid. The scope is private
-synchronization, encrypted backup, recoverability, versioning, and mobile access,
-while user-owned files remain the source of truth. These services are not shipped
-today, and no price or launch date is promised.
+See [docs/mcp-clients.md](docs/mcp-clients.md) for client configuration and the
+Discover > Verify > Act workflow.
 
-The planned mobile companion starts with conversation, research, decisions,
-search, capture, and reading. Full 3D parity comes later. Selective document
-sharing is the first planned collaboration loop; live co-editing, presence, and
-complex permissions are deliberately deferred.
+### Git-backed history and maintenance
+
+When the vault belongs to a Git repository, the note pane can list file history,
+preview an earlier commit, and restore only the current note through the guarded
+writer. Explicit Git commit and sync actions use token-guarded server routes.
+Sync checks the working tree, uses fast-forward when possible, creates a normal
+merge commit only for clean divergence, and aborts a conflicted merge. It does
+not use checkout, reset, rebase, amend, or force push.
+
+## Current limitations
+
+- Sinapso currently runs as a local web application or Electron desktop shell;
+  MCP and registry-backed CLI calls require the loopback server to be running.
+- Semantic search, semantic graph edges, and related-note features are
+  unavailable without a compatible local qmd index and vectors.
+- Web research, model-assisted synthesis, and real-time voice require the
+  corresponding user-provided credentials and provider configuration.
+- The graph scanner reads Markdown. Other supported inputs must first pass
+  through the optional markitdown ingestion path.
+
+## Trust model
+
+- **Files stay canonical.** Sinapso works directly with user-owned Markdown and
+  YAML. Runtime graph, layout, research-history, and audit files live locally
+  under `data/` and are not a replacement file format.
+- **Local by default.** The production server binds to `127.0.0.1`. Scanning,
+  graph rendering, keyword search, editing, and local semantic tooling do not
+  require an account.
+- **Explicit egress.** Web, model, voice, and Git network actions run only from
+  user-triggered paths with the applicable consent and credentials.
+- **Server-side secrets.** Keys live outside the vault in
+  `~/.sinapso/config.json`, use restrictive file permissions, and are not
+  returned by product APIs.
+- **Local request guards.** Host and Origin validation protect loopback routes
+  against DNS rebinding and cross-origin requests. Mutating and spending routes
+  require a per-session token; MCP tokens are additionally surface-scoped.
+- **One app-authored note writer.** Paths must remain inside the active vault,
+  target Markdown files, and pass symlink checks. Creates do not overwrite an
+  existing note. Edits can reject stale base hashes, replace content atomically,
+  and append an audit entry without note content.
+- **Approval stays meaningful.** Wiki proposals are filtered and validated at
+  generation, revalidated at apply, and preflighted for stale files before the
+  first write.
+
+## How it is built
+
+```text
+scanner/   Walks Markdown, parses YAML metadata, resolves structural links,
+           and emits data/graph.json with nodes, links, groups, and phantoms.
+server/    Express app and optional integrations. Serves local APIs, enforces
+           trust boundaries, and owns the single guarded vault-write path.
+web/       Vite + TypeScript + Three.js. Provides the graph, editor, research
+           space, Inbox, Admin, and browser-side voice controls.
+desktop/   Hardened Electron shell around the same local server and web app.
+bin/       CLI entry points for scan/serve and registry-backed calls.
+```
+
+The application has no primary application database. Optional semantic search
+reads qmd's local SQLite index in read-only mode.
 
 ## Stack
 
-TypeScript end to end · [3d-force-graph](https://github.com/vasturiano/3d-force-graph)
-(three.js/WebGL) · Express 5 · Vite 6 · marked · tsx.
+TypeScript end to end, [3d-force-graph](https://github.com/vasturiano/3d-force-graph)
+and Three.js/WebGL, Express, Vite, CodeMirror, Electron, and Vitest/Playwright.
+
+## Origins
+
+Sinapso began as a fork of [chntnm/akasha](https://github.com/chntnm/akasha),
+whose 3D Markdown graph is the inherited base. Sinapso adds the current
+authoring, research, Inbox, semantic, ingestion, voice, MCP/CLI, guarded-write,
+and Git version workflows described above.
 
 ## License
 
