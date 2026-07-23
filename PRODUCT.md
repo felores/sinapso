@@ -1,6 +1,6 @@
 ---
 name: Sinapso
-last_updated: 2026-07-18
+last_updated: 2026-07-22
 strategy_ref: STRATEGY.md
 ---
 
@@ -24,13 +24,15 @@ Independent knowledge operators, including consultants, researchers, founders, a
 
 ## Current Experience
 
-The desktop and local web application scans a folder of linked Markdown into a navigable 3D graph. Users can open and edit notes beside the graph, search their vault, ingest external material, conduct grounded voice and text workflows, and preserve useful results as files in the same knowledge system.
+The desktop and local web application scans a folder of linked Markdown into a navigable 3D graph. Users can open, edit, and link notes beside the graph; work in a durable Inbox; search their vault; ingest external material; conduct grounded voice and text workflows; and preserve useful results as files in the same knowledge system.
 
 ## Current Capabilities
 
 - Incremental scanning of linked Markdown and YAML metadata into a local graph.
 - Large-vault 3D navigation, filtering, grouping, clustering, and saved layouts.
 - An always-editable Markdown reader with guarded autosave and version recovery.
+- A durable Inbox workspace for creating, finding, pinning, editing, and promoting working notes into wikis.
+- Live graph updates after structural Markdown-link edits.
 - Keyword, literal, path, and optional local semantic discovery.
 - Explicit, user-triggered web research and model-assisted synthesis using user-provided keys.
 - Document and URL ingestion with preview and guarded writes into the vault.
