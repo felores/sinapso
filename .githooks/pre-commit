@@ -1,0 +1,3 @@
+#!/bin/sh
+
+npx biome check --staged --no-errors-on-unmatched --diagnostic-level=error && npm run typecheck

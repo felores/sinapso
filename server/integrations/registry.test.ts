@@ -175,10 +175,11 @@ describe("registry surfaces and routes", () => {
     expect(others).toEqual([]);
   });
 
-  it("registers the four LLM operations with their tiers (R8)", () => {
+  it("registers LLM operations with their tiers (R8)", () => {
     expect(operationTier("note_questions")).toBe("worker");
     expect(operationTier("commit_message")).toBe("worker");
     expect(operationTier("contextual_rewrite")).toBe("worker");
+    expect(operationTier("selection_assist")).toBe("worker");
     expect(operationTier("wiki_ingest_synthesis")).toBe("thinker");
   });
 

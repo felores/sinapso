@@ -44,6 +44,7 @@ import {
   type CompletionResult,
 } from "@codemirror/autocomplete";
 import { tags } from "@lezer/highlight";
+import { appendExternalLinkIcon } from "./external-link-icon";
 
 export interface WikiLinkCandidate {
   /** Vault-relative path without the trailing `.md`. Inserted between `[[ ]]`. */
@@ -57,6 +58,8 @@ export interface NoteEditorOptions {
   onChange?: () => void;
   onWikiLinkClick?: (target: string) => void;
   onMarkdownLinkClick?: (target: string) => void;
+  onExternalLinkClick?: (url: string) => void;
+  externalLinkLabel?: string;
   /** When set on a writable editor, typing `[[` opens a fuzzy note list built
    *  from the current candidates. Read-only editors never autocomplete. */
   getWikiLinkCandidates?: () => readonly WikiLinkCandidate[];
@@ -314,10 +317,12 @@ class LinkWidget extends WidgetType {
     readonly label: string,
     readonly href: string,
     readonly onClick?: (target: string) => void,
+    readonly externalLabel?: string,
   ) {
     super();
   }
   toDOM(): HTMLElement {
+    const wrap = document.createElement("span");
     const el = document.createElement("a");
     el.className = "cm-md-link";
     el.textContent = this.label;
@@ -331,12 +336,31 @@ class LinkWidget extends WidgetType {
     if (this.onClick)
       el.onclick = (ev) => {
         ev.preventDefault();
+        ev.stopPropagation();
         this.onClick?.(this.href);
       };
-    return el;
+    wrap.appendChild(el);
+    if (this.onClick && /^https?:\/\//.test(this.href)) {
+      const external = document.createElement("a");
+      external.className = "cm-md-link-external";
+      external.href = this.href;
+      external.target = "_blank";
+      external.rel = "noopener noreferrer";
+      appendExternalLinkIcon(external);
+      external.setAttribute("aria-label", this.externalLabel ?? this.href);
+      external.title = this.externalLabel ?? this.href;
+      external.onmousedown = (ev) => ev.preventDefault();
+      external.onclick = (ev) => ev.stopPropagation();
+      wrap.appendChild(external);
+    }
+    return wrap;
   }
   override eq(other: LinkWidget): boolean {
-    return other.label === this.label && other.href === this.href;
+    return (
+      other.label === this.label &&
+      other.href === this.href &&
+      other.externalLabel === this.externalLabel
+    );
   }
 }
 
@@ -367,6 +391,8 @@ class WikiLinkWidget extends WidgetType {
 function wikiLinkPlugin(
   onClick?: (target: string) => void,
   onMarkdownLinkClick?: (target: string) => void,
+  onExternalLinkClick?: (target: string) => void,
+  externalLinkLabel?: string,
 ) {
   return ViewPlugin.fromClass(
     class {
@@ -400,7 +426,12 @@ function wikiLinkPlugin(
                 end,
                 Decoration.replace({
                   widget: /^https?:\/\//.test(m[1].trim())
-                    ? new LinkWidget(m[1].trim(), m[2]?.trim() || m[1].trim())
+                    ? new LinkWidget(
+                        m[1].trim(),
+                        m[2]?.trim() || m[1].trim(),
+                        onExternalLinkClick,
+                        externalLinkLabel,
+                      )
                     : new WikiLinkWidget(
                         m[1].trim(),
                         (m[2] || m[1]).trim(),
@@ -425,8 +456,11 @@ function wikiLinkPlugin(
                     markdown[1],
                     markdown[2],
                     /^https?:\/\//.test(markdown[2])
-                      ? undefined
+                      ? onExternalLinkClick
                       : onMarkdownLinkClick,
+                    /^https?:\/\//.test(markdown[2])
+                      ? externalLinkLabel
+                      : undefined,
                   ),
                 }),
               );
@@ -443,7 +477,12 @@ function wikiLinkPlugin(
                 start,
                 end,
                 Decoration.replace({
-                  widget: new LinkWidget(bare[0], bare[0]),
+                  widget: new LinkWidget(
+                    bare[0],
+                    bare[0],
+                    onExternalLinkClick,
+                    externalLinkLabel,
+                  ),
                 }),
               );
             }
@@ -554,6 +593,8 @@ class TableWidget extends WidgetType {
   constructor(
     readonly source: string,
     readonly pos: number,
+    readonly onExternalLinkClick?: (target: string) => void,
+    readonly externalLinkLabel?: string,
   ) {
     super();
   }
@@ -563,6 +604,17 @@ class TableWidget extends WidgetType {
     const parsed = marked.parse(this.source);
     if (typeof parsed === "string") {
       el.innerHTML = DOMPurify.sanitize(parsed, { FORBID_ATTR: ["style"] });
+      for (const link of el.querySelectorAll<HTMLAnchorElement>("a[href]")) {
+        if (!/^https?:\/\//.test(link.href)) continue;
+        link.replaceWith(
+          new LinkWidget(
+            link.textContent ?? link.href,
+            link.href,
+            this.onExternalLinkClick,
+            this.externalLinkLabel,
+          ).toDOM(),
+        );
+      }
     } else {
       el.textContent = this.source;
     }
@@ -635,7 +687,11 @@ class CodeBlockWidget extends WidgetType {
 // Block decorations must come from a StateField, not a ViewPlugin (they
 // affect vertical layout). Full-doc scan; notes are small (see
 // FULL_DECORATION_LIMIT).
-function buildBlockPreviews(state: EditorState): DecorationSet {
+function buildBlockPreviews(
+  state: EditorState,
+  onExternalLinkClick?: (target: string) => void,
+  externalLinkLabel?: string,
+): DecorationSet {
   if (state.doc.length > FULL_DECORATION_LIMIT) return Decoration.none;
   const b = new RangeSetBuilder<Decoration>();
   const doc = state.doc;
@@ -656,6 +712,8 @@ function buildBlockPreviews(state: EditorState): DecorationSet {
             widget: new TableWidget(
               doc.sliceString(node.from, node.to),
               node.from,
+              onExternalLinkClick,
+              externalLinkLabel,
             ),
             block: true,
           }),
@@ -707,15 +765,26 @@ function buildBlockPreviews(state: EditorState): DecorationSet {
 
 const parseSettled = Annotation.define<boolean>();
 
-const blockPreviewField = StateField.define<DecorationSet>({
-  create: buildBlockPreviews,
-  update(value, tr) {
-    if (tr.docChanged || tr.selection || tr.annotation(parseSettled))
-      return buildBlockPreviews(tr.state);
-    return value;
-  },
-  provide: (f) => EditorView.decorations.from(f),
-});
+function blockPreviewField(opts: NoteEditorOptions) {
+  return StateField.define<DecorationSet>({
+    create: (state) =>
+      buildBlockPreviews(
+        state,
+        opts.onExternalLinkClick,
+        opts.externalLinkLabel,
+      ),
+    update(value, tr) {
+      if (tr.docChanged || tr.selection || tr.annotation(parseSettled))
+        return buildBlockPreviews(
+          tr.state,
+          opts.onExternalLinkClick,
+          opts.externalLinkLabel,
+        );
+      return value;
+    },
+    provide: (field) => EditorView.decorations.from(field),
+  });
+}
 
 // The field computes at state creation, when the incremental markdown parse
 // may not have reached a table yet (parse-heavy notes, inline code in
@@ -796,8 +865,13 @@ function buildExtensions(
     // Fallback token colors for fenced-code languages (ts, py, …).
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     livePreviewPlugin,
-    wikiLinkPlugin(opts.onWikiLinkClick, opts.onMarkdownLinkClick),
-    blockPreviewField,
+    wikiLinkPlugin(
+      opts.onWikiLinkClick,
+      opts.onMarkdownLinkClick,
+      opts.onExternalLinkClick,
+      opts.externalLinkLabel,
+    ),
+    blockPreviewField(opts),
     parseSettleWatcher,
     tooltipHost(tooltipParent),
     opts.readOnly ? [] : selectionToolbar(opts.toolbarExtras),

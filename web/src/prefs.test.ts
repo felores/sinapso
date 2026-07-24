@@ -321,6 +321,13 @@ describe("prefs: mode (vault|web|ingest|null)", () => {
     storage.setItem("sinapso-mode", "semantic");
     expect(prefs.getMode()).toBe<ModeName>("vault");
   });
+
+  it("treats unknown stored values as null without writing", () => {
+    storage.setItem("sinapso-mode", "other");
+    storage.written.clear();
+    expect(prefs.getMode()).toBeNull();
+    expect(storage.written.size).toBe(0);
+  });
 });
 
 describe("prefs: web-scope (deep|web)", () => {

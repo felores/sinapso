@@ -167,6 +167,47 @@ export function pathMatch(
 }
 
 /**
+ * Deterministic identity matches for `auto`: exact title/basename, then their
+ * prefixes, then title/path substrings. The catalog supplies the authoritative
+ * scoped note names; these results intentionally carry no engine score.
+ */
+export function identityMatches(
+  nodes: ReadonlyArray<VaultSearchGraphNode>,
+  queries: string[],
+  scope: string,
+  limit: number,
+): VaultSearchResult[] {
+  const needles = queries.flatMap(searchForms);
+  if (!needles.length) return [];
+  const tiers: VaultSearchResult[][] = [[], [], []];
+  const seen = new Set<string>();
+  for (const node of nodes) {
+    if (node.phantom || !inScope(node.id, scope) || seen.has(node.id)) continue;
+    const basename = (node.id.split("/").pop() ?? node.id).replace(
+      /\.md$/i,
+      "",
+    );
+    const names = [node.title, basename].flatMap(searchForms);
+    const path = searchForms(node.id);
+    const tier = needles.some((needle) => names.includes(needle))
+      ? 0
+      : needles.some((needle) => names.some((name) => name.startsWith(needle)))
+        ? 1
+        : needles.some(
+              (needle) =>
+                names.some((name) => name.includes(needle)) ||
+                path.some((value) => value.includes(needle)),
+            )
+          ? 2
+          : -1;
+    if (tier < 0) continue;
+    seen.add(node.id);
+    tiers[tier].push({ path: node.id, title: node.title, snippet: "" });
+  }
+  return tiers.flat().slice(0, limit);
+}
+
+/**
  * Merge heterogeneous hits (semantic nodes, keyword hits, exact matches) into
  * one deduped, capped list. Dedup keeps the first occurrence per path; for
  * exact results (which carry a line) dedup is per `path:line`. `limit` caps.
@@ -272,16 +313,16 @@ export function tagRanked(
 }
 
 /**
- * Build the `auto` response from already-ranked per-engine lists. Pure: no
- * I/O, no engine calls. Runs RRF over the non-empty sources. `source` is
- * "hybrid" when both engines contributed, otherwise the single contributing
- * engine name, or "keyword" when neither did (semantic layer unavailable).
- * In `auto`, `score` is always an RRF score (even single-source) so the
- * scoreKind is consistent within the mode.
+ * Build the `auto` response from catalog identity matches and already-ranked
+ * per-engine lists. Pure: no I/O, no engine calls. Identity results precede
+ * RRF and have no score; the remaining results retain RRF metadata. `source`
+ * is "hybrid" when both engines contributed, otherwise the single engine, or
+ * "keyword" when neither engine returned a result.
  */
 export function buildAutoResponse(
   semanticRanked: ReadonlyArray<VaultSearchResult>,
   keywordRanked: ReadonlyArray<VaultSearchResult>,
+  identityRanked: ReadonlyArray<VaultSearchResult>,
   limit: number,
 ): VaultSearchResponse {
   const sources: RankedSource[] = [];
@@ -295,11 +336,27 @@ export function buildAutoResponse(
       source: "keyword",
       results: keywordRanked as VaultSearchResult[],
     });
-  if (!sources.length) return { mode: "auto", source: "keyword", results: [] };
-  const fused = reciprocalRankFusion(sources, limit);
+  const identities = identityRanked.slice(0, limit);
+  if (!sources.length)
+    return {
+      mode: "auto",
+      source: "keyword",
+      results: identities.map((result, index) => ({
+        ...result,
+        rank: index + 1,
+      })),
+    };
+  const identityPaths = new Set(identities.map((result) => result.path));
+  const fused = reciprocalRankFusion(sources, limit + identities.length);
+  const results = [
+    ...identities,
+    ...fused.filter((result) => !identityPaths.has(result.path)),
+  ]
+    .slice(0, limit)
+    .map((result, index) => ({ ...result, rank: index + 1 }));
   const source =
     sources.length > 1
       ? ("hybrid" as const)
       : (sources[0].source as VaultSearchResponse["source"]);
-  return { mode: "auto", source, results: fused };
+  return { mode: "auto", source, results };
 }

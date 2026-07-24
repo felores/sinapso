@@ -663,6 +663,9 @@ body > :not(#graph) {
 .set-web-status.connected {
   color: var(--success);
 }
+.set-web-status.fallback {
+  color: var(--theme--warning, #f59e0b);
+}
 .set-web-status.missing {
   color: var(--danger);
 }
@@ -671,6 +674,34 @@ body > :not(#graph) {
 }
 .set-web-fields + .integ-help {
   margin-top: 5px;
+}
+.cm-md-link-external,
+.web-result-external {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.35em;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  color: var(--muted);
+  text-decoration: none;
+}
+.cm-md-link-external .ext-icon,
+.web-result-external .ext-icon {
+  width: 13px;
+  height: 13px;
+  margin-left: 0;
+  opacity: 1;
+}
+.cm-md-link-external:focus-visible,
+.web-result-external:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.cm-md-link-external:hover,
+.web-result-external:hover {
+  color: var(--accent);
 }
 .set-exa-config.configured input {
   border-color: var(--success);
@@ -5114,6 +5145,31 @@ body > :not(#graph) {
 }
 .answer .web-save {
   margin-top: 8px;
+}
+
+/* Web results are reading content, not compact search chrome. Match the
+   reader's body and H2 type scale without changing other research modes. */
+.web-research .research-query,
+.web-research .sources-head {
+  font-size: 1.5em;
+  font-weight: 600;
+  line-height: 1.3;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--fg);
+}
+.web-research .research-query {
+  padding: 2px 8px 8px;
+}
+.web-research .sources-head {
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--border);
+}
+.web-research .answer-text,
+.web-research .answer-source,
+.web-research .web-result a,
+.web-research .web-result .web-snippet {
+  font-size: 14.5px;
 }
 
 /* ---------- embedded terminal split (F022) ---------- */

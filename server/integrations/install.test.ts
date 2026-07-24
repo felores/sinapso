@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../app";
 import { TOKEN_HEADER } from "./security";
-import { installAddons, QMD_INSTALL_SPEC } from "./install";
+import { installAddons, MARKITDOWN_SPEC, QMD_INSTALL_SPEC } from "./install";
 import type { RunResult } from "./detect";
 
 const ok = (stdout = ""): RunResult => ({ ok: true, stdout, stderr: "" });
@@ -103,6 +103,25 @@ describe("installAddons", () => {
     );
     expect(failed[0].status).toBe("failed");
     expect(failed[0].detail).toContain("registry unreachable");
+  });
+
+  it("installs the known-good markitdown release via uv", async () => {
+    const uv = join(HOME, ".local", "bin", "uv");
+    const { calls, run } = recordingRunner((cmd) =>
+      cmd === uv ? ok() : fail(),
+    );
+    const results = await installAddons(
+      {
+        run,
+        home: HOME,
+        env: { PATH: "" },
+        fileExists: (p) => p === uv,
+      },
+      ["markitdown"],
+    );
+
+    expect(results[0].status).toBe("installed");
+    expect(calls).toContainEqual([uv, "tool", "install", MARKITDOWN_SPEC]);
   });
 });
 

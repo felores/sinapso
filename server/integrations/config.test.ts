@@ -39,6 +39,14 @@ describe("integrations config", () => {
     expect(loadConfig(p).exaKey).toBe("exa-secret-123");
   });
 
+  it("persists Tinyfish keys without mixing them into other config fields", () => {
+    const p = join(DIR, "tinyfish.json");
+    const cfg = updateConfig({ tinyfishKey: "tinyfish-secret" }, p);
+    expect(cfg.tinyfishKey).toBe("tinyfish-secret");
+    expect(loadConfig(p).tinyfishKey).toBe("tinyfish-secret");
+    expect(cfg.exaKey).toBeNull();
+  });
+
   it("writes the file with 600 permissions, also on rewrite", () => {
     const p = join(DIR, "perms.json");
     updateConfig({ exaKey: "k" }, p);

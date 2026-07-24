@@ -37,8 +37,9 @@ export const realRunner: Runner = (cmd, args, timeoutMs, env) =>
       args,
       {
         timeout: timeoutMs ?? 10_000,
-        // Optional extra env, merged over the inherited process env.
-        ...(env ? { env: { ...process.env, ...env } } : {}),
+        // A supplied env is exact. MarkItDown conversions deliberately receive
+        // only PATH and HOME, rather than inherited application credentials.
+        ...(env ? { env } : {}),
       },
       (err, stdout, stderr) =>
         res({

@@ -20,7 +20,7 @@ const INSTALL_TIMEOUT_MS = 600_000;
 
 export const QMD_INSTALL_SPEC = "https://github.com/tobi/qmd";
 
-export const MARKITDOWN_SPEC = "markitdown[all]";
+export const MARKITDOWN_SPEC = "markitdown[all]==0.1.5";
 
 export type InstallableTool = "qmd" | "markitdown";
 

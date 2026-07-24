@@ -72,8 +72,20 @@ import { createQmdMcp, type QmdMcpDeps } from "./integrations/qmd-mcp.js";
 import {
   createExaAdapter,
   createArticleFetcher,
+  type ArticleResult,
   type ExaAdapterOptions,
 } from "./integrations/exa.js";
+import {
+  createTinyfishAdapter,
+  TinyfishError,
+  type TinyfishOptions,
+} from "./integrations/tinyfish.js";
+import { classifyIntakeUrl } from "./integrations/intake.js";
+import { classifyResource } from "../shared/resource.js";
+import {
+  downloadDocument,
+  type RemoteDocumentDeps,
+} from "./integrations/remote-document.js";
 import {
   createHostedWebResearchAdapter,
   type HostedWebResearchOptions,
@@ -168,6 +180,7 @@ import { attachVoiceRelay } from "./integrations/voice.js";
 import {
   buildAutoResponse,
   clampLimit,
+  identityMatches,
   inScope,
   mergeResults,
   normalizeScope,
@@ -252,8 +265,12 @@ export interface IntegrationsOptions {
   detectDeps?: Partial<DetectDeps>;
   /** Inject a fake Exa client / fast retry backoff (tests). */
   exa?: ExaAdapterOptions;
+  /** Inject Tinyfish fetch (tests). */
+  tinyfish?: TinyfishOptions;
   /** Inject hosted web-search fetch (Google/OpenAI/xAI tests). */
   webResearch?: HostedWebResearchOptions;
+  /** Inject secure remote-document transport and DNS lookup for route tests. */
+  downloader?: RemoteDocumentDeps;
   /** Inject a fake fetch for the OpenRouter adapter (tests). */
   openrouter?: OpenRouterOptions;
   /** Inject a fake fetch/endpoint for the DeepSeek key test (tests). */
@@ -586,6 +603,7 @@ export function createApp(
           qmd: toolCache.current.qmd,
           markitdown: toolCache.current.markitdown,
           exa: { configured: !!cfg.exaKey },
+          tinyfish: { configured: !!cfg.tinyfishKey },
           // Legacy booleans kept for transition (frontend redesign consumes
           // `providers` above); mirrored from the same key store.
           openrouter: providers.openrouter,
@@ -599,6 +617,14 @@ export function createApp(
             cfg.webResearchProvider && cfg.webResearchProvider !== "exa"
               ? !!providerApiKey(cfg, cfg.webResearchProvider)
               : !!cfg.exaKey,
+        },
+        webSearch: {
+          provider: cfg.tinyfishKey ? "tinyfish" : cfg.exaKey ? "exa" : null,
+          configured: !!(cfg.tinyfishKey || cfg.exaKey),
+        },
+        webFetch: {
+          provider: cfg.tinyfishKey ? "tinyfish" : cfg.exaKey ? "exa" : null,
+          configured: !!(cfg.tinyfishKey || cfg.exaKey),
         },
         defaultModel: cfg.defaultModel,
         // Safe catalog: provider labels, curated agent models, voice model/
@@ -665,6 +691,7 @@ export function createApp(
         promptOverrides: cfg.prompts,
         promptFiles: cfg.promptFiles,
         exaConfigured: !!cfg.exaKey,
+        tinyfishConfigured: !!cfg.tinyfishKey,
         webResearchProvider: cfg.webResearchProvider,
       });
     } catch (e) {
@@ -724,6 +751,29 @@ export function createApp(
 
   // Exa /contents fetcher for /api/article.
   const fetchArticle = createArticleFetcher(integrations?.exa);
+  const tinyfish = createTinyfishAdapter(integrations?.tinyfish);
+  async function fetchOrdinaryArticle(
+    cfg: ReturnType<typeof loadConfig>,
+    url: string,
+  ): Promise<{ handler: "tinyfish" | "exa"; article: ArticleResult } | null> {
+    if (cfg.tinyfishKey) {
+      try {
+        const article = await tinyfish.fetch(cfg.tinyfishKey, url);
+        if (article.content.trim()) return { handler: "tinyfish", article };
+      } catch {
+        // Exa is the explicit ordinary-fetch fallback when configured.
+      }
+    }
+    if (cfg.exaKey) {
+      try {
+        const article = await fetchArticle(cfg.exaKey, url);
+        if (article.content.trim()) return { handler: "exa", article };
+      } catch {
+        // Caller maps exhausted providers to its stable external/error response.
+      }
+    }
+    return null;
+  }
   const ingestTargetConfig = (cfg: ReturnType<typeof loadConfig>) => {
     const savedVault = cfg.vaults[vaultRoot];
     const saved = savedVault?.wikis ?? [];
@@ -781,10 +831,44 @@ export function createApp(
       res,
     );
     if (!bin) return null;
-    return convertDocument(integrations?.detectDeps?.run ?? realRunner, bin, {
-      source: trimmed,
-      title,
-    });
+    return /^https?:\/\//i.test(trimmed)
+      ? convertRemoteDocument(trimmed, title, bin)
+      : convertDocument(integrations?.detectDeps?.run ?? realRunner, bin, {
+          source: trimmed,
+          title,
+        });
+  }
+
+  async function convertRemoteDocument(
+    source: string,
+    title: string | undefined,
+    bin: string,
+  ): Promise<ConvertedDocument> {
+    if (classifyResource(source).kind !== "document")
+      throw new WriteError(400, "recognized document URL required");
+    try {
+      const downloaded = await downloadDocument(
+        source,
+        integrations?.downloader,
+      );
+      const converted = await convertBytes(
+        integrations?.detectDeps?.run ?? realRunner,
+        bin,
+        { name: downloaded.filename, bytes: downloaded.bytes },
+      );
+      return {
+        ...converted,
+        source,
+        sourceLabel: source,
+        title: title?.trim() || converted.title,
+      };
+    } catch (e) {
+      if (e instanceof WriteError) throw e;
+      throw new WriteError(
+        422,
+        e instanceof Error ? e.message : "document download failed",
+      );
+    }
   }
 
   app.post("/api/ingest/preview", guarded, express.json(), async (req, res) => {
@@ -891,16 +975,32 @@ export function createApp(
         res,
       );
       if (!bin) return;
-      const r = await ingestDocument(
-        integrations?.detectDeps?.run ?? realRunner,
-        bin,
-        { vaultRoot, dataDir: dirname(graphPath) },
-        {
-          source: b.source,
-          title: typeof b.title === "string" ? b.title : undefined,
-          destination,
-        },
-      );
+      const source = b.source.trim();
+      const r = /^https?:\/\//i.test(source)
+        ? await (async () => {
+            const converted = await convertRemoteDocument(
+              source,
+              typeof b.title === "string" ? b.title : undefined,
+              bin,
+            );
+            return ingestText(writeDeps(), {
+              source: converted.sourceLabel,
+              title: converted.title,
+              content: converted.markdown,
+              via: "markitdown",
+              destination,
+            });
+          })()
+        : await ingestDocument(
+            integrations?.detectDeps?.run ?? realRunner,
+            bin,
+            { vaultRoot, dataDir: dirname(graphPath) },
+            {
+              source,
+              title: typeof b.title === "string" ? b.title : undefined,
+              destination,
+            },
+          );
       const graphUpdated = refreshAfterCreate();
       res.json({
         ok: true,
@@ -910,6 +1010,93 @@ export function createApp(
       });
     } catch (e) {
       writeFail(res, e, "ingest");
+    }
+  });
+
+  app.post("/api/intake", guarded, express.json(), async (req, res) => {
+    try {
+      const body = req.body;
+      if (
+        typeof body !== "object" ||
+        body === null ||
+        Object.keys(body).some((key) => key !== "url" && key !== "title") ||
+        typeof body.url !== "string" ||
+        (body.title !== undefined && typeof body.title !== "string")
+      ) {
+        throw new WriteError(400, "url and optional title required");
+      }
+      const cfg = loadConfig(configPath);
+      if (!toolCache.current) toolCache.current = await detectAll(detectDeps);
+      const decision = classifyIntakeUrl(body.url.trim(), {
+        consent: cfg.consents.web,
+        tinyfish: !!cfg.tinyfishKey,
+        exa: !!cfg.exaKey,
+        markitdown: toolCache.current.markitdown.installed,
+      });
+      if ("error" in decision) {
+        if (decision.error === "web-consent-required") {
+          res.status(403).json({
+            error: decision.error,
+            message:
+              "Web mode needs your one-time consent first (activate Web mode to review it).",
+          });
+          return;
+        }
+        throw new WriteError(
+          400,
+          decision.error === "invalid-url"
+            ? "A valid http(s) URL is required."
+            : "Add a Tinyfish or Exa key with Web consent, or install markitdown in Tools.",
+        );
+      }
+      const destination = cfg.writeDestination;
+      let id: string;
+      if (decision.method === "markitdown-url") {
+        const bin = toolCache.current.markitdown.path;
+        if (!bin)
+          throw new WriteError(
+            503,
+            "markitdown is not installed — Tools → Integrations offers the install.",
+          );
+        const converted = await convertRemoteDocument(
+          body.url.trim(),
+          body.title,
+          bin,
+        );
+        ({ id } = await ingestText(writeDeps(), {
+          source: converted.sourceLabel,
+          title: converted.title,
+          content: converted.markdown,
+          via: "markitdown",
+          destination,
+        }));
+      } else {
+        const article =
+          decision.method === "tinyfish-fetch"
+            ? await tinyfish.fetch(cfg.tinyfishKey!, body.url.trim())
+            : await fetchArticle(cfg.exaKey!, body.url.trim());
+        ({ id } = await ingestText(writeDeps(), {
+          source: article.url,
+          title: body.title?.trim() || article.title,
+          content: article.content,
+          via: decision.method === "tinyfish-fetch" ? "tinyfish" : "exa",
+          destination,
+        }));
+      }
+      const graphUpdated = refreshAfterCreate();
+      res.json({
+        ok: true,
+        id,
+        method: decision.method,
+        graphUpdated,
+        graphRefreshFailed: !graphUpdated,
+      });
+    } catch (e) {
+      if (e instanceof TinyfishError) {
+        res.status(e.status).json({ error: e.code, message: e.message });
+        return;
+      }
+      writeFail(res, e, "intake");
     }
   });
 
@@ -1416,7 +1603,14 @@ export function createApp(
           })),
       );
       const keyword = mergeResults(keywordBatches, limit);
-      res.json(buildAutoResponse(semantic, keyword, limit));
+      res.json(
+        buildAutoResponse(
+          semantic,
+          keyword,
+          identityMatches(catalogAsNodes(), queries, scope, limit),
+          limit,
+        ),
+      );
     } catch (e) {
       console.error("search-vault failed:", e);
       res.status(500).json({ error: "search-vault failed" });
@@ -1444,10 +1638,23 @@ export function createApp(
       ) {
         return;
       }
+      const deep = !!req.body?.deep;
+      const ordinaryProvider = cfg.tinyfishKey
+        ? "tinyfish"
+        : cfg.exaKey
+          ? "exa"
+          : null;
       const provider: WebResearchProvider = cfg.webResearchProvider ?? "exa";
       const key =
         provider === "exa" ? cfg.exaKey : providerApiKey(cfg, provider);
-      if (!key) {
+      if (!deep && !ordinaryProvider) {
+        res.status(400).json({
+          error: "no-web-search-provider",
+          message: "Add a Tinyfish or Exa API key in Settings → Configuration.",
+        });
+        return;
+      }
+      if (deep && !key) {
         res.status(400).json({
           error: "no-web-research-key",
           message:
@@ -1473,16 +1680,29 @@ export function createApp(
       });
       const displayQuery = String(req.body?.displayQuery ?? "").trim();
       const r =
-        provider === "exa"
-          ? await exaResearch(key, contextual.effectiveQuery, {
-              deep: !!req.body?.deep,
-              locale,
+        !deep && ordinaryProvider === "tinyfish"
+          ? await tinyfish.search(cfg.tinyfishKey!, contextual.effectiveQuery, {
+              language: locale === "es" ? "es" : undefined,
             })
-          : await hostedWebResearch(provider, key, contextual.effectiveQuery, {
-              deep: !!req.body?.deep,
-              locale,
-              prompt: promptForModel(cfg, "webResearch", locale, vaultRoot),
-            });
+          : !deep || provider === "exa"
+            ? await exaResearch(
+                deep ? key! : cfg.exaKey!,
+                contextual.effectiveQuery,
+                {
+                  deep,
+                  locale,
+                },
+              )
+            : await hostedWebResearch(
+                provider,
+                key!,
+                contextual.effectiveQuery,
+                {
+                  deep,
+                  locale,
+                  prompt: promptForModel(cfg, "webResearch", locale, vaultRoot),
+                },
+              );
       const historyId =
         r.results.length || r.answer
           ? saveEntry(dataDir, {
@@ -1502,6 +1722,10 @@ export function createApp(
         contextWarning: contextual.contextWarning,
       });
     } catch (e) {
+      if (e instanceof TinyfishError) {
+        res.status(e.status).json({ error: e.code, message: e.message });
+        return;
+      }
       console.error("research failed:", e instanceof Error ? e.message : e);
       res.status(502).json({
         error: "research-failed",
@@ -1510,23 +1734,26 @@ export function createApp(
     }
   });
 
-  // POST /api/article: fetch one web result's full text via Exa /contents.
+  // POST /api/article: fetch one web result's full text via Tinyfish or Exa.
   // Same trust model as /api/research (token-guarded + web consent + key), and
   // the fetched article is persisted as a history entry (mode "article").
   // (fetchArticle is defined once above, near /api/ingest.)
   app.post("/api/article", guarded, express.json(), async (req, res) => {
     try {
       const cfg = loadConfig(configPath);
+      const provider = cfg.tinyfishKey ? "tinyfish" : cfg.exaKey ? "exa" : null;
+      if (!provider) {
+        res.status(400).json({
+          error: "no-web-fetch-provider",
+          message: "Add a Tinyfish or Exa API key in Settings → Configuration.",
+        });
+        return;
+      }
       if (
         !requireWebConsent(
           cfg,
           res,
           "Web mode needs your one-time consent first (activate Web mode to review it).",
-        ) ||
-        !requireExaKey(
-          cfg,
-          res,
-          "Add your Exa API key in Settings → Integrations.",
         )
       ) {
         return;
@@ -1539,7 +1766,23 @@ export function createApp(
         });
         return;
       }
-      const art = await fetchArticle(cfg.exaKey, url);
+      if (classifyResource(url).kind !== "webpage") {
+        res.status(400).json({
+          error: "document-resource",
+          message: "Document URLs must use the browser resource route.",
+        });
+        return;
+      }
+      const fetched = await fetchOrdinaryArticle(cfg, url);
+      if (!fetched) {
+        res.status(502).json({
+          error: "article-failed",
+          message:
+            "Web content fetch failed. Check your providers and try again.",
+        });
+        return;
+      }
+      const art = fetched.article;
       const historyId = art.content
         ? saveEntry(dataDir, {
             mode: "article",
@@ -1549,6 +1792,10 @@ export function createApp(
         : undefined;
       res.json({ ...art, historyId });
     } catch (e) {
+      if (e instanceof TinyfishError) {
+        res.status(e.status).json({ error: e.code, message: e.message });
+        return;
+      }
       console.error(
         "article fetch failed:",
         e instanceof Error ? e.message : e,
@@ -1557,6 +1804,105 @@ export function createApp(
         error: "article-failed",
         message: "Exa content fetch failed. Check your key and try again.",
       });
+    }
+  });
+
+  // Browser resource opening keeps documents local to this process and never
+  // sends them through web providers. This route is intentionally absent from
+  // the MCP registry, so surface-scoped MCP tokens cannot call it.
+  app.post("/api/resource", guarded, express.json(), async (req, res) => {
+    const external = (reason: string) =>
+      res.json({ action: "external", reason });
+    try {
+      const body = req.body;
+      if (
+        typeof body !== "object" ||
+        body === null ||
+        Object.keys(body).some((key) => key !== "url" && key !== "title") ||
+        typeof body.url !== "string" ||
+        (body.title !== undefined && typeof body.title !== "string")
+      ) {
+        external("invalid-url");
+        return;
+      }
+      const resource = classifyResource(body.url);
+      if (resource.kind === "invalid" || resource.kind === "unsupported") {
+        external(resource.reason);
+        return;
+      }
+      const cfg = loadConfig(configPath);
+      if (resource.kind === "document") {
+        if (!toolCache.current) toolCache.current = await detectAll(detectDeps);
+        const bin = toolCache.current.markitdown.path;
+        if (!toolCache.current.markitdown.installed || !bin) {
+          external("markitdown-unavailable");
+          return;
+        }
+        let converted: ConvertedDocument;
+        try {
+          converted = await convertRemoteDocument(
+            resource.url,
+            body.title,
+            bin,
+          );
+        } catch {
+          external("document-conversion-failed");
+          return;
+        }
+        const article = {
+          url: body.url.trim(),
+          title: converted.title,
+          content: converted.markdown,
+          publishedDate: null,
+          author: null,
+        };
+        const historyId = saveEntry(dataDir, {
+          mode: "article",
+          query: article.title,
+          article,
+        }).id;
+        res.json({
+          action: "research",
+          handler: "markitdown",
+          article,
+          historyId,
+        });
+        return;
+      }
+      if (resource.kind !== "webpage") {
+        external(resource.reason);
+        return;
+      }
+      if (!cfg.consents.web) {
+        external("web-consent-required");
+        return;
+      }
+      if (!cfg.tinyfishKey && !cfg.exaKey) {
+        external("no-handler");
+        return;
+      }
+      const fetched = await fetchOrdinaryArticle(cfg, resource.url);
+      if (!fetched) {
+        external("resource-fetch-failed");
+        return;
+      }
+      const article = {
+        ...fetched.article,
+        title: body.title?.trim() || fetched.article.title,
+      };
+      const historyId = saveEntry(dataDir, {
+        mode: "article",
+        query: article.title,
+        article,
+      }).id;
+      res.json({
+        action: "research",
+        handler: fetched.handler,
+        article,
+        historyId,
+      });
+    } catch {
+      external("resource-failed");
     }
   });
 
@@ -2058,14 +2404,21 @@ export function createApp(
                 .json({ error: "source (file path or URL) required" });
               return null;
             }
-            return convertDocument(
-              integrations?.detectDeps?.run ?? realRunner,
-              bin,
-              {
-                source: b.source,
-                title: typeof b.title === "string" ? b.title : undefined,
-              },
-            );
+            const source = b.source.trim();
+            return /^https?:\/\//i.test(source)
+              ? convertRemoteDocument(
+                  source,
+                  typeof b.title === "string" ? b.title : undefined,
+                  bin,
+                )
+              : convertDocument(
+                  integrations?.detectDeps?.run ?? realRunner,
+                  bin,
+                  {
+                    source,
+                    title: typeof b.title === "string" ? b.title : undefined,
+                  },
+                );
           })());
         if (!converted) return;
         res.json(
@@ -2482,8 +2835,8 @@ export function createApp(
     }
   });
 
-  // POST /api/selection-assist (plan 018 U7): free-form instruction over the
-  // reader's selected text, thinker tier. Positional context (note id/title,
+  // POST /api/selection-assist (plan 018 U7): free-form instruction over
+  // selected note text, worker tier. Positional context (note id/title,
   // surrounding lines, offsets) rides along so the model knows where in the
   // note it is acting. The reply is preview-only client-side — nothing lands
   // in the vault except through the normal editor buffer + autosave path.

@@ -60,6 +60,7 @@
     "format:check": "biome format .",
     "lint": "biome lint .",
     "check": "biome check . --diagnostic-level=error",
+    "prepare": "node scripts/install-git-hooks.mjs",
     "prepublishOnly": "npm run typecheck && npm run build && npm run build:cli",
     "mcp": "tsx server/mcp.ts"
   },

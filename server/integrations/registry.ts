@@ -528,7 +528,7 @@ export const REGISTRY: RegistryEntry[] = [
   {
     name: "web_research",
     description:
-      "Search the WEB (not their vault) and return a synthesized answer with sources, via Exa deep research. Use when they ask about the wider world, current facts, or anything NOT in their own notes — 'look it up', 'search the web for X', 'investiga X en la web', 'qué dice internet sobre…'. Spends the user's Exa credit and needs Web mode enabled. The result also opens in their research panel.",
+      "Search the WEB (not their vault) and return a synthesized answer with sources through the selected deep-research provider. Ordinary Web search uses Tinyfish first, then Exa. Use when they ask about the wider world, current facts, or anything NOT in their own notes. The result also opens in their research panel.",
     params: {
       type: "object",
       properties: {
@@ -552,7 +552,7 @@ export const REGISTRY: RegistryEntry[] = [
   {
     name: "fetch_url",
     description:
-      "Fetch the FULL text of a specific web page by its URL, via Exa. Use when they give you a link or ask to read/summarize a page: 'read this article', 'what does this page say', 'lee este enlace'. Give the exact http(s) URL. Spends Exa credit and needs Web mode. The result also opens in their research panel.",
+      "Fetch the FULL text of a specific web page by its URL. Tinyfish Fetch is used first, with Exa contents as fallback when Tinyfish is not configured. Use when they give you a link or ask to read/summarize a page. Give the exact http(s) URL. The result also opens in their research panel.",
     params: {
       type: "object",
       properties: {
@@ -618,7 +618,7 @@ export const REGISTRY: RegistryEntry[] = [
   {
     name: "selection_assist",
     description:
-      "Run a free-form instruction over the reader's selected note text (with positional note context); the reply is previewed before it can replace or follow the selection.",
+      "Run a free-form instruction over selected note text (with positional note context); the reply is previewed before it can replace or follow the selection.",
     params: {
       type: "object",
       properties: {
@@ -631,7 +631,7 @@ export const REGISTRY: RegistryEntry[] = [
       required: ["instruction", "selection"],
     },
     surfaces: ["http"],
-    tier: "thinker",
+    tier: "worker",
     route: {
       method: "POST",
       path: "/api/selection-assist",

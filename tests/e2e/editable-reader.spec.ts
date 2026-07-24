@@ -449,6 +449,89 @@ test("vault-relative Markdown links open their target note", async ({
   }
 });
 
+test("external URLs in note content fetch internally and expose an external icon", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  const file = await createTestNote(page);
+  let fetchedUrl: string | undefined;
+  let resourceCalls = 0;
+  try {
+    const content =
+      "# External URLs\n\n[Formatted](https://example.com/formatted)\n\nhttps://example.com/bare\n\n[PDF](https://example.com/report.pdf)\n\n| source |\n| --- |\n| [Table](https://example.com/table) |\n";
+    writeFileSync(file, content);
+    await page.request.post("/api/rescan", {
+      headers: { "x-sinapso-token": await apiToken(page) },
+    });
+    await page.route("**/api/integrations", async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as Record<string, unknown>;
+      await route.fulfill({
+        response,
+        json: {
+          ...body,
+          tools: {
+            ...(body.tools as Record<string, unknown>),
+            markitdown: { installed: false, version: null },
+          },
+          consents: {
+            ...(body.consents as Record<string, unknown>),
+            web: true,
+          },
+          webFetch: { provider: "tinyfish", configured: true },
+        },
+      });
+    });
+    await page.route("**/api/resource", async (route) => {
+      resourceCalls++;
+      fetchedUrl = (route.request().postDataJSON() as { url: string }).url;
+      await route.fulfill({
+        json: {
+          action: "research",
+          handler: "tinyfish",
+          article: {
+            title: "Fetched article",
+            url: fetchedUrl,
+            content: "Fetched content",
+            publishedDate: null,
+            author: null,
+          },
+        },
+      });
+    });
+
+    await openTestNote(page);
+    const editor = page.locator("#reader-editor");
+    await expect(editor.locator("a.cm-md-link")).toHaveCount(4);
+    await expect(editor.locator("a.cm-md-link-external")).toHaveCount(4);
+    await expect(
+      editor.locator("a.cm-md-link-external svg.ext-icon"),
+    ).toHaveCount(4);
+    await expect(
+      editor.locator('a.cm-md-link-external[href="https://example.com/table"]'),
+    ).toHaveAttribute("target", "_blank");
+
+    await editor
+      .locator("a.cm-md-link")
+      .filter({ hasText: "Formatted" })
+      .click();
+    await expect(page.locator("#research-body")).toContainText(
+      "Fetched content",
+    );
+    expect(fetchedUrl).toBe("https://example.com/formatted");
+    const popupPromise = page.waitForEvent("popup");
+    await editor.locator("a.cm-md-link").filter({ hasText: "PDF" }).click();
+    const popup = await popupPromise;
+    await expect(popup).toHaveURL("https://example.com/report.pdf");
+    await popup.close();
+    expect(resourceCalls).toBe(1);
+    expect(readFileSync(file, "utf-8")).toBe(content);
+  } finally {
+    await assertCleanBrowser();
+    await removeTestNote(page, file);
+  }
+});
+
 test("live graph links move an edited node and its newly linked low-degree neighbor", async ({
   page,
 }) => {
@@ -862,6 +945,65 @@ test("AE3: selection shows the floating toolbar; Bold wraps in ** and renders", 
     await expect
       .poll(() => readFileSync(file, "utf-8"), { timeout: 10_000 })
       .toContain("stays **untouched**");
+  } finally {
+    await assertCleanBrowser();
+    await removeTestNote(page, file);
+  }
+});
+
+test("Inbox selection bot submits the selected text on Enter", async ({
+  page,
+}) => {
+  const assertCleanBrowser = captureBrowserDiagnostics(page, test.info());
+  const file = await createTestNote(page);
+  let assistBody: Record<string, unknown> | null = null;
+  try {
+    await page.addInitScript(() =>
+      localStorage.setItem("sinapso-qmd-prompted", "1"),
+    );
+    await page.route("**/api/integrations", async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as Record<string, unknown>;
+      await route.fulfill({
+        response,
+        json: {
+          ...body,
+          tools: {
+            ...(body.tools as Record<string, unknown>),
+            openrouter: { configured: true },
+          },
+        },
+      });
+    });
+    await page.route("**/api/selection-assist", async (route) => {
+      assistBody = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({ json: { text: "a tighter line" } });
+    });
+
+    await page.goto("/");
+    await page.locator("#new-doc-btn").click();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page
+      .locator(".inbox-list-item", { hasText: "E2E Editable Reader" })
+      .click();
+    const line = page.locator("#research-body .cm-line", {
+      hasText: "first paragraph stays untouched",
+    });
+    await line.locator("text=untouched").dblclick();
+    await page.locator(".cm-tb-chat:visible").click();
+    const input = page.locator(".cm-tb-ai-input:visible");
+    await input.fill("make this tighter");
+    await input.press("Enter");
+
+    await expect.poll(() => assistBody).not.toBeNull();
+    expect(assistBody).toMatchObject({
+      instruction: "make this tighter",
+      selection: "untouched",
+      noteId: NOTE_ID,
+    });
+    await expect(
+      page.locator("#research-body .research-vault-ai-preview"),
+    ).toContainText("a tighter line");
   } finally {
     await assertCleanBrowser();
     await removeTestNote(page, file);

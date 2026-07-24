@@ -440,7 +440,8 @@ export function createPrefs(storage: PrefsStorage = defaultStorage()): Prefs {
 
     getMode() {
       const v = get(KEY.mode);
-      return v === "semantic" ? "vault" : (v as ModeName | null);
+      if (v === "semantic") return "vault";
+      return v === "vault" || v === "web" || v === "ingest" ? v : null;
     },
     setMode(v) {
       set(KEY.mode, v);

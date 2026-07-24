@@ -1314,7 +1314,7 @@ describe("POST /api/selection-assist (plan 018 U7)", () => {
     }
   });
 
-  it("sends the positional envelope to the thinker and returns its text", async () => {
+  it("sends the positional envelope to the worker and returns its text", async () => {
     const dir = mkdtempSync(join(tmpdir(), "sinapso-assist-ok-"));
     try {
       const bodies: string[] = [];
@@ -1322,8 +1322,8 @@ describe("POST /api/selection-assist (plan 018 U7)", () => {
       updateConfig(
         {
           openrouterKey: "or-k",
-          thinkerProvider: "openrouter",
-          thinkerModel: "meta/thinker-model",
+          workerProvider: "openrouter",
+          workerModel: "meta/worker-model",
         },
         configPath,
       );
@@ -1355,7 +1355,7 @@ describe("POST /api/selection-assist (plan 018 U7)", () => {
         });
       expect(res.status).toBe(200);
       expect(res.body.text).toBe("a tighter line");
-      expect(bodies[0]).toContain("meta/thinker-model");
+      expect(bodies[0]).toContain("meta/worker-model");
       expect(bodies[0]).toContain("make this tighter");
       expect(bodies[0]).toContain("a long rambling line");
       expect(bodies[0]).toContain("folder/note.md");

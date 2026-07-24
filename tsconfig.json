@@ -25,6 +25,7 @@
   "include": [
     "scanner",
     "server",
+    "shared",
     "web/src",
     "web/vite.config.ts",
     "bin",

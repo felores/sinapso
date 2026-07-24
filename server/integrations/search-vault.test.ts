@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildAutoResponse,
   clampLimit,
+  identityMatches,
   inScope,
   MAX_VARIANTS,
   mergeResults,
@@ -334,7 +335,7 @@ describe("buildAutoResponse", () => {
   });
 
   it("is hybrid (source=hybrid, scoreKind=rrf) when both engines contribute", () => {
-    const res = buildAutoResponse([hit("a")], [hit("b")], 10);
+    const res = buildAutoResponse([hit("a")], [hit("b")], [], 10);
     expect(res.mode).toBe("auto");
     expect(res.source).toBe("hybrid");
     expect(res.results.every((r) => r.scoreKind === "rrf")).toBe(true);
@@ -343,19 +344,19 @@ describe("buildAutoResponse", () => {
   });
 
   it("degrades to the single contributing engine when only one has results", () => {
-    const res = buildAutoResponse([hit("a")], [], 10);
+    const res = buildAutoResponse([hit("a")], [], [], 10);
     expect(res.source).toBe("semantic");
     // Auto is always RRF-scored for consistency within the mode.
     expect(res.results[0].scoreKind).toBe("rrf");
     expect(res.results[0].sources).toEqual(["semantic"]);
 
-    const res2 = buildAutoResponse([], [hit("b")], 10);
+    const res2 = buildAutoResponse([], [hit("b")], [], 10);
     expect(res2.source).toBe("keyword");
     expect(res2.results[0].sources).toEqual(["keyword"]);
   });
 
   it("returns an empty keyword-shaped response when neither engine has results", () => {
-    expect(buildAutoResponse([], [], 10)).toEqual({
+    expect(buildAutoResponse([], [], [], 10)).toEqual({
       mode: "auto",
       source: "keyword",
       results: [],
@@ -366,9 +367,77 @@ describe("buildAutoResponse", () => {
     const res = buildAutoResponse(
       [hit("a"), hit("b")],
       [hit("b"), hit("c")],
+      [],
       10,
     );
     expect(res.results[0].path).toBe("b");
     expect(res.results[0].sources).toEqual(["semantic", "keyword"]);
+  });
+
+  it("puts identity tiers first, dedupes paths, then preserves RRF remainder order", () => {
+    const nodes: VaultSearchGraphNode[] = [
+      { id: "notes/exact.md", title: "Climate" },
+      { id: "notes/prefix.md", title: "Climate Plan" },
+      { id: "notes/topic-climate.md", title: "Unrelated" },
+    ];
+    const identity = identityMatches(nodes, ["climate"], "", 10);
+    expect(identity.map((result) => result.path)).toEqual([
+      "notes/exact.md",
+      "notes/prefix.md",
+      "notes/topic-climate.md",
+    ]);
+
+    const res = buildAutoResponse(
+      [hit("notes/exact.md"), hit("rrf-first.md"), hit("rrf-second.md")],
+      [hit("rrf-first.md"), hit("notes/prefix.md"), hit("rrf-second.md")],
+      identity,
+      10,
+    );
+    expect(res.results.map((result) => result.path)).toEqual([
+      "notes/exact.md",
+      "notes/prefix.md",
+      "notes/topic-climate.md",
+      "rrf-first.md",
+      "rrf-second.md",
+    ]);
+    expect(res.results.map((result) => result.rank)).toEqual([1, 2, 3, 4, 5]);
+    expect(
+      res.results
+        .filter((result) => result.path.startsWith("rrf-"))
+        .map((result) => result.sources),
+    ).toEqual([
+      ["semantic", "keyword"],
+      ["semantic", "keyword"],
+    ]);
+    expect(
+      res.results.slice(0, 3).every((result) => result.score === undefined),
+    ).toBe(true);
+  });
+
+  it("uses case-insensitive scoped identity matching and keeps keyword-only degradation", () => {
+    const nodes: VaultSearchGraphNode[] = [
+      { id: "wiki/Climate-Plan.md", title: "Unrelated" },
+      { id: "other/climate-plan.md", title: "Climate Plan" },
+    ];
+    const identity = identityMatches(nodes, ["climate plan"], "wiki", 10);
+    expect(identity.map((result) => result.path)).toEqual([
+      "wiki/Climate-Plan.md",
+    ]);
+
+    const res = buildAutoResponse(
+      [],
+      [hit("wiki/Climate-Plan.md"), hit("body.md")],
+      identity,
+      10,
+    );
+    expect(res.source).toBe("keyword");
+    expect(res.results.map((result) => result.path)).toEqual([
+      "wiki/Climate-Plan.md",
+      "body.md",
+    ]);
+    expect(res.results[1]).toMatchObject({
+      scoreKind: "rrf",
+      sources: ["keyword"],
+    });
   });
 });

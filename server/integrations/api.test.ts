@@ -119,6 +119,21 @@ describe("GET /api/integrations", () => {
     expect(res.body.tools.exa.configured).toBe(true);
   });
 
+  it("reports Tinyfish configuration without exposing its key", async () => {
+    const token = await sessionToken();
+    const save = await request(app)
+      .post("/api/integrations/config")
+      .set(TOKEN_HEADER, token)
+      .send({ tinyfishKey: "tinyfish-super-secret" });
+    expect(save.status).toBe(200);
+    expect(save.body.tinyfishConfigured).toBe(true);
+    expect(JSON.stringify(save.body)).not.toContain("tinyfish-super-secret");
+
+    const res = await request(app).get("/api/integrations");
+    expect(res.body.tools.tinyfish).toEqual({ configured: true });
+    expect(JSON.stringify(res.body)).not.toContain("tinyfish-super-secret");
+  });
+
   it("serves cached detection until ?refresh=1 re-probes a changed PATH state", async () => {
     qmdInstalled = true; // tool appears after the first probe
     const cached = await request(app).get("/api/integrations");

@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { createApp } from "../app";
 import { updateConfig } from "./config";
 import { TOKEN_HEADER } from "./security";
-import { ingestBytes, ingestDocument } from "./ingest";
+import { convertDocument, ingestBytes, ingestDocument } from "./ingest";
 import { readChangeLog } from "./write";
 import type { RunResult, Runner } from "./detect";
 
@@ -69,13 +69,14 @@ describe("ingestDocument", () => {
     );
   });
 
-  it("falls back to a derived title when the content has no H1", async () => {
+  it("rejects remote URLs before MarkItDown can fetch them", async () => {
     const { calls, run } = recorder(() => ok("plain web content, no heading"));
-    const r = await ingestDocument(run, MD_BIN, writeDeps, {
-      source: "https://example.com/articles/deep-work.html",
-    });
-    expect(r.id).toMatch(/^inbox\/\d{4}-\d{2}-\d{2}_deep-work\.md$/);
-    expect(calls[0][1]).toBe("https://example.com/articles/deep-work.html");
+    await expect(
+      convertDocument(run, MD_BIN, {
+        source: "https://example.com/articles/deep-work.html",
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(calls).toHaveLength(0);
   });
 
   it("404s on a missing file without running markitdown", async () => {

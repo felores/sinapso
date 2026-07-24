@@ -159,6 +159,8 @@ async function installVoiceHarness(page: Page, researchTools = false) {
                 openrouter: { configured: true },
               },
               webResearch: { configured: true },
+              webSearch: { provider: "exa", configured: true },
+              webFetch: { provider: "exa", configured: true },
             }
           : {}),
         voice: {

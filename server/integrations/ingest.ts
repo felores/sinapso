@@ -1,10 +1,9 @@
 /**
  * Document ingestion via markitdown (F023): convert a file (PDF, DOCX,
- * PPTX, XLSX, HTML, …) or a URL to Markdown and save it as a vault note
+ * PPTX, XLSX, HTML, …) to Markdown and save it as a vault note
  * through the guarded write. Reading files OUTSIDE the vault is the whole
- * point (importing); writing stays confined to the guarded path. URL
- * ingestion fetches the user-provided URL — a user-initiated retrieval,
- * like a browser.
+ * point (importing); writing stays confined to the guarded path. Remote URLs
+ * must be downloaded through remote-document.ts before reaching MarkItDown.
  */
 
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -15,9 +14,16 @@ import type { Runner } from "./detect.js";
 import { guardedCreate, WriteError, type WriteDeps } from "./write.js";
 
 const INGEST_TIMEOUT_MS = 180_000;
+const MARKITDOWN_ENV = {
+  PATH: process.env.PATH ?? "",
+  HOME: tmpdir(),
+  TMPDIR: tmpdir(),
+  LANG: "C.UTF-8",
+  PYTHONNOUSERSITE: "1",
+};
 
 export interface IngestOptions {
-  /** http(s) URL or file path (~ expands to the home dir). */
+  /** Local file path (~ expands to the home dir). */
   source: string;
   /** Display value for the `source:` frontmatter (defaults to source). */
   sourceLabel?: string;
@@ -162,16 +168,22 @@ export async function convertDocument(
 ): Promise<ConvertedDocument> {
   const source = opts.source.trim();
   if (!source) throw new WriteError(400, "source required");
-  const isUrl = /^https?:\/\//i.test(source);
-  let target = source;
-  if (!isUrl) {
-    target = source.startsWith("~")
-      ? join(homedir(), source.slice(1))
-      : resolve(source);
-    if (!existsSync(target))
-      throw new WriteError(404, `file not found: ${target}`);
-  }
-  const r = await run(markitdownBin, [target], INGEST_TIMEOUT_MS);
+  if (/^https?:\/\//i.test(source))
+    throw new WriteError(
+      400,
+      "remote URLs must be downloaded before conversion",
+    );
+  const target = source.startsWith("~")
+    ? join(homedir(), source.slice(1))
+    : resolve(source);
+  if (!existsSync(target))
+    throw new WriteError(404, `file not found: ${target}`);
+  const r = await run(
+    markitdownBin,
+    [target],
+    INGEST_TIMEOUT_MS,
+    MARKITDOWN_ENV,
+  );
   if (!r.ok)
     throw new WriteError(502, (r.stderr || "markitdown failed").slice(0, 500));
   const markdown = r.stdout.trim();
@@ -179,7 +191,7 @@ export async function convertDocument(
   // The converted content's own H1 wins, so the note is named after the
   // document's headline; fall back to an explicit title, then the source name.
   const title =
-    extractTitle(markdown) || opts.title?.trim() || deriveTitle(source, isUrl);
+    extractTitle(markdown) || opts.title?.trim() || deriveTitle(source, false);
   return { source, sourceLabel: opts.sourceLabel ?? source, title, markdown };
 }
 

@@ -376,6 +376,54 @@
 
         <section class="admin-section set-section">
           <div class="set-section-head">
+            <h3 data-i18n="set.webSearchFetch.title">
+              Web Search and Fetch
+            </h3>
+            <span
+              class="set-web-status"
+              id="set-web-search-fetch-status"
+            ></span>
+          </div>
+          <div class="set-web-fields">
+            <select id="web-search-fetch-provider">
+              <option value="tinyfish">Tinyfish</option>
+            </select>
+            <input
+              type="password"
+              id="tinyfish-key"
+              data-i18n-ph="ph.tinyfishKey"
+              autocomplete="off"
+            />
+          </div>
+          <div class="integ-help">
+            <a
+              href="https://agent.tinyfish.ai/api-keys"
+              target="_blank"
+              rel="noopener"
+              data-i18n="integ.getKey"
+              >Get a key
+              <svg
+                class="ext-icon"
+                viewBox="0 0 24 24"
+                width="10"
+                height="10"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M15 3h6v6" />
+                <path d="M10 14 21 3" />
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6" />
+              </svg></a
+            >
+          </div>
+        </section>
+
+        <section class="admin-section set-section">
+          <div class="set-section-head">
             <h3 data-i18n="set.web.title">Web Research</h3>
             <span class="set-web-status" id="set-web-status"></span>
           </div>

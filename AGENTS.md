@@ -30,7 +30,8 @@ Rescan without restarting: `/api/rescan` (or File → Rescan) re-parses changed 
 
 ## Development Harness
 
-- Required serial gate: `npm test && npm run typecheck && npm run build && npm run test:e2e`.
+- Verify proportionally. CSS-only, copy, and layout changes need a focused browser check; pure-module changes need their affected Vitest file(s); server, scanner, security, write-path, or cross-cutting changes need `npm test && npm run typecheck && npm run build`. Run `npm run test:e2e` only for browser-behavior changes, before release, or when the user explicitly requests the full gate.
+- The commit hook runs Biome against staged files plus `npm run typecheck`. It is a baseline commit gate, not a substitute for change-specific verification.
 - Vitest covers server/unit and pure frontend modules and excludes `.scratchpad/`. There is no React component runner; frontend logic is tested as pure modules with Vitest and browser behavior with Playwright.
 - Playwright is hermetic: frontend `6173`, dedicated backend `6175`, one worker, Chromium only. All 10 tests must run with zero skips and zero failures, independent of services on development ports.
 - Browser diagnostics fail on unallowlisted console, page, request, or HTTP 500+ errors. Each test writes and attaches its own diagnostic artifact; the most recently completed test is also written to `test-results/browser-diagnostics.json`.

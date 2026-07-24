@@ -392,7 +392,7 @@ describe("POST /api/research", () => {
     const res = await request(hostedApp)
       .post("/api/research")
       .set(TOKEN_HEADER, hostedToken)
-      .send({ query: "current topic" });
+      .send({ query: "current topic", deep: true });
 
     expect(res.status).toBe(200);
     expect(res.body.answer.content).toBe("Hosted answer");

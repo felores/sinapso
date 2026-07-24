@@ -35,10 +35,13 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import * as THREE from "three";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { classifyResource } from "../../shared/resource";
 import * as i18n from "./i18n";
+import { appendExternalLinkIcon } from "./external-link-icon";
 import {
   createNoteEditor,
   type NoteEditor,
+  type NoteEditorOptions,
   type WikiLinkCandidate,
 } from "./editor";
 import { createWikiTargetResolver } from "./wiki-links";
@@ -98,6 +101,10 @@ import { filterFields, compileMatcher } from "./filters";
 import { computeSemanticClusters as computeSemanticClustersPure } from "./clusters";
 import { api, apiRaw, ApiError, getApiToken, peekApiToken } from "./api";
 import { createPrefs } from "./prefs";
+import {
+  isCurrentSearchGeneration,
+  normalizeVaultSearchResults,
+} from "./search-intent";
 import {
   canReserveActionable,
   collapseActionable,
@@ -234,11 +241,6 @@ function ensureReaderTitle(content: string, title: string): string {
 function sanitizeRenderedMarkdown(html: string): string {
   return DOMPurify.sanitize(html, { FORBID_ATTR: ["style"] });
 }
-
-// Open-in-new-tab glyph (lucide external-link), same as the Tools-menu links.
-// Appended to external anchors so they read as "opens a new tab".
-const EXT_ICON =
-  '<svg class="ext-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/></svg>';
 
 async function loadGraph(): Promise<Graph> {
   for (let attempt = 0; ; attempt += 1) {
@@ -2185,7 +2187,7 @@ async function boot() {
     return out;
   }
 
-  // ---- AI selection assist (plan 018 U7): thinker-tier instruction over
+  // ---- AI selection assist (plan 018 U7): worker-tier instruction over
   // the selection; the reply previews in a panel and only ever lands in the
   // editor buffer (autosave persists it like any other edit).
   let pendingAssist: {
@@ -2215,13 +2217,90 @@ async function boot() {
     $("#reader-ai-preview").classList.remove("hidden");
   }
 
-  async function submitAssist(input: HTMLInputElement, icon: HTMLElement) {
-    const node = openNodeId ? byId.get(openNodeId) : null;
-    const view = noteEditor?.view;
-    if (!node || !view) return;
+  type AssistEditorView = Parameters<ToolbarExtras>[1];
+
+  function showResearchVaultAssistPreview(
+    req: AssistRequest | null,
+    text: string,
+    view: AssistEditorView,
+    noteId: string,
+  ) {
+    if (researchVaultPath !== noteId || researchVaultEditor?.view !== view)
+      return;
+    $("#research-body .research-vault-ai-preview")?.remove();
+    const preview = document.createElement("div");
+    preview.className =
+      "research-document-ai-preview research-vault-ai-preview";
+    const previewText = document.createElement("div");
+    previewText.textContent = text;
+    preview.appendChild(previewText);
+    if (req) {
+      const apply = (mode: "replace" | "insert") => {
+        if (
+          researchVaultPath !== noteId ||
+          researchVaultEditor?.view !== view
+        ) {
+          preview.remove();
+          return;
+        }
+        if (mode === "replace") {
+          const spec = replaceSelection(view.state, req, text);
+          if (!spec) {
+            researchError(i18n.t("editor.ai.stale"));
+            return;
+          }
+          view.dispatch(spec);
+        } else {
+          view.dispatch(insertBelow(view.state, req, text));
+        }
+        preview.remove();
+        view.focus();
+      };
+      for (const [label, mode] of [
+        [i18n.t("editor.ai.replace"), "replace"],
+        [i18n.t("editor.ai.insert"), "insert"],
+      ] as const) {
+        const button = document.createElement("button");
+        button.textContent = label;
+        button.onclick = () => apply(mode);
+        preview.appendChild(button);
+      }
+    }
+    const dismiss = document.createElement("button");
+    dismiss.textContent = "×";
+    dismiss.onclick = () => preview.remove();
+    preview.appendChild(dismiss);
+    const editor = $("#research-body .inbox-editor");
+    editor.parentElement?.insertBefore(preview, editor);
+  }
+
+  async function submitAssist(
+    input: HTMLInputElement,
+    icon: HTMLElement,
+    view: AssistEditorView,
+  ) {
+    const readerNode = openNodeId ? byId.get(openNodeId) : null;
+    const inboxPath = researchVaultPath;
+    const target =
+      view === noteEditor?.view && readerNode
+        ? {
+            kind: "reader" as const,
+            id: readerNode.id,
+            title: readerNode.title,
+          }
+        : view === researchVaultEditor?.view && inboxPath
+          ? {
+              kind: "inbox" as const,
+              id: inboxPath,
+              title:
+                inboxCursorState.items.find((entry) => entry.id === inboxPath)
+                  ?.title ?? inboxPath,
+            }
+          : null;
+    if (!target) return;
     const req = buildAssistRequest(view.state, input.value, {
-      id: node.id,
-      title: node.title,
+      id: target.id,
+      title: target.title,
     });
     if (!req) return;
     icon.classList.add("busy");
@@ -2236,20 +2315,30 @@ async function boot() {
           noteTitle: req.noteTitle,
         },
       });
-      showAssistPreview(req, text);
+      if (target.kind === "reader") showAssistPreview(req, text);
+      else showResearchVaultAssistPreview(req, text, view, target.id);
       input.value = "";
     } catch {
-      $("#reader-ai-preview-text").textContent = i18n.t("editor.ai.error");
-      $("#reader-ai-preview-note").textContent = "";
-      pendingAssist = null;
-      $("#reader-ai-preview").classList.remove("hidden");
+      if (target.kind === "reader") {
+        $("#reader-ai-preview-text").textContent = i18n.t("editor.ai.error");
+        $("#reader-ai-preview-note").textContent = "";
+        pendingAssist = null;
+        $("#reader-ai-preview").classList.remove("hidden");
+      } else {
+        showResearchVaultAssistPreview(
+          null,
+          i18n.t("editor.ai.error"),
+          view,
+          target.id,
+        );
+      }
     } finally {
       icon.classList.remove("busy");
       input.disabled = false;
     }
   }
 
-  const aiToolbarExtras: ToolbarExtras = (dom, _view, trigger) => {
+  const aiToolbarExtras: ToolbarExtras = (dom, view, trigger) => {
     if (!llmConfigured()) return;
     trigger.title = i18n.t("editor.ai.placeholder");
     trigger.setAttribute("aria-label", i18n.t("editor.ai.placeholder"));
@@ -2264,7 +2353,7 @@ async function boot() {
       e.stopPropagation();
       if (e.key === "Enter") {
         e.preventDefault();
-        void submitAssist(input, trigger);
+        void submitAssist(input, trigger, view);
       } else if (e.key === "Escape") {
         trigger.click();
         noteEditor?.view.focus();
@@ -2469,9 +2558,8 @@ async function boot() {
       editorHost.id = "reader-editor";
       editorHost.className = "note-editor";
       body.appendChild(editorHost);
-      noteEditor = createNoteEditor(editorHost, {
+      noteEditor = createContentEditor(editorHost, {
         content: markdown,
-        onWikiLinkClick: navigateWikiTarget,
         onMarkdownLinkClick: (target) => navigateMarkdownTarget(n.id, target),
         getWikiLinkCandidates: wikiLinkCandidates,
         toolbarExtras: aiToolbarExtras,
@@ -2665,9 +2753,10 @@ async function boot() {
         `<a class="wiki" data-target="${target.trim().replace(/"/g, "&quot;")}">${alias ?? target}</a>`,
     );
     body.innerHTML = sanitizeRenderedMarkdown(await marked.parse(prepped));
-    for (const a of body.querySelectorAll<HTMLAnchorElement>("a[href]")) {
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
+    for (const a of [...body.querySelectorAll<HTMLAnchorElement>("a[href]")]) {
+      a.replaceWith(
+        externalArticleActions(a.href, a.textContent ?? a.href, a.className),
+      );
     }
   }
 
@@ -4110,8 +4199,8 @@ async function boot() {
       (row.querySelector(".snippet") as HTMLElement).textContent = snippetText;
     row.addEventListener("click", () => {
       select(n, snippetText); // snippet present only for semantic hits (F035)
-      results.innerHTML = "";
       searchBox.value = "";
+      renderResults("");
     });
     results.appendChild(row);
     return row;
@@ -4119,17 +4208,19 @@ async function boot() {
 
   let searchToken = 0;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  let searchController: AbortController | undefined;
   const renderResults = (q: string) => {
     const token = ++searchToken;
     results.innerHTML = "";
     clearTimeout(searchTimer);
+    searchController?.abort();
+    searchController = undefined;
     // With a mode active the field is a query box (Enter-driven, F018):
     // no live dropdown, and web queries must never auto-run while typing.
     if (!q || activeMode) return;
 
     // 1) Title matches: local, instant.
     const ql = q.toLowerCase();
-    const shown = new Set<string>();
     const titleHits = data.nodes
       .filter((n) => !n.phantom && n.title.toLowerCase().includes(ql))
       .sort((a, b) => {
@@ -4140,25 +4231,32 @@ async function boot() {
       .slice(0, 8);
     for (const n of titleHits) {
       addResult(n);
-      shown.add(n.id);
     }
 
-    // 2) Content matches: debounced hit on the server's full-text index.
+    // 2) Hybrid results: replace the provisional local list when current.
     searchTimer = setTimeout(async () => {
+      const controller = new AbortController();
+      searchController = controller;
       try {
-        const hits = await api<Array<{ id: string; snippet: string }>>(
-          `/api/search?q=${encodeURIComponent(q)}`,
+        const response = await api<unknown>(
+          `/api/search-vault?${new URLSearchParams({ mode: "auto", queries: q })}`,
+          { signal: controller.signal },
         );
-        if (token !== searchToken) return; // stale response
-        for (const h of hits) {
-          if (shown.has(h.id) || shown.size >= 16) continue;
-          const n = byId.get(h.id);
+        if (
+          controller.signal.aborted ||
+          !isCurrentSearchGeneration(token, searchToken)
+        )
+          return;
+        results.innerHTML = "";
+        for (const h of normalizeVaultSearchResults(response)) {
+          const n = byId.get(h.path);
           if (!n) continue;
           addResult(n, h.snippet);
-          shown.add(h.id);
         }
       } catch {
-        // index unavailable; title results already shown
+        // qmd/backend unavailable; title results already shown
+      } finally {
+        if (searchController === controller) searchController = undefined;
       }
     }, 220);
   };
@@ -4172,7 +4270,7 @@ async function boot() {
       return;
     } else if (e.key === "Escape") {
       searchBox.value = "";
-      results.innerHTML = "";
+      renderResults("");
       searchBox.blur();
     }
   });
@@ -4564,6 +4662,7 @@ async function boot() {
       qmd: { installed: boolean; version: string | null };
       markitdown: { installed: boolean; version: string | null };
       exa: { configured: boolean };
+      tinyfish: { configured: boolean };
       openrouter: { configured: boolean };
       deepseek: { configured: boolean };
     };
@@ -4573,6 +4672,8 @@ async function boot() {
       explicit: boolean;
       configured: boolean;
     };
+    webSearch?: { provider: "tinyfish" | "exa" | null; configured: boolean };
+    webFetch?: { provider: "tinyfish" | "exa" | null; configured: boolean };
     defaultModel: string | null;
     catalog: ModelCatalog;
     providers: Record<string, { configured: boolean }>;
@@ -4674,7 +4775,7 @@ async function boot() {
     return m === "vault"
       ? true
       : m === "web"
-        ? (integrations?.webResearch?.configured ?? t.exa.configured)
+        ? (integrations?.webSearch?.configured ?? t.exa.configured)
         : t.markitdown.installed;
   };
 
@@ -4755,6 +4856,7 @@ async function boot() {
     else prefs.removeMode();
     renderModes();
     updateSearchField();
+    renderResults(activeMode ? "" : searchBox.value.trim());
     // Mode only retargets the search field; it never hides a panel. Each query
     // adds a page to the research column (history nav), and pages survive
     // mode switches. Closing research is the close button's job, not setMode's.
@@ -4941,6 +5043,7 @@ async function boot() {
     );
     if (integrations) renderProviderSection();
     renderAgentModels();
+    renderWebCapabilities();
     renderWebResearch();
   }
 
@@ -5182,6 +5285,32 @@ async function boot() {
     }
   }
 
+  function renderWebCapabilities() {
+    const current = integrations;
+    if (!current) return;
+    const status = $("#set-web-search-fetch-status");
+    const provider = current.webSearch?.provider ?? current.webFetch?.provider;
+    status.className = `set-web-status ${
+      provider === "tinyfish"
+        ? "connected"
+        : provider === "exa"
+          ? "fallback"
+          : "missing"
+    }`;
+    status.textContent = i18n.t(
+      provider === "tinyfish"
+        ? "web.provider.tinyfish"
+        : provider === "exa"
+          ? "web.provider.exaFallback"
+          : "web.provider.disconnected",
+    );
+    const key = $("#tinyfish-key") as HTMLInputElement;
+    if (!key.value)
+      key.placeholder = i18n.t(
+        current.tools.tinyfish.configured ? "ph.keySaved" : "ph.tinyfishKey",
+      );
+  }
+
   function renderAgentModels() {
     const cat = integrations?.catalog;
     const hint = $("#set-models-hint");
@@ -5315,6 +5444,18 @@ async function boot() {
       exaKeyInput.placeholder = i18n.t("ph.keyFail");
     } finally {
       exaKeyInput.disabled = false;
+    }
+  });
+  const tinyfishKeyInput = $("#tinyfish-key") as HTMLInputElement;
+  tinyfishKeyInput.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter" || !tinyfishKeyInput.value.trim()) return;
+    tinyfishKeyInput.disabled = true;
+    try {
+      await postConfig({ tinyfishKey: tinyfishKeyInput.value.trim() });
+      tinyfishKeyInput.value = "";
+      await refreshIntegrations();
+    } finally {
+      tinyfishKeyInput.disabled = false;
     }
   });
   // ---- Intelligence Provider: select + key + check connection ----
@@ -6215,6 +6356,14 @@ async function boot() {
     publishedDate: string | null;
     author: string | null;
   };
+  type ResourceOpenResponse =
+    | { action: "external"; reason: string }
+    | {
+        action: "research";
+        handler: "markitdown" | "tinyfish" | "exa";
+        article: ArticleData;
+        historyId?: string;
+      };
   type ResearchEntry = {
     id: string;
     ts: string;
@@ -7177,9 +7326,8 @@ async function boot() {
     editorHost.className = "inbox-editor note-editor";
     body.appendChild(editorHost);
     let autosave: Autosave | null = null;
-    const editor = createNoteEditor(editorHost, {
+    const editor = createContentEditor(editorHost, {
       content: markdown,
-      onWikiLinkClick: navigateWikiTarget,
       onMarkdownLinkClick: (target) => navigateMarkdownTarget(path, target),
       getWikiLinkCandidates: wikiLinkCandidates,
       toolbarExtras: aiToolbarExtras,
@@ -8010,25 +8158,31 @@ async function boot() {
     },
     query: string,
   ) {
+    const content = document.createElement("div");
+    content.className = "web-research";
+    body.appendChild(content);
     // The query/question leads the page, same as semantic results.
     if (query) {
       const q = document.createElement("h2");
       q.className = "research-query";
       q.textContent = query;
-      body.appendChild(q);
+      content.appendChild(q);
     }
-    if (data.answer) body.appendChild(renderAnswer(data.answer, query));
+    if (data.answer) content.appendChild(renderAnswer(data.answer, query));
     if (!data.results.length && !data.answer) {
-      body.insertAdjacentHTML("beforeend", '<p class="muted">no results</p>');
+      content.insertAdjacentHTML(
+        "beforeend",
+        '<p class="muted">no results</p>',
+      );
       return;
     }
     if (data.results.length && data.answer) {
       const h = document.createElement("div");
       h.className = "sources-head";
       h.textContent = i18n.t("research.results");
-      body.appendChild(h);
+      content.appendChild(h);
     }
-    for (const r of data.results) body.appendChild(renderWebResult(r));
+    for (const r of data.results) content.appendChild(renderWebResult(r));
   }
 
   // The "article" category: a full-text page fetched from a web result (Exa
@@ -8062,15 +8216,14 @@ async function boot() {
       /* keep the raw url */
     }
     src.textContent = host;
-    src.insertAdjacentHTML("beforeend", EXT_ICON);
+    appendExternalLinkIcon(src);
     body.appendChild(src);
 
     const editorHost = document.createElement("div");
     editorHost.className = "article-body note-editor";
     body.appendChild(editorHost);
-    researchArticleEditor = createNoteEditor(editorHost, {
+    researchArticleEditor = createContentEditor(editorHost, {
       content: cleanContent,
-      onWikiLinkClick: navigateWikiTarget,
       readOnly: true,
     });
   }
@@ -8158,9 +8311,8 @@ async function boot() {
       };
       toolbar.appendChild(input);
     };
-    const editor = createNoteEditor(editorHost, {
+    const editor = createContentEditor(editorHost, {
       content: doc.content,
-      onWikiLinkClick: navigateWikiTarget,
       getWikiLinkCandidates: wikiLinkCandidates,
       toolbarExtras: extras,
       onChange: () => {
@@ -8843,36 +8995,96 @@ async function boot() {
     }
   }
 
-  // Fetch a web result's full text (Exa /contents) and open it as an "article"
-  // page in the research column. Spend-bearing, so it walks the web consent gate
-  // first, exactly like a web query.
-  async function runArticleFetch(url: string, title: string) {
-    if (integrations && !integrations.consents.web) {
+  async function runResourceOpen(url: string, title: string) {
+    setOpsStatus({
+      label: i18n.t("research.processingResource"),
+      detail: title,
+      indeterminate: true,
+    });
+    try {
+      const data = await api<ResourceOpenResponse>("/api/resource", {
+        json: { url, title },
+      });
+      if (data.action === "external") {
+        setOpsStatus(null);
+        if (data.reason === "web-consent-required") promptWebConsent();
+        else window.open(url, "_blank", "noopener,noreferrer");
+        return;
+      }
+      if (!(await teardownResearchDocument())) {
+        setOpsStatus(null);
+        return;
+      }
+      openResearch("article");
+      const body = $("#research-body");
+      body.innerHTML = "";
+      renderArticleInto(body, data.article, title);
+      if (data.historyId) await noteQueryPersisted(data.historyId);
+      setOpsStatus(null);
+    } catch {
+      setOpsStatus({ label: i18n.t("research.resourceFailed") });
+      window.setTimeout(() => setOpsStatus(null), 4_000);
+    }
+  }
+
+  function openExternalArticle(url: string, title = url) {
+    const resource = classifyResource(url);
+    const available =
+      resource.kind === "document"
+        ? integrations?.tools.markitdown.installed
+        : resource.kind === "webpage"
+          ? integrations?.webFetch?.configured
+          : false;
+    if (!available) {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (resource.kind === "webpage" && !integrations?.consents.web) {
       promptWebConsent();
       return;
     }
-    if (!(await teardownResearchDocument())) return;
-    openResearch("article");
-    const body = $("#research-body");
-    body.innerHTML = `<p class="muted">${i18n.t("research.fetching")}</p>`;
-    try {
-      const data = await api<ArticleData & { historyId?: string }>(
-        "/api/article",
-        { json: { url } },
-      );
-      body.innerHTML = "";
-      renderArticleInto(body, data, title);
-      if (data.historyId) await noteQueryPersisted(data.historyId);
-    } catch (e) {
-      body.innerHTML = "";
-      if (e instanceof ApiError) {
-        const msg = (e.body as { message?: string } | null | undefined)
-          ?.message;
-        researchError(msg ?? "article fetch failed");
-      } else {
-        researchError("article fetch failed — is the server running?");
-      }
-    }
+    void runResourceOpen(url, title);
+  }
+
+  function createContentEditor(
+    parent: HTMLElement,
+    options: Omit<
+      NoteEditorOptions,
+      "onWikiLinkClick" | "onExternalLinkClick" | "externalLinkLabel"
+    >,
+  ): NoteEditor {
+    return createNoteEditor(parent, {
+      ...options,
+      onWikiLinkClick: navigateWikiTarget,
+      onExternalLinkClick: openExternalArticle,
+      externalLinkLabel: i18n.t("link.openExternal"),
+    });
+  }
+
+  function externalArticleActions(
+    url: string,
+    label: string,
+    className: string,
+  ) {
+    const wrap = document.createElement("span");
+    const fetch = document.createElement("a");
+    fetch.className = className;
+    fetch.href = url;
+    fetch.textContent = label;
+    fetch.addEventListener("click", (event) => {
+      event.preventDefault();
+      openExternalArticle(url, label);
+    });
+    const external = document.createElement("a");
+    external.className = "web-result-external";
+    external.href = url;
+    external.target = "_blank";
+    external.rel = "noopener noreferrer";
+    appendExternalLinkIcon(external);
+    external.title = i18n.t("link.openExternal");
+    external.setAttribute("aria-label", i18n.t("link.openExternal"));
+    wrap.append(fetch, external);
+    return wrap;
   }
 
   // After saving an ingested note, rescan so the new note joins the graph.
@@ -9518,35 +9730,67 @@ async function boot() {
     updateBrandStats();
   }
 
-  async function runIngest(source: string) {
-    openResearch("ingest");
-    const body = $("#research-body");
-    body.innerHTML = '<p class="muted">converting preview…</p>';
-    try {
-      const preview = await api<IngestPreview>("/api/ingest/preview", {
-        json: { source },
-      });
-      body.innerHTML = `<p class="muted">${i18n.t("research.savingInbox")}</p>`;
-      await savePreviewToInbox(preview);
-    } catch (e) {
-      body.innerHTML = "";
-      if (e instanceof ApiError) {
-        const body = e.body as
-          | { message?: string; error?: string }
-          | null
-          | undefined;
-        const msg = body?.message ?? body?.error;
-        researchError(msg ?? i18n.t("wiki.ingestFailed"));
-      } else {
-        researchError(
-          e instanceof Error ? e.message : i18n.t("wiki.ingestFailed"),
-        );
+  async function showIngestResult(data: CreatedNoteResponse) {
+    let graphRefreshFailed = data.graphRefreshFailed;
+    if (data.graphUpdated) {
+      try {
+        await syncCreatedGraph(data.id, true);
+      } catch {
+        graphRefreshFailed = true;
       }
+    }
+    await loadInbox();
+    const visibleId = currentVisibleResearchId();
+    const decision = crossCollectionArrival(
+      pinnedResearchEntryId,
+      visibleId ? { collection: researchCollection, id: visibleId } : null,
+      { collection: "inbox", id: data.id },
+    );
+    let opened = false;
+    if (decision === "shown") {
+      openResearch("ingest");
+      const switched =
+        researchCollection === "inbox" ||
+        (await setResearchCollection("inbox"));
+      if (switched) opened = await openInboxNote(data.id);
+    }
+    setOpsStatus({
+      label: i18n.t("ingest.saved"),
+      detail: graphRefreshFailed
+        ? i18n.t("research.graphRefreshFailed")
+        : decision === "blocked-pinned"
+          ? i18n.t("ingest.savedPinned")
+          : opened
+            ? undefined
+            : i18n.t("ingest.openFailed"),
+      pct: 100,
+    });
+    window.setTimeout(() => setOpsStatus(null), 4_000);
+  }
+
+  async function runIngest(source: string) {
+    setOpsStatus({
+      label: i18n.t("ingest.processing"),
+      detail: source,
+      indeterminate: true,
+    });
+    try {
+      const data = /^https?:\/\//i.test(source)
+        ? await api<CreatedNoteResponse>("/api/intake", {
+            json: { url: source },
+          })
+        : await api<CreatedNoteResponse>("/api/ingest", {
+            json: { source, captureOnly: true },
+          });
+      await showIngestResult(data);
+    } catch {
+      setOpsStatus({ label: i18n.t("ingest.failed") });
+      window.setTimeout(() => setOpsStatus(null), 4_000);
     }
   }
 
-  // Browse button (shown in ingest mode): click the hidden file input, convert
-  // it to a preview, then let the user choose Inbox or wiki ingest.
+  // Browse is an explicit Ingest-mode action; selected bytes go directly to
+  // the configured Inbox destination through the guarded upload route.
   $("#ingest-browse").addEventListener("click", () =>
     ($("#ingest-file") as HTMLInputElement).click(),
   );
@@ -9557,33 +9801,31 @@ async function boot() {
       const file = input.files?.[0];
       if (!file) return;
       input.value = ""; // allow re-picking the same file
-      openResearch("ingest");
-      const body = $("#research-body");
-      body.innerHTML = `<p class="muted">converting ${file.name} via markitdown…</p>`;
+      setOpsStatus({
+        label: i18n.t("ingest.processingFile", { name: file.name }),
+        indeterminate: true,
+      });
       try {
         const buf = await file.arrayBuffer();
-        const params = new URLSearchParams({ name: file.name });
-        const res = await apiRaw(
-          `/api/ingest/preview-upload?${params.toString()}`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/octet-stream" },
-            body: buf,
-            token: true,
-          },
-        );
-        const preview = (await res.json()) as IngestPreview & {
+        const params = new URLSearchParams({
+          name: file.name,
+          captureOnly: "1",
+        });
+        const res = await apiRaw(`/api/ingest-upload?${params.toString()}`, {
+          method: "POST",
+          headers: { "content-type": "application/octet-stream" },
+          body: buf,
+          token: true,
+        });
+        const data = (await res.json()) as CreatedNoteResponse & {
           message?: string;
           error?: string;
         };
-        if (!res.ok) throw new Error(preview.message ?? preview.error);
-        body.innerHTML = `<p class="muted">${i18n.t("research.savingInbox")}</p>`;
-        await savePreviewToInbox(preview);
-      } catch (e) {
-        body.innerHTML = "";
-        researchError(
-          e instanceof Error ? e.message : i18n.t("wiki.ingestFailed"),
-        );
+        if (!res.ok) throw new Error(data.message ?? data.error);
+        await showIngestResult(data);
+      } catch {
+        setOpsStatus({ label: i18n.t("ingest.failed") });
+        window.setTimeout(() => setOpsStatus(null), 4_000);
       }
     },
   );
@@ -9605,17 +9847,16 @@ async function boot() {
       h.textContent = i18n.t("research.sources");
       box.appendChild(h);
       a.citations.forEach((c, i) => {
-        const link = document.createElement("a");
-        link.href = c.url;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.className = "answer-source";
         // Prefix each source with its [N] so it lines up with the numbered
         // references Exa embeds in the answer text (no more counting), then
         // append the open-in-new-tab icon so it reads as an external link.
-        link.textContent = `[${i + 1}] ${c.title}`;
-        link.insertAdjacentHTML("beforeend", EXT_ICON);
-        box.appendChild(link);
+        box.appendChild(
+          externalArticleActions(
+            c.url,
+            `[${i + 1}] ${c.title}`,
+            "answer-source",
+          ),
+        );
       });
     }
     const save = document.createElement("button");
@@ -9780,7 +10021,7 @@ async function boot() {
     link.addEventListener("click", (e) => {
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
       e.preventDefault();
-      void runArticleFetch(r.url, r.title);
+      openExternalArticle(r.url, r.title);
     });
     const snip = document.createElement("div");
     snip.className = "web-snippet";
@@ -9792,6 +10033,15 @@ async function boot() {
     meta.append(date);
     const badge = scoreBadge(r.score);
     if (badge) meta.append(badge);
+    const external = document.createElement("a");
+    external.className = "web-result-external";
+    external.href = r.url;
+    external.target = "_blank";
+    external.rel = "noopener noreferrer";
+    appendExternalLinkIcon(external);
+    external.setAttribute("aria-label", i18n.t("link.openExternal"));
+    external.title = i18n.t("link.openExternal");
+    meta.append(external);
     row.append(link, snip, meta);
     attachExpand(snip);
     return row;

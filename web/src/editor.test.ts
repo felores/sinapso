@@ -246,6 +246,28 @@ describe("wiki links", () => {
     ed.destroy();
   });
 
+  it("fetches external link text while its adjacent icon retains origin navigation", () => {
+    const onExternalLinkClick = vi.fn();
+    const ed = mount("[article](https://example.com/article)\n", {
+      onExternalLinkClick,
+      externalLinkLabel: "Open original",
+    });
+    ed.view.dispatch({ selection: { anchor: ed.view.state.doc.length } });
+    const link = ed.view.dom.querySelector<HTMLAnchorElement>("a.cm-md-link")!;
+    const icon = ed.view.dom.querySelector<HTMLAnchorElement>(
+      "a.cm-md-link-external",
+    )!;
+    link.click();
+    expect(onExternalLinkClick).toHaveBeenCalledWith(
+      "https://example.com/article",
+    );
+    expect(icon.href).toBe("https://example.com/article");
+    expect(icon.target).toBe("_blank");
+    expect(icon.querySelector("svg.ext-icon")).toBeTruthy();
+    expect(icon.getAttribute("aria-label")).toBe("Open original");
+    ed.destroy();
+  });
+
   it("routes vault-relative Markdown links through the note callback", () => {
     const onMarkdownLinkClick = vi.fn();
     const ed = mount("See [source](../raw/source.md)\n", {
@@ -349,6 +371,29 @@ describe("block previews (tables + code blocks)", () => {
     ed.destroy();
   });
 
+  it("routes table URLs internally and keeps external navigation on the icon", () => {
+    const onExternalLinkClick = vi.fn();
+    const ed = mount(
+      "before\n\n| source |\n| --- |\n| [site](https://example.com/report) |\n",
+      { onExternalLinkClick, externalLinkLabel: "Open original" },
+    );
+    const table = ed.view.dom.querySelector<HTMLElement>(".cm-md-table")!;
+    const link = table.querySelector<HTMLAnchorElement>("a.cm-md-link")!;
+    const icon = table.querySelector<HTMLAnchorElement>(
+      "a.cm-md-link-external",
+    )!;
+
+    link.click();
+    expect(onExternalLinkClick).toHaveBeenCalledWith(
+      "https://example.com/report",
+    );
+    expect(icon.href).toBe("https://example.com/report");
+    expect(icon.target).toBe("_blank");
+    expect(icon.querySelector("svg.ext-icon")).toBeTruthy();
+    expect(icon.getAttribute("aria-label")).toBe("Open original");
+    ed.destroy();
+  });
+
   it("renders each code block as its own widget until entered", () => {
     const code = readFileSync(fixturesDir + "codefence.md", "utf8");
     const ed = mount(code);
@@ -382,6 +427,12 @@ describe("block previews (tables + code blocks)", () => {
     expect(ed.getContent()).toBe(tableMd);
     ed.destroy();
   });
+});
+
+it("keeps app Markdown mounts behind the content-link policy", () => {
+  const main = readFileSync(resolve(import.meta.dirname, "main.ts"), "utf8");
+  expect(main).toContain("function createContentEditor(");
+  expect(main.match(/\bcreateNoteEditor\(/g)).toHaveLength(1);
 });
 
 // Plan 023: wikilink autocomplete. Source activation, insertion, and

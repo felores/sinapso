@@ -136,6 +136,7 @@ export interface SinapsoConfig {
   /** Internal one-time guard after importing ~/.solaris/config.json. */
   legacyConfigMigrated: boolean;
   exaKey: string | null;
+  tinyfishKey: string | null;
   webResearchProvider: WebResearchProvider | null;
   openrouterKey: string | null;
   deepseekKey: string | null;
@@ -172,6 +173,7 @@ export interface SinapsoConfig {
 
 export interface ConfigPatch {
   exaKey?: string | null;
+  tinyfishKey?: string | null;
   webResearchProvider?: WebResearchProvider | null;
   openrouterKey?: string | null;
   deepseekKey?: string | null;
@@ -286,6 +288,7 @@ export function defaultConfig(): SinapsoConfig {
   return {
     legacyConfigMigrated: false,
     exaKey: null,
+    tinyfishKey: null,
     webResearchProvider: null,
     openrouterKey: null,
     deepseekKey: null,
@@ -349,6 +352,8 @@ function merge(base: SinapsoConfig, patch: unknown): SinapsoConfig {
   if (typeof p.legacyConfigMigrated === "boolean")
     out.legacyConfigMigrated = p.legacyConfigMigrated;
   if (typeof p.exaKey === "string" || p.exaKey === null) out.exaKey = p.exaKey;
+  if (typeof p.tinyfishKey === "string" || p.tinyfishKey === null)
+    out.tinyfishKey = p.tinyfishKey;
   if (
     isWebResearchProvider(p.webResearchProvider) ||
     p.webResearchProvider === null
@@ -546,6 +551,7 @@ function withLegacyFallback(current: SinapsoConfig, legacy: SinapsoConfig) {
   };
 
   out.exaKey ??= legacy.exaKey;
+  out.tinyfishKey ??= legacy.tinyfishKey;
   out.openrouterKey ??= legacy.openrouterKey;
   out.deepseekKey ??= legacy.deepseekKey;
   out.defaultModel ??= legacy.defaultModel;

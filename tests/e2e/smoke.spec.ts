@@ -60,7 +60,8 @@ test("keeps local tools in Tools and opens providers in Settings", async ({
       .locator("#modal")
       .evaluate((el) => el.getBoundingClientRect().width);
     expect(width).toBeLessThanOrEqual(521);
-    await expect(page.locator(".set-section")).toHaveCount(4);
+    await expect(page.locator(".set-section")).toHaveCount(5);
+    await expect(page.locator("#web-search-fetch-provider")).toBeVisible();
     await expect(
       page.locator("#admin-integrations .set-section").first(),
     ).toBeVisible();

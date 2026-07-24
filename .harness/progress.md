@@ -1,5 +1,30 @@
 # Progress Log — Sinapso
 
+## Session 2026-07-23 - Tinyfish planning amendment
+
+- Plans 024 and 025 now treat Tinyfish as a retrieval capability, not another deep-research provider choice.
+- Ordinary Web search/follow-up evidence prefers Tinyfish when configured; without it, the existing selected `exa`/`google`/`openai`/`xai` behavior remains.
+- URL intake precedence is Tinyfish Fetch, Exa contents, then markitdown by configured capability. Once an upstream request starts, failure is visible and never triggers hidden provider failover.
+- The existing Web Research selector remains authoritative for explicit deep research. F078/F079/F083/F086/F089 were amended; F001-F075 remain unchanged.
+- F076: not_started -> passing. Auto vault discovery now places exact title/basename, prefix, and title/path substring identity tiers before deduplicated RRF results, with scoped case-insensitive matching and MiniSearch-only degradation.
+- F076 verification: focused gate 209/209 tests plus typecheck passed. One initial AE9 shared-state failure did not reproduce in three serial reruns; isolated search-vault tests passed 36/36.
+- F077: not_started -> passing. No-mode search keeps immediate local title feedback, replaces it with authoritative normalized hybrid results after 220ms, and cancels stale work on new input, Escape, result selection, and mode switches.
+- F077 verification: focused tests 49/49, typecheck, and production build passed; existing unrelated Web Research rendering/CSS edits were preserved.
+- User correction: API keys belong in Configuration; one provider-ready `Web Search and Fetch` section (`Búsqueda y extracción web`) sits immediately before `Web Research`; Tools remains key-free.
+- User correction: the selected Web Search/Fetch provider is green, Exa fallback is orange, unavailable is red, and the localized Tinyfish key link carries the external-tab icon.
+- User clarification: internal-fetch plus adjacent external-open behavior is a built-in Markdown-content policy only. All note, Inbox, article, working-document, table-preview, and version-preview URLs follow it without altering Markdown; Configuration and operational links do not.
+- Content-link enforcement: the text action always routes internally, including modifier clicks; only the adjacent icon opens the original URL externally.
+- Resource routing follow-up: Markdown links now classify before execution. Supported documents use only secure temporary download plus local MarkItDown and remain Research evidence until explicit save; unsupported/missing handlers open externally; webpages use Tinyfish then Exa then external. `/api/article` rejects document URLs, and all legacy remote MarkItDown paths use the same protected downloader.
+- MarkItDown 0.1.6 regressed spacing on text-layer PDFs after its table-extraction change; the exact ArXiv reproduction passes on 0.1.4/0.1.5 and fails on 0.1.6. Sinapso now pins `markitdown[all]==0.1.5`, and the pipx-managed environment was restored to that known-good release without adding another extractor or fallback.
+- Document-link bug fix: Node 22 requests custom DNS lookup results with `all: true`; the pinned lookup now returns the required address array while preserving IP pinning. Live `/api/resource` verification opens a text-layer PDF in Research. The reported Supabase PDF has no extractable text (`pdftotext`: 8 bytes; MarkItDown: empty), so its external fallback is expected.
+- User correction: ordinary search/fetch precedence is Tinyfish, Exa, unavailable. Hosted providers remain deep-research-only, article links never use markitdown fallback, and external document links always expose separate fetch and origin-navigation actions.
+- F078: not_started -> passing. Implemented Tinyfish adapter/config, provider-aware search/fetch and `/api/article`, intake policy, Configuration sections, dual-action external links, and updated voice/registry descriptions.
+- F078 verification: focused gate 298/298, typecheck, build, and diff check passed. Browser verified section order, fetched article rendering, adjacent origin navigation, no-provider external fallback, and zero console errors.
+- User amendment: Ingest remains an explicit mode. Its field accepts HTTP(S) URLs and local paths; Browse accepts local files. URL/path/file ingestion writes to Inbox, reports only through `#ops-status`, and opens the returned canonical path through Inbox without requiring graph membership.
+- F079: not_started -> active -> passing under the explicit amendment. Verification passed 67/67 focused Vitest, typecheck, build, focused Playwright 1/1 with clean diagnostics, and independent validator review.
+- Inbox selection-assist bug fix: the shared CodeMirror toolbar now uses its owning editor and note identity instead of Reader-only globals, renders the result preview in the same Inbox panel, and routes `selection_assist` through the worker tier. A red E2E reproduced the silent Enter no-op; focused route/unit/E2E checks, typecheck, and independent validation passed.
+- Passing: 79/89. Next: F080 replace Vault with Wiki and share the compact wiki target.
+
 Initialized 2026-07-02 from docs/plans/2026-07-01-002-feat-optional-integrations-qmd-exa-opencode-plan.md (12 units -> F001-F012, 3 milestones).
 
 ## Session 2026-07-02 (1)
@@ -504,3 +529,21 @@ F001-F061 are immutable historical completed features. Plans and work completed 
 **Inbox note archive control:** added a dedicated archive button immediately left of the Inbox toggle, visible only while an individual Inbox note is open. It flushes the editor, uses the existing guarded `/api/archive` route, clears matching pin/editor state, refreshes graph/Inbox, and returns to the Inbox list. The focused E2E verifies list-hidden/note-visible placement, submitted note path, and return-to-list behavior. Required serial gate passed 1016/1016 Vitest, typecheck, build, and 26/26 Playwright tests. Change remains uncommitted.
 
 **Inbox Review removal:** after checkpointing and pushing the complete implementation to `main` at `6ba0a6c`, removed the Review Inbox runtime, routes, state, styles, translations, and dedicated tests. The Inbox toolbar now contains New plus a rightmost 28px square icon-only Refresh control with localized tooltip/accessible name. Historical plan/roadmap/feature-ledger evidence remains immutable. Required serial gate passed 983/983 Vitest, typecheck, build, and 24/24 Playwright tests; independent validator PASS. Removal remains uncommitted.
+
+## Session 2026-07-23: intent-aware knowledge and follow-up planning
+
+**Plans accepted and decomposed:**
+- Plan 024: intent-aware knowledge bar, hybrid search, automatic URL/file intake,
+  shared Wiki target, and grounded Wiki research -> F076-F083.
+- Plan 025: contextual follow-up composer, bounded Research threads, local plus
+  optional explicit Web grounding, and durable Inbox save -> F084-F089.
+
+**User-settled decisions:**
+- Automatic URL/file intake saves immediately to Inbox and opens the durable note
+  in Research/Inbox.
+- Wiki synthesis enters disposable Research first and saves only when requested.
+- Ingest is a file action, not a search mode.
+- The last selected enabled wiki is the shared default; no Admin default field.
+- Web follow-up is an explicit persisted toggle, never a model-selected spend.
+
+**Ledger:** 75 passing, 14 not_started. Next dependency-ready feature: F076.
